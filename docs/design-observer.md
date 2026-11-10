@@ -11,8 +11,8 @@ statistics, the packet log), every received message and every final delivery
 core's view of the mesh, writes the history
 ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md)) and publishes the providers'
 documents ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)): `stats`,
-`contacts` and `contacts/<key>`, `nodes`, `history`, and the events `contact`, `node` and
-`telemetry`.
+`contacts` and `contacts/<key>`, `nodes`, `history`, `pending`, `config`, and the events
+`contact`, `node` and `telemetry`.
 
 ```mermaid
 flowchart LR
@@ -73,6 +73,33 @@ flowchart LR
   while it carries. The last check of each companion is kept in the state file (`advert_checks`,
   no position); a logged position is held at most about three minutes (its log up to 40 s before
   the push, which is held up to 70 s, until the next minute tick) and never stored or published.
+* **Messages** in and out go to the `history` document (the latest 50, newest first, the whole
+  document within 15 KiB, #111) and to the history's table `message`. Since 2.1 each entry also
+  names the target it came through or went to (the inbox's, as `received` names it; none for
+  `contacts/<key>/send`, whose key is `contact_key`), and a sent one the id of its delivery
+  events, when the gateway accepted it, `suspect` and the reason it failed or expired. The
+  acceptance time is the wall clock (the queue counts with the monotonic one): the delivery
+  carries it in its events, not on the `delivery` topic, and a message kept across a stop keeps it
+  in the state file. The table gets the columns `target`, `delivery_id` (it has an `id`),
+  `queued_at`, `suspect` and `reason` after a look at its columns, in version 2 as the table
+  `reading` was: 2.0 names its columns in every statement, so a downgrade leaves them empty and
+  keeps the history.
+* **The settings in effect** go to the `config` document: `config_view` takes them from the
+  configuration by an allowlist, and the bridge hands them over at the start and again at each
+  radio connect, as a channel text's room depends on the radio's name. The targets are a list in
+  ADR 0015's form, cut from the end so that the whole document stays within 15 KiB (the
+  configuration allows any number of targets). `started_at` is when the observer was made, at the
+  service's start, which is when the configuration was read.
+* **Messages on their way** go to the `pending` document (oldest first, the whole document within
+  8 KiB): the outbox keeps the messages it accepted until their final event, the one it delivers
+  included, which the queue's count in `state` leaves out (#112). An entry follows its delivery
+  events: `queued`, then `sent` with each attempt; a message paused for an alert has no event and
+  stays `sent`, and one kept across a stop is `queued` again with its attempts. The outbox hands
+  the list to the observer once the steps of a moment are done (`call_soon`): after the `history`
+  of a message that became final, so that a reader of both topics never misses it, and once for a
+  burst of requests rather than for each. The observer publishes it again at every connect, and
+  the outbox after the start, when the messages a stop kept are queued again (oldest first by
+  their acceptance time).
 * **Readings** of every answer the poller takes go to the contact's document (`battery_v`,
   `mcu_temperature_c`, `readings`, `readings_at`, the gateway's time of the answer) and to the
   history's table `reading`, one row per value, in one transaction. The table was added to the

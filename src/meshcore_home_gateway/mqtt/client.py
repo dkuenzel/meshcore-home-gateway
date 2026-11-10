@@ -42,6 +42,8 @@ OFFLINE = b"offline"
 MAX_QUEUED_EVENTS = 1000  # events kept for the broker while it is unreachable
 RECONNECT_MIN_S, RECONNECT_MAX_S = 1, 60
 ECHO_WAIT_S = 10  # the gateway's `online` comes back within this, or it cannot read its topics
+# the CONNACK reason of MQTT 5, and paho's for the return code 1 of MQTT 3.1.1
+UNSUPPORTED_PROTOCOL_VERSION = 0x84
 
 
 class PahoLike(Protocol):
@@ -165,7 +167,11 @@ class MqttBus(Bus):
         self._client = client_factory(config)
         self._loop: asyncio.AbstractEventLoop | None = None
         self._retained = RetainedTopics(
-            topics, self._publish_retained, self._call_later, time.monotonic
+            topics,
+            self._publish_retained,
+            self._call_later,
+            time.monotonic,
+            drafts=bool(self._ha_devices),  # the chats' drafts come with discovery
         )
         self.requests: asyncio.Queue[SendRequest] = asyncio.Queue()
         self.contact_requests: asyncio.Queue[ContactRequest] = asyncio.Queue()
@@ -184,6 +190,9 @@ class MqttBus(Bus):
         self.on_ha_offline: list[Callable[[], None]] = []
         self.on_ha_device: list[Callable[[str, bytes, bool], None]] = []
         self.on_show_hidden: list[Callable[[], None]] = []
+        self.on_draft_request: list[Callable[[str, str, bytes, bool], None]] = []
+        self.on_draft_retained: list[Callable[[str, str, bytes], None]] = []
+        self.on_stopping: list[Callable[[], None]] = []
 
     async def start(self) -> None:
         self._loop = asyncio.get_running_loop()
@@ -266,6 +275,8 @@ class MqttBus(Bus):
         return properties
 
     async def stop(self, timeout_s: float = 2.0) -> None:
+        for callback in self.on_stopping:  # before the offline status, in the order of QoS 1
+            callback()
         self._stopping = True
         self._retained.close()
         self._cancel_echo_check()
@@ -294,6 +305,15 @@ class MqttBus(Bus):
     def _paho_connected(self, client: Any, _u: Any, _f: Any, reason: Any, _p: Any) -> None:
         self._answered = True
         if getattr(reason, "is_failure", False):
+            if getattr(reason, "value", None) == UNSUPPORTED_PROTOCOL_VERSION:
+                # whatever the login: a broker of MQTT 3.1.1 only, asked with MQTT 5 (#107)
+                log.warning(
+                    "MQTT: connection refused: %s: the broker does not speak MQTT %s; set "
+                    "protocol in [mqtt] to the version it speaks",
+                    reason,
+                    self._config.protocol,
+                )
+                return
             # Mosquitto answers 'Not authorized' for a wrong password, an unknown user and
             # missing credentials alike: the user name tells the user what was sent
             user = f"user {self._config.username!r}" if self._config.username else "no user name"
@@ -316,7 +336,11 @@ class MqttBus(Bus):
         if self._ha_status:
             subscriptions.append((self._ha_status, 1))
         if self._ha_devices:  # the requests of Home Assistant's controls, with its topics
-            ha_requests = (self._topics.show_hidden, self._topics.add_node)
+            ha_requests = (
+                self._topics.show_hidden,
+                self._topics.add_node,
+                self._topics.draft_request_subscription,
+            )
             subscriptions += [(topic, 1) for topic in (*self._ha_devices, *ha_requests)]
         info = client.subscribe(subscriptions)
         mid = info[1] if isinstance(info, tuple) else None  # its answer comes after this returns
@@ -430,6 +454,12 @@ class MqttBus(Bus):
     def _handle_message(
         self, topic: str, payload: bytes, retained: bool, correlation: bytes | None = None
     ) -> None:
+        draft = self._topics.draft_from_topic(topic) if self._ha_devices else None
+        if draft is not None and retained and not self._stopping:
+            # the broker's copy of a draft, for the subscription: the drafts part deletes those
+            # of no current chat; the retained guard takes no copy
+            for draft_callback in self.on_draft_retained:
+                draft_callback(*draft, payload)
         if self._retained.covers(topic):
             self._heard_back = True
             if not self._stopping:
@@ -479,6 +509,11 @@ class MqttBus(Bus):
             self.contact_requests.put_nowait(
                 ContactRequest("add", payload, retained, node_label=True)
             )
+        elif (draft := self._topics.draft_from_request_topic(topic)) is not None:
+            # a chat's text or Send, handled here on the event loop in the order they came: the
+            # press takes the text stored before it (drafts.py)
+            for draft_callback in self.on_draft_request:
+                draft_callback(*draft, payload, retained)
         else:
             return False
         return True

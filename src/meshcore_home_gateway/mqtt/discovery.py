@@ -19,8 +19,10 @@ from typing import TYPE_CHECKING, Any
 from meshcore_home_gateway import __version__, i18n
 from meshcore_home_gateway.config import DEFAULT_DEVICE_NAME, Config
 from meshcore_home_gateway.core import telemetry
-from meshcore_home_gateway.core.model import DeliveryState
+from meshcore_home_gateway.core.model import DeliveryState, MessageKind, Target
+from meshcore_home_gateway.core.text import TextPolicy, room_bytes, text_limit
 from meshcore_home_gateway.mqtt.topics import Topics
+from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES
 
 if TYPE_CHECKING:
     from meshcore_home_gateway.ports import RadioInfo
@@ -77,15 +79,68 @@ def discovery_topic(config: Config) -> str:
     return f"{config.homeassistant.prefix}/device/{device_id(config)}/config"
 
 
+def never_available(topics: Topics) -> dict[str, str]:
+    """An availability entry that keeps an entity unavailable: Home Assistant keys availability
+    by topic, so the entry has a topic of its own, which nobody publishes; on the gateway's
+    availability topic it took effect only with the next message there (HA-02). A message another
+    client writes there still reads offline. With `availability_mode: all`."""
+    return {"topic": f"{topics.root}/homeassistant/off", "value_template": "{{ 'offline' }}"}
+
+
 def controls_off(config: Config, topics: Topics) -> list[dict[str, str]]:
     """With `[homeassistant] controls = false`, an availability that is always offline, for the
     controls that change the radio's contacts or the telemetry: Home Assistant shows them
     unavailable and leaves them out of service calls, while MQTT and the command line keep
     working (SEC-008). Unavailable rather than removed: a disabled entity that goes takes its
-    whole device away."""
+    whole device away (`never_available`)."""
     if config.homeassistant.controls:
         return []
-    return [{"topic": topics.availability, "value_template": "{{ 'offline' }}"}]
+    return [never_available(topics)]
+
+
+# a chat's draft and its Send button (design §6.7): both publish on the chat's request topic, at
+# QoS 0, so the broker keeps their order and a press made while Home Assistant's link to the
+# broker is down is not sent after the reconnect (paho keeps QoS 1 for it); the state is the
+# draft the gateway holds, `{"text": …}`, read as "" from anything else (an empty payload too)
+DRAFT_COMMAND = '{{ {"text": value} | tojson }}'
+DRAFT_STATE = "{{ value_json.text if value_json is defined and value_json.text is string else '' }}"
+DRAFT_PRESS = '{"send": true}'
+
+
+def text_room(config: Config, target: Target | None, radio: RadioInfo | None) -> int:
+    """The bytes a message text has to `target` beside its prefix and suffix, or to a companion
+    (None, as through `contacts/<key>/send`): the `max` of its draft. A channel's room depends on
+    the radio's name; without it, that of the shortest name (the gateway cuts a held draft when
+    the name lowers it)."""
+    messages = config.messages
+    channel = target is not None and target.kind is MessageKind.CHANNEL
+    limit = text_limit(
+        MAX_TEXT_BYTES,
+        channel=channel,
+        radio_name=radio.name if radio is not None else None,
+        nonce=messages.confirm_nonce,
+    )
+    policy = TextPolicy(limit, ascii_only=messages.ascii_only, truncate=messages.truncate)
+    if target is None:
+        return room_bytes(policy)
+    return room_bytes(policy, prefix=target.prefix, suffix=target.suffix)
+
+
+def draft_options(state: str, request: str, room: int) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The options of a chat's draft text and of its Send button: `state` and `request` are the
+    draft's topics, `room` the text's `max`."""
+    text = {
+        "command_topic": request,
+        "command_template": DRAFT_COMMAND,
+        "state_topic": state,
+        "value_template": DRAFT_STATE,
+        "mode": "text",
+        "max": room,
+        "icon": "mdi:message-draw",
+        "qos": 0,
+    }
+    send = {"command_topic": request, "payload_press": DRAFT_PRESS, "icon": "mdi:send", "qos": 0}
+    return text, send
 
 
 def discovery_payload(
@@ -239,6 +294,49 @@ def discovery_payload(
             state_topic=topics.delivery,
             event_types=[state.value for state in DeliveryState],
         ),
+        # the `history` document: the newest message's time (unknown while there is none), the
+        # messages as attributes. Available while the document is there: the gateway never
+        # clears it, so the messages stay readable while the gateway is offline.
+        "message_history": component(
+            "message_history",
+            "sensor",
+            # Translators: sensor (timestamp) of the gateway: the latest messages it received and
+            # sent; its state is the time of the newest one
+            ha_name("Message history"),
+            device_class="timestamp",
+            state_topic=topics.history,
+            value_template="{{ value_json.messages[0].at if value_json.messages else None }}",
+            json_attributes_topic=topics.history,
+            availability=[{"topic": topics.history, "value_template": "{{ 'online' }}"}],
+        ),
+        # the `pending` document: how many messages are on their way, the one being sent
+        # included (#112), the messages as attributes; available as the history is
+        "pending_messages": component(
+            "pending_messages",
+            "sensor",
+            # Translators: sensor of the gateway: how many messages it accepted and has not
+            # delivered or given up yet, the one being sent included
+            ha_name("Messages on their way"),
+            icon="mdi:tray-arrow-up",
+            state_topic=topics.pending,
+            value_template="{{ value_json.total }}",
+            json_attributes_topic=topics.pending,
+            availability=[{"topic": topics.pending, "value_template": "{{ 'online' }}"}],
+        ),
+        # the `config` document: the settings in effect as attributes, since the start, which is
+        # its state; the gateway's availability, as another start may bring other settings
+        "configuration": component(
+            "configuration",
+            "sensor",
+            # Translators: sensor (timestamp) of the gateway: the settings of its configuration
+            # file that are in effect, as attributes; its state is the time it started with them
+            ha_name("Configuration"),
+            device_class="timestamp",
+            entity_category="diagnostic",
+            state_topic=topics.config,
+            value_template="{{ value_json.started_at }}",
+            json_attributes_topic=topics.config,
+        ),
         # also with telemetry off: a disabled component that goes takes the whole device away
         "telemetry_status": component(
             "telemetry_status",
@@ -363,6 +461,25 @@ def discovery_payload(
         # configuration; {alias} is the target's name there, as the user wrote it
         name = ha_name("Send to {alias}", alias=target.alias)
         components[key] = component(key, "notify", name, command_topic=topics.send(target.alias))
+        write = f"write_{target.alias}"
+        names = (
+            # Translators: text entity of the gateway: the draft of a message to a target of
+            # the configuration, kept by the gateway until it is sent; {alias} as above
+            ha_name("Write to {alias}", alias=target.alias),
+            # Translators: button of the gateway: sends the draft of "Write to {alias}"
+            ha_name("Send what is written to {alias}", alias=target.alias),
+        )
+        text, send = draft_options(
+            topics.target_draft(target.alias),
+            topics.target_draft_request(target.alias),
+            text_room(config, target, radio),
+        )
+        components[write] = component(write, "text", names[0], **text)
+        # no alias holds "__": `write_<alias>_send` would be the text of a target `<alias>_send`;
+        # the entity IDs differ by platform, so the button keeps the one of design D-47
+        button = f"{write}__send"
+        send["default_entity_id"] = f"button.{uid}_{write}_send"
+        components[button] = component(button, "button", names[1], **send)
     with_removed(components, uid, topics, removed, ha_name, bind=bind)
     device: dict[str, Any] = {
         "ids": [uid],
@@ -507,7 +624,11 @@ def _mesh_components(
             icon="mdi:account-multiple",
             state_class="measurement",
             value_template="{{ value_json.total }}",
-            json_attributes_template="{{ {'max': value_json.max} | tojson }}",
+            # why requests to add or remove contacts are refused now (#99)
+            json_attributes_template=(
+                "{{ {'max': value_json.max, 'manage_reason': value_json.get('manage_reason')}"
+                " | tojson }}"
+            ),
             **contacts,
         ),
         "nodes": component(

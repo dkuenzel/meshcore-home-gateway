@@ -5,8 +5,9 @@ design is in [design §6.12](design.md#612-translations) and
 [ADR 0019](decisions/0019-internationalisation-with-gettext.md); the rules for code that shows a
 text are in [development.md](development.md#translations).
 
-1.1.0a4 ships English only. Every other language comes as a contribution: the catalog files of
-[Adding a language](#adding-a-language), in one pull request. A language is offered only when
+2.1.0 ships English and German: the command line, the installer, the names in Home Assistant
+and the dashboard, each in both. Every other language comes as a contribution: the catalog files
+of [Adding a language](#adding-a-language), in one pull request. A language is offered only when
 its texts are complete.
 
 ## What is translated
@@ -60,6 +61,8 @@ the same without the other tests).
 * `# Translators:` notes in the code reach the catalogs as `#.` comments: they say where a text
   is shown, what a field holds, and limits such as "at most 12 characters" for the installer's
   buttons.
+* The dashboard's three tabs, *Overview*, *Chats* and *Contacts*, have at most 22 letters
+  together, or they do not fit a phone.
 
 A translation that breaks a rule is refused by `make check`; at run time the program shows the
 English text instead.
@@ -78,6 +81,11 @@ look-alike key), say how a connection is secured, or ask for a secret, and the t
 say all of it and nothing more. A new text that names such things (TLS, a password, a user name,
 authentication) needs the note, or a place in the test's list of texts that are none
 (`tests/test_translations.py`).
+
+German is the project's own language: the project started in it, writes its catalogs and its
+maintainer reads them, so a German text needs no second speaker (the maintainer's decision for
+2.1.0). A new or changed German security text is still translated back by machine and compared
+with the English before it is merged. Every other language is reviewed as above.
 
 ## Home Assistant names
 
@@ -137,9 +145,9 @@ For a language `ll` (its ISO 639-1 code, two lower-case letters):
 
 Nothing else changes for a language: `tests/test_adding_a_language.py` adds a pseudo-language to a
 copy of the checkout through exactly these steps and runs the checks that read the languages in
-it. The first language besides English also shows the installer's language menu; the tests of
-the English dialogs run a copy of the script that offers English only. `make release` publishes
-each pack beside the installer. A language listed in `LANGUAGES` is a choice of
+it. A language besides English also shows the installer's language menu, as German does; the
+tests of the English dialogs run a copy of the script that offers English only. `make release`
+publishes each pack beside the installer. A language listed in `LANGUAGES` is a choice of
 `[homeassistant] language`, which a later version keeps
 ([compatibility](development.md#compatibility)): remove one only in a major version.
 

@@ -10,7 +10,8 @@ loop until the stop; wiring.py builds it with its parts and connects them.
   inbox (inbox.py: deduplicated; command policy with a fresh contact table and a memory of
   look-alikes);
 * status (here, the document in status.py): retained state document, systemd watchdog and status;
-  an exclusion from telemetry that could not be stored is written again;
+  an exclusion from telemetry that could not be stored is written again; the `config` document
+  at the start and at each radio connect (config_view.py);
 * announcements to Home Assistant (announcer.py), contact requests (contact_manager.py);
 * telemetry, if enabled: asks the radio's companions one at a time, after the messages
   (telemetry_poller.py, ADR 0018); it gives the observer each companion's state and hears of
@@ -30,6 +31,7 @@ from collections.abc import Callable
 from meshcore_home_gateway.announcer import Announcer
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.config_checks import start_warnings
+from meshcore_home_gateway.config_view import shown_settings, target_settings
 from meshcore_home_gateway.contact_manager import ContactManager
 from meshcore_home_gateway.health import FAILURES
 from meshcore_home_gateway.inbox import Inbox, target_channels
@@ -121,6 +123,7 @@ class Bridge:
         if self.config.messages.publish_channels == "targets":
             channels = ", ".join(map(str, sorted(target_channels(self.config)))) or "none"
             log.info("channel messages published only from the channels of targets: %s", channels)
+        observe(self._configuration, None)  # the broker's connect publishes it
         await self._bus.start()
         self.outbox.restore()
         self._notify("READY=1")
@@ -148,6 +151,7 @@ class Bridge:
                     await asyncio.wait([telemetry])
                 await self.outbox.finish(tasks["outbox"])  # before the radio: it may await an ack
                 await self._finish_inbound(tasks["radio"])
+                self.outbox.keep()  # last: with the answers to the commands just handled (#92)
                 for task in tasks.values():
                     task.cancel()
         finally:
@@ -210,6 +214,7 @@ class Bridge:
         takes = self._contacts.takes_requests(info)
         observe(self.observer.set_manage, takes, self._contacts.refusal(info))
         observe(self.observer.radio_connected, info.device.max_contacts, session.tuning)
+        observe(self._configuration, info)  # a channel text's room follows the radio's name
         for report in self._profile.take_reports() if self._profile else []:
             observe(self.observer.profile_applied, report)
         self._check_radio(session)
@@ -232,6 +237,11 @@ class Bridge:
             self.status.publish()
         return delay
 
+    def _configuration(self, info: RadioInfo | None) -> None:
+        """The `config` document, each target's room as the radio's name leaves it (None: not
+        connected yet)."""
+        self.observer.configuration(target_settings(self.config, info), shown_settings(self.config))
+
     def _may_restart(self) -> bool:
         """Whether the session may restart the radio now to set its clock back: no message is
         queued or being delivered, and it did not do so in the last day."""
@@ -249,7 +259,18 @@ class Bridge:
     def _link_started(self, session: RadioPort) -> None:
         """Over TCP: whether another client took the link before this one (core.link)."""
         uptime_s, read_at = _uptime(session)
-        if self.radio.watch.started(uptime_s, read_at):
+        watch = self.radio.watch
+        if not watch.started(uptime_s, read_at):
+            return
+        if watch.restarted:
+            log.warning(
+                "radio: the radio closed the TCP connection, then restarted (uptime %s s): "
+                "another client connected to it, which can control the radio, read its private "
+                "key and restart it; the gateway took the link back "
+                "(docs/deployment.md, Troubleshooting)",
+                uptime_s,
+            )
+        else:
             log.warning(
                 "radio: the radio closed the TCP connection and kept running (uptime %s "
                 "s): another client connected to it, which can control the radio and "

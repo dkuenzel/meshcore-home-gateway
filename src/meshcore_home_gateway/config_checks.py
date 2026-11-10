@@ -25,7 +25,70 @@ def protected_names(config: Config) -> dict[str, str]:
 
 def start_warnings(config: Config) -> list[Text]:
     """What the service logs at its start and `check-config` shows."""
-    return protected_look_alikes(config) + broker_warnings(config) + log_level_warnings(config)
+    return (
+        protected_look_alikes(config)
+        + alias_pairs(config)
+        + ignored_codes(config)
+        + broker_warnings(config)
+        + log_level_warnings(config)
+    )
+
+
+def ignored_codes(config: Config) -> list[Text]:
+    """The code secrets of keys that are not command senders: removing a sender ends its
+    commands, so its secret is ignored until `commands revoke` removes it (#80). While one is
+    ignored, also each sender without a secret, whose commands are refused (code_missing): a
+    sender's key corrected by hand leaves its secret behind, and the corrected key must not
+    command without a code. Once no secret is ignored, such a sender commands without one, so
+    the warning says to enrol a corrected key first."""
+    commands = config.commands
+    warnings = [
+        # Translators: key is a full public key; command is the command line that removes it
+        Text(
+            "commands.codes_file: {key} has a code secret but is not in commands.senders: the "
+            "secret is ignored; '{command}' removes it",
+            key=key,
+            command=f"meshcore-home-gateway commands revoke {key}",
+        )
+        for key in commands.ignored_code_keys
+    ]
+    if not commands.ignored_code_keys:
+        return warnings
+    return warnings + [
+        # Translators: security text (docs/translations.md): sender is a full public key;
+        # command is the command line that gives it a code secret; code_missing, commands
+        # revoke, enrol and revoke stay as they are
+        Text(
+            "commands.senders: {sender} has no code secret while one is ignored: its commands "
+            "are refused (code_missing) until '{command}' gives it one. Once no secret is "
+            "ignored (commands revoke), it commands without a code: enrol a key corrected by "
+            "hand first. Restart the service after enrol or revoke",
+            sender=sender,
+            command=f"meshcore-home-gateway commands enrol {sender}",
+        )
+        for sender in sorted(commands.senders)
+        if commands.secret(sender) is None
+    ]
+
+
+def alias_pairs(config: Config) -> list[Text]:
+    """Target aliases that differ only in '-' and '_' (`a-b`, `a_b`): both are valid, but Home
+    Assistant makes the same entity IDs of them, so the notify entity of the target announced
+    later gets `_2`, and nothing tells which is which. One warning per group."""
+    groups: dict[str, list[str]] = {}
+    for target in config.targets:
+        groups.setdefault(target.alias.replace("-", "_"), []).append(target.alias)
+    return [
+        # Translators: aliases are two or more target aliases, such as "a-b, a_b"; _2 is the
+        # end of an entity ID
+        Text(
+            "targets {aliases} differ only in '-' and '_': Home Assistant gives their entities "
+            "the same IDs and numbers the later ones (_2); rename all but one",
+            aliases=", ".join(sorted(group)),
+        )
+        for group in groups.values()
+        if len(group) > 1
+    ]
 
 
 def protected_look_alikes(config: Config) -> list[Text]:

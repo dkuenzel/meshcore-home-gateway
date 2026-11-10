@@ -12,7 +12,7 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0002](0002-standalone-bridge-instead-of-home-assistant-integration.md) | A standalone bridge service instead of a Home Assistant integration | accepted; scope partly superseded by 0014; note 2026-11-02 (sizes) |
 | [0003](0003-mqtt-as-the-message-bus.md) | MQTT as the message bus between the bridge and its users | accepted |
 | [0004](0004-own-implementation-of-the-companion-protocol-subset.md) | Own implementation of the companion protocol subset | accepted; note 2026-11-02 (sizes) |
-| [0005](0005-runtime-dependencies-from-the-distribution.md) | Runtime dependencies: standard library and the distribution's paho-mqtt | accepted; amended 2026-11-03 (updates installed in the container; the tool chains of the build, the tests and the audit) |
+| [0005](0005-runtime-dependencies-from-the-distribution.md) | Runtime dependencies: the standard library and the distribution's paho-mqtt | accepted; amended 2026-11-03 (updates installed in the container; the tool chains of the build, the tests and the audit) |
 | [0006](0006-deployment-in-an-unprivileged-proxmox-container.md) | Deployment in an unprivileged Proxmox container by a host script with dialogs | accepted; amended 2026-10-23 |
 | [0007](0007-hexagonal-architecture-with-an-asyncio-core.md) | Ports and adapters around a pure domain core, one asyncio event loop | accepted; amended 2026-11-03 (the ports module; the parts of the bridge and their wiring) |
 | [0008](0008-outbound-safety-targets-airtime-budget-deduplication.md) | Outbound safety: configured targets, an airtime budget and deduplication | accepted; targets partly superseded by 0017 (every contact a recipient); amended 2026-11-03 (the budget's level kept, 0028) |
@@ -22,13 +22,13 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0012](0012-project-name-meshcore-home-gateway.md) | The project is named meshcore-home-gateway | accepted; amended 2026-11-03 (the client identifier) |
 | [0013](0013-signed-releases-with-github-artifact-attestations.md) | Signed releases with GitHub artifact attestations | accepted; amended by 0022; amended 2026-11-03 (the installer pins the program; build apart, rebuilt and compared) |
 | [0014](0014-the-gateway-as-the-households-mesh-observer.md) | The gateway as the household's mesh observer: positions, telemetry, contacts and dashboards | accepted |
-| [0015](0015-provider-neutral-documents-on-the-bus.md) | Provider-neutral documents on the bus; front ends are adapters | accepted; amended 2026-11-03 (the integrity model) |
+| [0015](0015-provider-neutral-documents-on-the-bus.md) | Provider-neutral documents on the bus; front ends are adapters | accepted; amended 2026-11-03 (the integrity model); amended by 0031 (the drafts of Home Assistant's chats) |
 | [0016](0016-history-in-a-local-sqlite-database.md) | History in a local SQLite database | accepted; amended 2026-11-03 (the purge in a thread; the state file held in memory) |
 | [0017](0017-contacts-on-the-radio-each-with-its-own-device.md) | Contacts live on the radio; each contact is a recipient with its own device | accepted |
 | [0018](0018-telemetry-pulled-from-the-households-companions.md) | Telemetry and positions pulled from the household's companions, in budget lanes | accepted; amended by 0025 |
 | [0019](0019-internationalisation-with-gettext.md) | Internationalisation with gettext catalogs; English source, German, Dutch, Polish, French | accepted; amended by 0027 |
 | [0020](0020-managed-radio-profile-for-the-observer.md) | A managed radio profile for the observer, reconciled at every connect | accepted |
-| [0021](0021-generated-dashboards-for-desktop-and-mobile.md) | Generated dashboards for desktop and mobile | accepted |
+| [0021](0021-generated-dashboards-for-desktop-and-mobile.md) | Generated dashboards for desktop and mobile | accepted; amended by 0031 |
 | [0022](0022-releases-tagged-by-ci-on-main.md) | Releases tagged by CI on main, from the version a pull request writes | accepted; amended by 0023 and 0030 |
 | [0023](0023-public-interfaces-kept-by-a-snapshot.md) | Four public interfaces, kept within a major version by a policy and a snapshot of the code | accepted |
 | [0024](0024-telemetry-values-in-home-assistant-expire.md) | Telemetry values in Home Assistant expire when the companion stops answering | accepted |
@@ -38,3 +38,4 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0028](0028-outgoing-queue-kept-across-restarts.md) | The outgoing queue kept across restarts, alerts first | accepted; amended 2026-11-03 (where its tests are) |
 | [0029](0029-what-a-contact-is-trusted-with.md) | What a contact of the radio is trusted with | accepted |
 | [0030](0030-release-checked-by-ci-self-test-and-use.md) | A release checked by CI, the installer's self-test and the maintainer's use, not by a manual checklist | accepted |
+| [0031](0031-household-chat-problems-and-settings-on-the-generated-dashboard.md) | Household chat, problems and settings on the generated dashboard | accepted |

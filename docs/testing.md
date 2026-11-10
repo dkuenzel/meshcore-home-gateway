@@ -37,12 +37,32 @@ IDs, unique IDs and attributes in English and in a pseudo-language, a change of 
 renames only display names, a device name the user chose kept) and `test_dashboard.py` the
 generated dashboard (loaded as a YAML-mode
 dashboard, its Markdown cards rendered as the frontend asks for them, also with hostile names and
-texts in every place, the visibility of its cards, the map's trackers and hint, the guide's script
-run by a household user, in English and in a pseudo-language) into the MQTT integration of the
-Home Assistant release that
+texts in every place, the visibility of its cards for a household user, the status line and the
+problem cards, the chats' threads, the map's trackers and hint, the guide's script run by a
+household user, in English and in a pseudo-language) into the
+MQTT integration of the Home Assistant release that
 `pytest-homeassistant-custom-component` pins (`home-assistant/requirements.in`; the environment is
 installed from the hash-pinned `home-assistant/requirements.txt` into `.venv-homeassistant`, about
-900 MB). It checks what [home-assistant.md](home-assistant.md) promises, including the example
+900 MB). A card's visibility is decided as the frontend decides it since Home Assistant 2026.10
+(`home-assistant/tests/visibility.py` names the frontend's source lines it follows): `screen`,
+`user`, `view_columns`, `location`, `time` and a `state` with an attribute in the test, every
+other condition sent to Home Assistant's `subscribe_condition` as a user who is no administrator;
+an error there hides the card. A card shows only with every card, stack, conditional row and
+section above it (`Viewer.shown`): a section whose cards all hide is hidden, and a Markdown card
+that may be empty hides by its condition of its own content while it renders nothing (the
+generator writes that condition in place of `show_empty: false`, development.md rule 21). `test_helpers.py` checks these
+helpers and `cards()`, which finds a page's cards by its path, a chat page's alias or a contact's
+key. The chats' cards read the gateway's message history, its messages on their way and its
+configuration: `test_chats.py` sets the sensors' states as the gateway announces them, and its
+last three tests feed the documents and the drafts through the gateway's own discovery.
+`test_contacts.py` checks the page *Contacts* (each switch and *Remove* shown only for this
+gateway's contact with the key the dashboard was made for, also with a second gateway, a reused
+name, a removed contact and a contact prefix set later; why the controls cannot act; every control
+as a user who is no administrator), and `test_gateway.py` the pages *Gateway* and *Settings* and
+the map's hints, the configuration fed through the gateway's own discovery. A test
+that gives a chat its field and *Send* button itself, as discovery documents of its own, starts
+without the gateway's (`gateway(drafts=False)`, `deliver(drafts=False)`). The suite checks what
+[home-assistant.md](home-assistant.md) promises, including the example
 automations taken from that page, and that Home Assistant logs no warning. It is a separate CI job
 and not part of `make check`, because Home Assistant needs a newer Python than the gateway and
 is a large download. Run it after changing discovery, payloads, the state document, the
@@ -56,6 +76,17 @@ there is a Home Assistant change the next update of the pin has to meet; note it
 request. The Home Assistant releases tested with are listed in
 [home-assistant.md](home-assistant.md#requirements).
 
+Since 2026.11 Home Assistant publishes its own test plugin, `pytest-homeassistant`, and the suite
+runs on that series too: `make ha-test HA_SERIES=2026.11` installs the series' own lock,
+`home-assistant/requirements-2026.11.txt`, into `.venv-homeassistant-2026.11`. The tests take the
+plugin's helpers from `home-assistant/tests/ha_plugin.py`, which imports them from whichever
+plugin is installed. `make ha-lock HA_SERIES=2026.11` writes the lock from
+`requirements-2026.11.in` once the cooldown admits its releases; until then `make ha-test
+HA_SERIES=2026.11` says so and fails, and the CI job *Home Assistant contract (2026.11)* only
+notes it. Where the series differ, a test expects each one's behaviour: since 2026.11 Home
+Assistant clears a device's discovery topic once for each entity it removes
+(`CLEARS_PER_ENTITY` in `test_contract.py`).
+
 | Suite | Files | Needs |
 | --- | --- | --- |
 | Core rules | `tests/test_text.py`, `test_budget.py`, `test_commands.py`, `test_contacts.py`, `test_airtime.py`, `test_mesh.py`, `test_lpp.py` (CayenneLPP frames and the names of their readings), `test_telemetry.py` (the telemetry schedule and each companion's state on a set clock), `test_adverts.py` (the check for positions in adverts: logged adverts, the radio's push and the record) | nothing |
@@ -63,7 +94,7 @@ request. The Home Assistant releases tested with are listed in
 | Protocol | `tests/test_framing.py`, `test_codec.py` (golden frames from the firmware source), `test_packet.py`, `test_links.py` | nothing |
 | Radio session and bridge | `tests/test_session.py`, `test_bridge.py` and the tests of its parts (`test_outbox.py`, `test_inbox.py`, `test_announcer.py`, `test_status.py`, `test_config_checks.py`; what they share in `bridge_harness.py`), `test_observer.py`, `test_contact_manager.py`, `test_profile.py`, `test_telemetry_poller.py` (emulated radio, with remote companions that answer telemetry) | nothing |
 | MQTT | `tests/test_mqtt_client.py` | `mosquitto` for the tests marked `broker` |
-| Documents, Home Assistant discovery, payloads | `tests/test_views.py`, `test_discovery.py`, `test_payloads.py`, `test_contact_devices.py`, `test_manage_entities.py` | nothing |
+| Documents, Home Assistant discovery, payloads | `tests/test_views.py`, `test_config_view.py`, `test_discovery.py`, `test_payloads.py`, `test_contact_devices.py`, `test_manage_entities.py` | nothing |
 | Transports | `tests/test_transport.py` (pseudo terminal, local TCP) | Linux |
 | Configuration, state, history, packaging | `tests/test_config.py`, `test_state.py`, `test_history.py`, `test_build_pyz.py` (the zipapp holds the catalogs and the dashboard's template, no compiled catalog), `test_release_notes.py` | nothing |
 | Translations | `tests/test_texts.py`, `test_catalog.py` (the PO reader and the MO writer, against a golden catalog and GNU `msgfmt`), `test_i18n.py` (the language asked for, the catalogs, the guard against a translation that would break a text), `test_i18n_tool.py` (extraction, merge, checks, the installer's packs, their pins and the packs of a release), `test_translations.py` (the committed templates, catalogs and packs as `make translations` writes them), `test_adding_a_language.py` (a copy of the checkout gains a pseudo-language through the steps of [Adding a language](translations.md#adding-a-language) alone, and the suites that read the languages pass in it) | GNU gettext (`msgfmt`) for the tests that compare with it; git |
@@ -71,9 +102,9 @@ request. The Home Assistant releases tested with are listed in
 | Dashboard | `tests/test_dashboard.py` (the generator, and the template's rules on the shipped template: markers, the macro `m`, quoting, translator notes, the mapping macros against the gateway's value lists) | nothing |
 | systemd | `tests/test_systemd.py` (notification protocol on a local socket) | Linux |
 | Service manager | `tests/test_unit_run.py` (`make unit-run` after `make dist`: the zipapp and the unit installed as an installation has them and run under systemd as the service user, with an emulated radio over TCP and a private broker: readiness, the unit's sandbox, `doctor`, a broker restart, the watchdog fed and firing on `SIGSTOP`) | root, systemd, `mosquitto`, the distribution's `python3` with paho-mqtt 2; it installs into the system, so only on a machine to throw away: CI's job *unit check* |
-| System | `tests/test_system.py` (the service as a process with an emulated radio and a broker; a broker restart, without its retained messages) | `mosquitto` |
+| System | `tests/test_system.py` (the service as a process with an emulated radio and a broker; a broker restart, without its retained messages), `test_emulated_radio.py` (the browser check's gateway on the emulated radio, [above](#the-dashboard-in-a-browser): the household it fills, a draft sent once, the stuck messages, and the round trip against a stand-in for Home Assistant's REST API) | `mosquitto` |
 | Documentation, tooling | `tests/test_docs.py` (relative links and headings in every Markdown file), `test_tooling.py`, `test_public_interface.py` (the snapshot of the public interfaces, [development.md](development.md#compatibility)), `test_release_plan.py`, `test_fetch_firmware.py` (the pinned fetch of the firmware, from a local repository) | git |
-| Home Assistant contract | `home-assistant/tests/test_contract.py`, `test_contact_devices.py`, `test_manage_contacts.py`, `test_telemetry.py`, `test_adverts.py`, `test_traces.py`, `test_dashboard.py` (above) | `make ha-test`: Python 3.14.2 or newer |
+| Home Assistant contract | `home-assistant/tests/test_contract.py`, `test_contact_devices.py`, `test_manage_contacts.py`, `test_telemetry.py`, `test_adverts.py`, `test_traces.py`, `test_drafts.py`, `test_languages.py`, `test_dashboard.py`, `test_overview.py`, `test_chats.py`, `test_contacts.py`, `test_gateway.py` (the dashboard's pages, above), `test_helpers.py` (above) | `make ha-test`: Python 3.14.2 or newer |
 | Firmware | `tests/firmware/test_smoke.py` (the companion and the repeater start on the simulated air, all on EU/UK Narrow with CR 4/8; a channel message crosses the air; the gateway's probe reads the companion through its serial transport, twice; the port is exclusive and opens again right after a close), `test_air.py` (the air with stand-in nodes: time on air, collisions, half duplex, one-way links, loss, delay, radio settings), the scenarios of checklist steps 3–6 and 10 (`test_messages.py`: to a channel and to B, a text cut to 160 bytes, B out of reach, what B sends), 11–13, 55 and 56 (`test_commands.py`: commands of a sender and of another contact, one that waited in the radio, codes and replies) and 14 (`test_radio_profile.py`: the profile set back and kept), of steps 29, 30, 33, 34, 35 and 39 (`test_first_start.py`, `test_permissions.py`, `test_paths.py`, `test_answer_sizes.py`, `test_message_order.py`), the parts of steps 41 and 43 on the check for positions in adverts (`test_advert_check.py`), and `test_adverts_and_positions.py`, the firmware's part of step 31 ([below](#scenarios-of-the-hardware-checklist)), `test_clock.py`, a radio clock ahead set back by a restart (the firmware starts at its newest contact time plus a second, the next connect sets it forward), and `test_acknowledgements.py`, forged acknowledgements (SEC-001): a stand-in beside A who knows the text confirms a message B never received, not with `confirm_nonce`, and one that answers sooner than a repeater allows is `suspect` while B's genuine one is not | `make firmware-test`: git, `g++`, `libssl-dev`, `mosquitto` |
 | Installer | `tests/test_installer.py` (stub `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query`, `whiptail`; a copy of the script that offers English only), `test_installer_language.py` (the messages block cut out and run alone, packs and their pins, the language menu with a pseudo-language, where a pack comes from, the program's messages in the dialogs' language, the size of the published script) | bash |
 
@@ -113,6 +144,93 @@ installer's language tests make a pack of `xx` from the installer's template and
 copy of the script whose block of language packs lists it (`offering`): through a `wget` stub, or
 next to a checkout. They keep the published script within 98,304 bytes (96 KiB, three quarters
 of what Linux takes as one argument, `bash -c "$(wget …)"`).
+
+## The dashboard in a browser
+
+The contract tests decide what the frontend shows from the dashboard's configuration. Two tools
+check what a browser shows, against a running Home Assistant with its frontend. They are not part
+of `make check`.
+
+* `tools/browser_check.py` logs in through Home Assistant's own login page as the user given, opens
+  each view of a dashboard at a phone, a tablet and a desktop size, in a light and a dark colour
+  scheme, and saves a screenshot of each. It lists the console errors of each page and exits with
+  1 when a page reported one, or when a view is missing. An error that matches a pattern of
+  `--allow-error` stays in the list and fails no page: without internet, the map's tile proxy
+  answers 502 on every map page (`--allow-error '502 \(Bad Gateway\)'`;
+  `tests/test_browser_check.py` checks the choice).
+* `tools/emulated_radio.py run` gives that Home Assistant a real gateway without hardware. It
+  serves the emulated radio of `tests/radio_emulator.py` over TCP, as a WiFi companion does, and
+  starts `meshcore-home-gateway run` on it and on the broker. Then it fills the gateway: the
+  targets `family` (a channel), `alice` and `bob` (companions) and the companion Carol, who is no
+  target; three received and two sent messages in the history; and a draft in Bob's chat. The
+  radio acknowledges every direct message at once, and the airtime budget is an hour's worth, so a
+  hundred messages go out within a few minutes. With `--stuck` the budget is a second an hour, and
+  the last messages to `family` stay on their way (`pending`), as behind a radio that used up its
+  airtime. Ctrl-C stops the gateway, which empties its drafts, and then the radio.
+* `tools/emulated_radio.py round-trip` sends one draft through Home Assistant. As the user given,
+  through Home Assistant's REST API, it writes a new text into a chat's *Write to …*, presses its
+  *Send what is written to …* and waits for the text in *Message history*. It passes when the text
+  is there once, is no longer in *Messages on their way*, and the draft is empty again.
+
+Set up the browser check once, in an environment of its own (Python 3.11 or newer):
+
+```sh
+python3 -m venv .venv-browser
+.venv-browser/bin/pip install --require-hashes -r tools/browser_check-requirements.txt
+.venv-browser/bin/python -m playwright install chromium
+```
+
+Then, for each Home Assistant version to check (before a release, each series that
+[home-assistant.md](home-assistant.md#requirements) names as tested):
+
+1. Run a broker on the loopback that lets clients in without a user name, for example
+   `mosquitto -c broker.conf` with `listener 1884 127.0.0.1` and `allow_anonymous true` in
+   `broker.conf`.
+2. Run Home Assistant with its frontend and the MQTT integration on that broker. Add a user who
+   is no administrator: *Settings → People → Add person*, *Allow login* on,
+   *Administrator* off. The checks run as that user, as a household would.
+3. Start the gateway on the emulated radio. The work folder must be new or empty; it keeps the
+   gateway's configuration, its state and its log, `gateway.log`:
+
+   ```sh
+   .venv/bin/python tools/emulated_radio.py run --mqtt-port 1884 --work build/emulated-radio
+   ```
+
+   It prints `ready: …` once the household's messages and the draft are in place.
+4. Make the dashboard from the runner's configuration and state, and add it as a YAML-mode
+   dashboard with the path `mesh-radio1` ([home-assistant.md](home-assistant.md#dashboard)):
+
+   ```sh
+   .venv/bin/meshcore-home-gateway dashboard --config build/emulated-radio/config.toml \
+     --state-dir build/emulated-radio/state > <config>/dashboards/mesh-radio1.yaml
+   ```
+
+5. Send a draft through Home Assistant, with the user's password in `HA_PASSWORD` (or in a file
+   named by `--password-file`; never on the command line):
+
+   ```sh
+   .venv/bin/python tools/emulated_radio.py round-trip --url http://127.0.0.1:8123 \
+     --user household --chat family
+   ```
+
+   It prints what it found and ends with `round trip: passed`, or `failed` and exit code 1.
+   `--chat alice` sends to a companion, whose message waits for its acknowledgement.
+6. Take the screenshots, with the same password:
+
+   ```sh
+   .venv-browser/bin/python tools/browser_check.py --url http://127.0.0.1:8123 \
+     --user household --dashboard mesh-radio1 --out build/browser overview messages contacts map
+   ```
+
+7. Stop the runner with Ctrl-C. For the pages that show messages on their way, start it again with
+   `--stuck` and a new work folder.
+
+`--language` of `tools/emulated_radio.py run` sets the gateway's `homeassistant.language`: the
+names of its entities, and the texts of a dashboard made from its configuration. The language in
+the user's profile sets the rest of Home Assistant's page. Before a release, take the screenshots
+in each language the dashboard ships, on each version: for German, steps 3 to 7 again with
+`--language de`, a new work folder and the dashboard made again, and German in the user's
+profile.
 
 ## Tests against the real firmware
 
@@ -253,10 +371,11 @@ check, not part of `make check`. It caught three bugs the stub could not show: d
 captured output, names starting with `-` taken for options, and non-ASCII characters dropped in a
 locale the host lacks ([platform-notes.md](platform-notes.md#whiptail)).
 
-While the installer offers English only, it shows no language menu; once it offers another
-language, the menu comes first and the script needs a key for it. Whether whiptail draws a
-no-break space (U+00A0, U+202F) is not checked yet: until it is, the catalog checks refuse one in
-the command line's texts, which the installer's boxes show too.
+The installer offers English and German, so its language menu comes first: the script takes
+the menu's default there, German under the script's `LANG=de_DE.UTF-8`, and types the same
+keys into the German dialogs. Whether whiptail draws a no-break space (U+00A0, U+202F) is not
+checked yet: until it is, the catalog checks refuse one in the command line's texts, which the
+installer's boxes show too.
 
 ## Release check
 
@@ -272,19 +391,21 @@ A release is checked in three places, none of them a procedure by hand
    passes, for about a minute while the radio connects. It checks the configuration, the broker
    login, the radio connected as the gateway reports it, its clock and firmware, the gateway's
    health and the container ([deployment.md](deployment.md#install)). The final message says
-   `Self-test: passed`, or shows the problems; nothing is undone.
-3. **The maintainer's use of the release candidate**: he updates his installation with the
-   candidate's installer and uses Home Assistant as every day.
+   `Self-test: passed`, or shows the problems; the report stands above it, with the warnings a
+   passed self-test has. Nothing is undone.
+3. **The maintainer's use of the release candidate**: they update their installation with
+   the candidate's installer and use Home Assistant as every day.
 
    | # | Check | Expected |
    | --- | --- | --- |
-   | R1 | `bash -c "$(wget -qO- https://github.com/dkuenzel/meshcore-home-gateway/releases/download/vX.Y.ZrcN/meshcore-home-gateway-lxc.sh)" -- --update <id>` | the log ends with `self-test passed` |
+   | R1 | The candidate's installer with `--update <id>`, as [deployment.md](deployment.md#update-reconfigure-remove) runs it, from the candidate's release (`releases/download/vX.Y.ZrcN/` for `releases/latest/download/`) | the log says `self-test passed`, followed by doctor's report; the final message says `Self-test: passed` |
    | R2 | The gateway's device in Home Assistant | online, the radio connected |
    | R3 | A companion of the household sends the gateway a message | it shows in Home Assistant |
    | R4 | A companion's switch *Telemetry* | it switches; battery and position follow within the companion's interval |
    | R5 | The map | the household's companions with a position |
 
-   The features he uses besides are checked by using them, and what he finds goes into issues.
+   The features they use besides are checked by using them, and what they find goes into
+   issues.
    The pull request of the release names the Home Assistant version in the table of
    [home-assistant.md](home-assistant.md#requirements).
 
@@ -378,15 +499,15 @@ GPS, a contact of A); for steps 51 and 52 C, another companion with GPS that A i
 
 | # | Step | Expected |
 | --- | --- | --- |
-| 46 | In the container: `meshcore-home-gateway dashboard > /tmp/mesh.yaml` as root, then again with `--state-dir /nonexistent` into another file; on the Proxmox host: `pct exec <id> -- /usr/local/bin/meshcore-home-gateway dashboard > mesh.yaml` | YAML that starts with a comment naming the node and the release's version; standard error "The map lists 1 contact with a position." (B), then "The map lists 0 contacts with a position."; the second file has the note instead of the map; the host's file equals the first |
-| 47 | Desktop: add the dashboard through the raw configuration editor, as the guide says; then the same file as a YAML-mode dashboard | four tabs, no red error card; the guide's menu words match the tested release (correct them otherwise) |
+| 46 | In the container: `meshcore-home-gateway dashboard > /tmp/mesh.yaml` as root, then again with `--state-dir /nonexistent` into another file; on the Proxmox host: `pct exec <id> -- /usr/local/bin/meshcore-home-gateway dashboard > mesh.yaml` | YAML that starts with a comment naming the node and the release's version; on standard error "The map lists 1 contact with a position." (B), the chat pages for channels and for people and "This dashboard needs Home Assistant 2026.10 or later.", then "The map lists 0 contacts with a position."; the second file's *Map* has the note instead of the map; the host's file equals the first |
+| 47 | Desktop: add the dashboard through the raw configuration editor, as the guide says; then the same file as a YAML-mode dashboard | three tabs, *Overview*, *Chats* and *Contacts*, and the pages without a tab, *Map*, *Gateway*, *Settings* and *Help*, each opened from *Overview* and with a back arrow; no red error card; the guide's menu words match the tested release (correct them otherwise) |
 | 48 | Phone and desktop, each view, in the dark and the light theme | the sections stack in order on the phone; the tables fit or scroll inside their card, the page does not scroll sideways; the tiles show the gateway's names |
-| 49 | Unplug A's USB cable; stop the gateway; start both again | within a minute red *Radio disconnected*, then red *Gateway offline*, then green *Gateway ready* |
-| 50 | Add the guide's script *Mesh message*. Tap *Write a message*, send to B, then to a channel target; from B send `![](https://example.org/p.png) [x](https://example.org) <b>b</b>` | before the script a hint instead of the tile; the form shows *To* (the targets and the contacts by name) and *Message*; B receives; *Last sent* shows *confirmed*, then *sent*; *Last message* shows B's text literally; the browser's network log has no request to example.org |
-| 51 | C advertises; *Add heard node* for C; then *Add contact (key or link)* with a wrong key; rename B to `<i>x</i>[y](https://e.x)` in the app and advertise | C in *Nodes heard*, then in the contacts table within a minute, *Last contact event* "added to the radio"; for the wrong key "request refused" with its reason code; B's new name literal in the table (a name with a line break cannot be typed in the app; the contract tests cover it) |
+| 49 | Unplug A's USB cable; stop the gateway; start both again | within a minute the first line of *Overview* red *Radio disconnected.*, then red *Gateway offline.*, then green *All fine.* |
+| 50 | Open B's chat page from *Chats*, type in its field *Write to …*, tap Return, then *Send*; the same on a channel target's page; from B send `![](https://example.org/p.png) [x](https://example.org) <b>b</b>` | B receives; each field is empty once its message is queued; on the right of each page the message, in italics while on its way, then with ✓✓ (delivered) for B and ✓ (sent) for the channel; B's text literal on its page and in *Latest messages*; the browser's network log has no request to example.org |
+| 51 | C advertises; on *Contacts* pick C in *Add at once: pick a node heard nearby*; then paste a wrong key into *Add by key or contact link* and tap Return; rename B to `<i>x</i>[y](https://e.x)` in the app and advertise | C in *Nodes heard nearby*, then in *People and devices* within a minute, the result below the controls and the row *Contact* of *Latest of each kind* on *Gateway* "added to the radio"; for the wrong key "request refused" with its reason in words; B's new name literal in the table and on its chat page (a name with a line break cannot be typed in the app; the contract tests cover it) |
 | 52 | Map: B walks 200 m away and back; C with GPS on; then make the dashboard again and paste it | B's trace; the hint names C until the new dashboard lists it |
-| 53 | Update the gateway, or start a test installation with another version, without making the dashboard again | the amber version card with both versions; gone once the dashboard is made again |
-| 54 | A household user who is no administrator, on the phone; then open `/config/devices` as that user; then press `e`, search *Remove from radio* and open a contact's button (do not press it) | sees every view, sends with the form, switches a contact's *Telemetry* in *Telemetry and removal*, cannot edit the dashboard; the device page is refused; the entity search opens the button with *Press*, as the guide says (anyone can remove a contact that way) |
+| 53 | Update the gateway to another minor version, or start a test installation of one, without making the dashboard again | on *Overview* the amber version card with both versions and which of the two to update (none for another patch version); gone once the dashboard is made again |
+| 54 | A household user who is no administrator, on the phone; then open `/config/devices` as that user; then press `e`, search *Remove from radio* and open a contact's button (do not press it) | sees every view, sends from a chat page's field with *Send*, switches a person's *Ask for position and battery*, gets the question of a contact's *Remove* in *Add or remove* (do not confirm it), cannot edit the dashboard; the device page is refused; the entity search opens the button with *Press*, as the guide says (anyone can remove a contact that way) |
 
 Steps 55 and 56 need an authenticator app (any TOTP app) on B's owner's phone, step 57 a node with MeshCore's sensor firmware, step 58 openHAB with its MQTT binding on the same broker.
 
@@ -395,7 +516,7 @@ Steps 55 and 56 need an authenticator app (any TOTP app) on B's owner's phone, s
 | 55 | Set `[commands] codes_file`, run `meshcore-home-gateway commands enrol <B's key>`, scan `qrencode -t ansiutf8 '<line>'` with the app, restart the service. B sends `status <code>`, the same text anew within 30 s, then `status` | a `command` event `status` with empty `args`; then `received` shows `code_reused`, then `code_missing` |
 | 56 | Set `[commands] reply = "all"` and `prefix = "Home: "` on a channel target; restart. B sends `status <code>`, then `status`; publish `Gate open` to the channel target | B's app shows `ok: status`, then `rejected: code_missing`, each confirmed in `delivery` with B's key as `target`; the channel shows `Home: Gate open` |
 | 57 | A sensor (MeshCore's sensor firmware): `setperm <the gateway radio's key> 1` on it, add it as a contact, set `[telemetry] ask_types = ["chat", "sensor"]`, restart, switch its *Telemetry* on | its device gets *Telemetry*, *Telemetry state* and *Battery*; the state turns `no_position` (or `answering` with a GPS) after its first request |
-| 58 | Set `[homie] enabled = true` with the ACL lines of [mqtt-api.md](mqtt-api.md#homie-homiehomie_device), restart; in openHAB add the discovered device; send `Hi` with B's node's *Send*; then `systemctl kill -s KILL meshcore-home-gateway` | openHAB lists the device `meshcore-radio1` with a node per contact, B's battery, position, last heard and telemetry state; B receives `Hi` and `delivery` confirms it; after the kill the device turns `lost` within 1.5 × `keepalive_s` (90 s), `ready` again after the restart |
+| 58 | Set `[homie] enabled = true` with the ACL lines of [mqtt-api.md](mqtt-api.md#homie-homiehomie_device), restart; in openHAB add the discovered device; send `Hi` with B's node's *Send*; then `systemctl kill -s KILL meshcore-home-gateway` | openHAB lists the device `meshcore-radio1` with the node *Gateway* and a node per contact, B's battery, position, last heard and telemetry state; B receives `Hi` and `delivery` confirms it; after the kill the device turns `lost` within 1.5 × `keepalive_s` (90 s), `ready` again after the restart |
 
 ### Where each step is checked
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import struct
 import threading
 from collections.abc import Callable
@@ -43,12 +44,13 @@ from meshcore_home_gateway.state import (
     RetainedKeys,
     TelemetryExclusions,
 )
-from meshcore_home_gateway.views import iso
+from meshcore_home_gateway.views import HistoryEntry, iso
 from tests.bridge_harness import (
     ALICE,
     BOB,
     NOW,
     FakeBus,
+    Unreachable,
     fast_timers,  # noqa: F401 - autouse: an advert's read in 50 ms
     make_config,
     new_run,
@@ -235,6 +237,25 @@ def test_contacts_heard_by_advert_and_message_and_the_history(tmp_path: Path) ->
     scenario(main)
 
 
+def test_messages_that_waited_in_the_radio_share_the_time_of_the_connect(tmp_path: Path) -> None:
+    """The radio's message frame carries no time of its own, only the sender's clock
+    (MyMesh.cpp:440-466, 558-582): the messages taken from the radio at the connect get the
+    gateway's time then, one `at` for all. Of two with one `at`, the one listed first came
+    later, in the order the radio received them (#113, docs/mqtt-api.md)."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    for n, text in enumerate(("one", "two", "three")):
+        radio.queue_channel_message(0, f"Carol: {text}", int(NOW) - 3600 + n, push=False)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 3)
+            messages = history["messages"]
+            assert [m["text"] for m in messages] == ["three", "two", "one"]
+            assert {m["at"] for m in messages} == {iso(NOW)}
+
+    scenario(main)
+
+
 def test_the_history_survives_a_restart(tmp_path: Path) -> None:
     path = tmp_path / "history.sqlite3"
     config = make_config()
@@ -272,6 +293,302 @@ def test_the_history_survives_a_restart(tmp_path: Path) -> None:
     assert list(stored.last_fixes()) == [CAROL.public_key.hex()]  # stored once, not per run
     assert len(stored.trace(CAROL.public_key.hex(), 0)) == 1
     stored.close()
+
+
+@pytest.mark.parametrize(
+    ("messages", "shown"),
+    [
+        ("", ["to the family", "Hi from Alice", "family news"]),
+        (
+            'publish_channels = "all"',
+            ["to the family", "Hi from Alice", "Dave: chatter", "family news"],
+        ),
+        (
+            'publish_channels = "all"\nignore_channels = [0]',
+            ["to the family", "Hi from Alice", "Dave: chatter"],
+        ),
+    ],
+    ids=["targets", "all", "all-but-ignored"],
+)
+def test_the_history_document_shows_only_the_channels_that_are_published(
+    tmp_path: Path, messages: str, shown: list[str]
+) -> None:
+    """#103: 1.x stored the messages of every channel. With `publish_channels = "targets"` (the
+    default since 2.0) the retained `history` document must not bring a stranger's text on the
+    Public channel back to the broker at the start; nor the received messages of an ignored
+    channel. The gateway's own message to a target's channel stays, as it does while the gateway
+    runs (all-but-ignored). The rows stay in the history, until they are `messages_days` old."""
+    path = tmp_path / "history.sqlite3"
+    stored = History.open(path)
+    assert stored is not None
+    for entry in (
+        HistoryEntry(NOW - 40, "in", "channel", "family news", channel_index=0, name="Bob"),
+        HistoryEntry(NOW - 30, "in", "channel", "Dave: chatter", channel_index=1, name="Dave"),
+        HistoryEntry(NOW - 20, "in", "contact", "Hi from Alice", ALICE.public_key.hex()),
+        HistoryEntry(NOW - 10, "out", "channel", "to the family", channel_index=0, state="sent"),
+    ):
+        stored.add_message(entry)
+    stored.close()
+    config = make_config(messages=messages)  # the target `alerts` is channel 0
+    histories: list[History] = []
+
+    def observer(bus: FakeBus) -> Observer:
+        history = History.open(path)
+        assert history is not None
+        histories.append(history)
+        return Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW)
+
+    async def main() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, CAROL])
+        async with running(config, radio, tmp_path, observer=observer) as (_, bus, _notes):
+            documents = bus.payloads(f"{ROOT}/history")
+            assert documents
+            for document in documents:
+                assert [m["text"] for m in document["messages"]] == shown
+
+    scenario(main)
+    for history in histories:
+        assert len(history.recent_messages(10)) == 4  # kept: only the documents leave them out
+        history.close()
+
+
+def test_a_message_sent_to_an_ignored_channel_stays_in_the_history_document_at_a_restart(
+    tmp_path: Path,
+) -> None:
+    """#103: a target's channel may also be in `ignore_channels` (alerts go to a busy channel,
+    whose chatter is not published). The gateway's own message there is in the `history` document
+    while it runs, so the next start must not leave it out."""
+    path = tmp_path / "history.sqlite3"
+    config = make_config(messages="ignore_channels = [0]")  # the target `alerts` is channel 0
+    shown: list[list[str]] = []
+    histories: list[History] = []
+
+    def observer(bus: FakeBus) -> Observer:
+        history = History.open(path)
+        assert history is not None
+        histories.append(history)
+        return Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW)
+
+    async def first() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(config, radio, tmp_path, observer=observer) as (_, bus, _notes):
+            bus.send("alerts", "Smoke in the barn")
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 1)
+            shown.append([m["text"] for m in history["messages"]])
+
+    async def second() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(config, radio, tmp_path, observer=observer) as (_, bus, _notes):
+            shown.append([m["text"] for m in bus.payloads(f"{ROOT}/history")[-1]["messages"]])
+
+    scenario(first)
+    scenario(second)
+    for history in histories:
+        history.close()
+    assert shown == [["Smoke in the barn"], ["Smoke in the barn"]]
+
+
+def test_the_history_document_finds_the_published_messages_behind_other_channels_rows(
+    tmp_path: Path,
+) -> None:
+    """#103: after an update from 1.x, the 50 newest rows may all be a busy channel's that is not
+    published. The document of the start still shows the newest messages that are, from further
+    back in the history."""
+    path = tmp_path / "history.sqlite3"
+    stored = History.open(path)
+    assert stored is not None
+    stored.add_message(
+        HistoryEntry(NOW - 200, "in", "contact", "Hi from Alice", ALICE.public_key.hex())
+    )
+    for n in range(observer_module.RECENT_MESSAGES):
+        entry = HistoryEntry(NOW - 100 + n, "in", "channel", f"chatter {n}", channel_index=1)
+        stored.add_message(entry)
+    stored.close()
+    histories: list[History] = []
+
+    def observer(bus: FakeBus) -> Observer:
+        history = History.open(path)
+        assert history is not None
+        histories.append(history)
+        return Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW)
+
+    async def main() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(make_config(), radio, tmp_path, observer=observer) as (_, bus, _n):
+            documents = bus.payloads(f"{ROOT}/history")
+            assert documents
+            for document in documents:
+                assert [m["text"] for m in document["messages"]] == ["Hi from Alice"]
+
+    scenario(main)
+    for history in histories:
+        history.close()
+
+
+class Stepping(EmulatedRadio):
+    """Moves the gateway's wall clock 30 s on when it takes a direct text: the final event of a
+    message comes later than its request."""
+
+    wall: Clock | None = None
+
+    def _send_text(self, p: bytes) -> None:
+        if self.wall is not None:
+            self.wall.now += 30
+        super()._send_text(p)
+
+
+def test_a_sent_message_names_its_target_its_id_and_when_it_was_accepted(
+    tmp_path: Path,
+) -> None:
+    """`queued_at` is the wall clock at the acceptance, not the time of the final event (`at`)
+    and not the monotonic clock the queue counts with; `id` is its delivery events'."""
+    wall = Clock(NOW)
+    radio = Stepping(contacts=[ALICE, BOB])
+    radio.wall = wall
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path, wall_clock=wall) as (_, bus, _n):
+            bus.send("bob", "Back soon")
+            done = await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 1)
+            assert history["messages"] == [
+                {
+                    "at": iso(NOW + 30),
+                    "direction": "out",
+                    "kind": "contact",
+                    "contact_key": BOB.public_key.hex(),
+                    "channel_index": None,
+                    "name": "Bob",
+                    "text": "Back soon",
+                    "state": "confirmed",
+                    "hops": None,
+                    "snr_db": None,
+                    "target": "bob",
+                    "id": done["id"],
+                    "queued_at": iso(NOW),
+                    "suspect": False,
+                    "reason": None,
+                }
+            ]
+
+    scenario(main)
+
+
+def test_failed_and_channel_messages_carry_their_reason_and_no_suspicion(tmp_path: Path) -> None:
+    radio = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            bus.send("alerts", "Gate open")
+            bus.send("bob", "Pump stopped")
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 2)
+            failed, sent = history["messages"]
+            assert (failed["state"], failed["reason"], failed["suspect"]) == (
+                "failed",
+                "no_acknowledgement",
+                None,
+            )
+            assert (failed["target"], failed["queued_at"]) == ("bob", iso(NOW))
+            assert (sent["state"], sent["reason"], sent["suspect"]) == ("sent", None, None)
+            assert (sent["target"], sent["channel_index"], sent["kind"]) == ("alerts", 0, "channel")
+            ids = {d["target"]: d["id"] for d in bus.payloads("/delivery")}
+            assert (failed["id"], sent["id"]) == (ids["bob"], ids["alerts"])
+
+    scenario(main)
+
+
+DAVE = EmulatedContact(bytes.fromhex("d4" * 32), "Dave")  # a companion that is no target
+
+
+def test_a_received_message_names_the_target_it_came_through(tmp_path: Path) -> None:
+    """The first target of the channel, or the contact target of the sender (as `received`
+    names it); none for a sender that is no target. The keys of sent messages are null."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB, DAVE])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.queue_channel_message(0, "Carol: on my way", int(NOW) - 5)
+            radio.queue_direct_message(ALICE.public_key[:6], "hi there", int(NOW) - 4)
+            radio.queue_direct_message(DAVE.public_key[:6], "hello", int(NOW) - 3)
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 3)
+            targets = {m["text"]: m["target"] for m in history["messages"]}
+            assert targets == {"on my way": "alerts", "hi there": "alice", "hello": None}
+            for entry in history["messages"]:
+                assert [entry[k] for k in ("id", "queued_at", "suspect", "reason")] == [None] * 4
+
+    scenario(main)
+
+
+@pytest.mark.parametrize(("round_trip_ms", "suspect"), [(1500, False), (400, True)])
+def test_a_message_to_a_contact_s_key_keeps_its_keys_across_a_restart(
+    tmp_path: Path, round_trip_ms: int, suspect: bool
+) -> None:
+    """Sent through `contacts/<key>/send`: no target, the key is `contact_key`. Bob is two
+    repeaters away: an acknowledgement in 400 ms is `suspect` (SEC-001), and stays so in the
+    history after a restart."""
+    path = tmp_path / "history.sqlite3"
+    histories: list[History] = []
+    sent: dict[str, Any] = {}
+
+    def observer(bus: FakeBus) -> Observer:
+        history = History.open(path)
+        assert history is not None
+        histories.append(history)
+        return Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW)
+
+    async def first() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB], ack_round_trip_ms=round_trip_ms)
+        async with running(make_config(), radio, tmp_path, observer=observer) as (_, bus, _n):
+            await bus.wait_for("radio1/contacts", lambda d: d["total"] == 2)
+            bus.send(BOB.public_key.hex(), "Hello you", contact=True)
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 1)
+            sent.update(history["messages"][0])
+
+    async def second() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB])
+        async with running(make_config(), radio, tmp_path, observer=observer) as (_, bus, _n):
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 1)
+            assert history["messages"] == [sent]
+
+    try:
+        scenario(first)
+        assert (sent["target"], sent["contact_key"]) == (None, BOB.public_key.hex())
+        assert (sent["suspect"], sent["state"]) == (suspect, "confirmed")
+        assert sent["queued_at"] == iso(NOW)
+        assert re.fullmatch("[0-9a-f]{8}", sent["id"])
+        scenario(second)
+    finally:
+        for history in histories:
+            history.close()
+
+
+def test_a_message_kept_over_a_stop_keeps_when_it_was_accepted(tmp_path: Path) -> None:
+    """Accepted while the radio was away, sent after the next start: `queued_at` is the first
+    run's clock, `at` the second's."""
+    accepted, delivered = NOW, NOW + 3600
+
+    async def stopped() -> None:
+        config = make_config()
+        clock = Clock(accepted)
+        async with running(config, EmulatedRadio(), tmp_path, Unreachable, wall_clock=clock) as (
+            _,
+            bus,
+            _n,
+        ):
+            bus.send("bob", "Pump stopped")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "queued")
+
+    async def started() -> None:
+        radio = EmulatedRadio(contacts=[ALICE, BOB])
+        clock = Clock(delivered)
+        async with running(make_config(), radio, tmp_path, wall_clock=clock) as (_, bus, _n):
+            history = await bus.wait_for(f"{ROOT}/history", lambda d: d["total"] == 1)
+            (entry,) = history["messages"]
+            assert (entry["at"], entry["queued_at"]) == (iso(delivered), iso(accepted))
+            assert entry["target"] == "bob"
+
+    scenario(stopped)
+    scenario(started)
 
 
 def test_a_failing_observer_does_not_stop_messages(
@@ -500,7 +817,8 @@ def test_an_advert_flood_is_bounded_on_the_bus_and_in_the_history(
 
 def test_documents_are_published_again_when_the_broker_reconnects() -> None:
     """The MQTT adapter drops retained messages while the broker is away: a reconnect sends the
-    current documents again, and the clearing of a removed contact's topic too."""
+    current documents again, and the clearing of a removed contact's topic too; the history and
+    the messages on their way also before anything was published on them."""
     bus = FakeBus()
     observer = Observer(bus, TOPICS, wall_clock=lambda: NOW)
     alice, bob = contact_record(ALICE), contact_record(BOB)
@@ -511,7 +829,10 @@ def test_documents_are_published_again_when_the_broker_reconnects() -> None:
     bus.published.clear()
     observer.publish_all()
     again = {t: p for t, p, keep in bus.published if keep}
-    assert again == current | {f"{ROOT}/history": again[f"{ROOT}/history"]}
+    assert again == current | {
+        f"{ROOT}/history": again[f"{ROOT}/history"],
+        f"{ROOT}/pending": b'{"total":0,"truncated":false,"messages":[]}',
+    }
     assert again[f"{ROOT}/contacts/{keys[1]}"] == b""  # cleared again
     assert again[f"{ROOT}/contacts/{keys[0]}"] != b""
 

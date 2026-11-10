@@ -83,7 +83,7 @@ Events (not retained): `delivery`, `received`, `command`, `contact`, `node`, `te
 
 | Where | What | Detail |
 | --- | --- | --- |
-| `state.json` | the command ledger, Home Assistant's components, the kept documents and advert checks, the telemetry schedule, the radio profile's memory, the budget's level, the queue at a stop | one store, written atomically ([design §5.2](design.md#52-concurrency)) |
+| `state.json` | the command ledger with the times of the senders' wrong codes of the last hour, Home Assistant's components, the kept documents and advert checks, the telemetry schedule, the radio profile's memory, the budget's level, the messages on their way from the start of a stop | one store, written atomically ([design §5.2](design.md#52-concurrency)) |
 | `telemetry-excluded.json` | the household's telemetry marks | [ADR 0029](decisions/0029-what-a-contact-is-trusted-with.md) |
 | `history.sqlite3` | messages, positions, readings, nodes heard | [ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md) |
 | the broker | the retained documents | the gateway restores them when others write there |
@@ -106,7 +106,7 @@ What each holds and for how long: [privacy.md](privacy.md); backing them up:
 | adding and removing contacts | `contact_manager.py`, `protocol/links.py` | [mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove) |
 | the radio's settings | `core/profile.py`, `radio/profile.py` | [ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md) |
 | who hears of what | `wiring.py` (its docstring) | [design §5.1](design.md#51-ports-and-adapters) |
-| the configuration | `config.py`, `config_checks.py` | [configuration.md](configuration.md) |
+| the configuration | `config.py`, `config_checks.py`, `config_view.py` (what `config` shows) | [configuration.md](configuration.md) |
 | the command line | `cli/` | [design §6.9](design.md#69-command-line) |
 | translations | `i18n.py`, `catalog.py`, `locale/` | [design §6.12](design.md#612-translations) |
 | the installer and the unit | `deploy/` | [deployment.md](deployment.md) |

@@ -64,6 +64,149 @@ def test_messages_survive_a_restart_newest_first(tmp_path: Path) -> None:
     assert again._db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
 
 
+def test_the_newest_messages_shown_are_read_past_the_others_page_by_page(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#103: the observer asks for the newest messages of the channels it publishes, which may
+    lie behind any number of rows of other channels."""
+    monkeypatch.setattr(history_module, "READ_PAGE", 2)
+    history = opened(tmp_path / "history.sqlite3")
+    for n in range(7):
+        history.add_message(HistoryEntry(T + n, "in", "channel", f"{n}", channel_index=n % 3))
+    texts = [m.text for m in history.recent_messages(2, lambda m: m.channel_index == 0)]
+    assert texts == ["6", "3"]
+    texts = [m.text for m in history.recent_messages(5, lambda m: m.channel_index == 0)]
+    assert texts == ["6", "3", "0"]  # to the end of the table
+    assert [m.text for m in history.recent_messages(3)] == ["6", "5", "4"]
+
+
+def test_the_keys_of_2_1_survive_a_restart(tmp_path: Path) -> None:
+    """The target, the delivery id, the acceptance time (unix seconds, as `at`), whether the
+    acknowledgement was suspect, and why a message failed (design §6.6)."""
+    path = tmp_path / "history.sqlite3"
+    history = opened(path)
+    entries = [
+        HistoryEntry(T, "in", "channel", "On my way", channel_index=1, target="family"),
+        HistoryEntry(
+            T + 10,
+            "out",
+            "contact",
+            "Back soon",
+            contact_key=KEY,
+            state="confirmed",
+            id="1a2b3c4d",
+            queued_at=T + 2.5,
+            suspect=True,
+        ),
+        HistoryEntry(
+            T + 20,
+            "out",
+            "contact",
+            "Later",
+            contact_key=BOB,
+            state="confirmed",
+            target="bob",
+            id="5e6f7a8b",
+            queued_at=T + 19.0,
+            suspect=False,
+        ),
+        HistoryEntry(
+            T + 30,
+            "out",
+            "channel",
+            "Gate open",
+            channel_index=0,
+            state="failed",
+            target="alerts",
+            id="9c0d1e2f",
+            queued_at=T + 29.0,
+            reason="channel_not_configured",
+        ),
+    ]
+    for entry in entries:
+        history.add_message(entry)
+    history.close()
+    again = opened(path)
+    assert again.recent_messages(10) == entries[::-1]
+    assert [type(m.suspect) for m in again.recent_messages(10)] == [
+        type(None),
+        bool,
+        bool,
+        type(None),
+    ]
+    stored = again._db.execute(
+        "SELECT typeof(queued_at), typeof(suspect) FROM message WHERE delivery_id = '1a2b3c4d'"
+    ).fetchone()
+    assert stored == ("real", "integer")
+
+
+# the message table and the statements of 2.0 (history.py at 2.0.0), which a downgrade runs
+MESSAGE_2_0 = (
+    "CREATE TABLE message (id INTEGER PRIMARY KEY, at REAL NOT NULL, direction TEXT NOT NULL, "
+    "kind TEXT NOT NULL, contact_key TEXT, channel_index INTEGER, name TEXT, text TEXT NOT NULL, "
+    "state TEXT, hops INTEGER, snr_db REAL)"
+)
+INSERT_2_0 = (
+    "INSERT INTO message (at, direction, kind, contact_key, channel_index, name, text, "
+    "state, hops, snr_db) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+SELECT_2_0 = (
+    "SELECT at, direction, kind, text, contact_key, channel_index, name, state, hops, "
+    "snr_db FROM message ORDER BY at DESC, id DESC LIMIT ?"
+)
+
+
+def columns(path: Path) -> list[str]:
+    db = sqlite3.connect(path)
+    try:
+        return [row[1] for row in db.execute("PRAGMA table_info(message)")]
+    finally:
+        db.close()
+
+
+def test_a_2_0_history_gets_the_new_columns_and_2_0_still_reads_it(tmp_path: Path) -> None:
+    """The columns are added after a look at the table, without a new schema version: 2.0 names
+    its columns in every statement, so a downgrade reads and writes the file as before."""
+    path = tmp_path / "history.sqlite3"
+    db = sqlite3.connect(path)
+    db.execute(MESSAGE_2_0)
+    db.execute(INSERT_2_0, (T, "out", "contact", KEY, None, "Alice", "Hi", "confirmed", None, None))
+    db.execute("PRAGMA user_version = 2")
+    db.commit()
+    db.close()
+    history = opened(path)
+    (kept,) = history.recent_messages(5)
+    assert kept == HistoryEntry(T, "out", "contact", "Hi", KEY, name="Alice", state="confirmed")
+    history.add_message(
+        HistoryEntry(
+            T + 1,
+            "out",
+            "channel",
+            "Gate open",
+            channel_index=0,
+            state="sent",
+            target="alerts",
+            id="1a2b3c4d",
+            queued_at=T,
+        )
+    )
+    history.close()
+    added = ["target", "delivery_id", "queued_at", "suspect", "reason"]
+    assert columns(path)[-5:] == added
+    version, objects = schema(path)
+    assert version == 2
+    opened(path).close()  # a second start changes nothing
+    assert schema(path) == (version, objects)
+
+    db = sqlite3.connect(path)  # the downgrade: 2.0's statements on this file
+    db.execute(INSERT_2_0, (T + 2, "in", "channel", None, 0, "Carol", "Back", None, 1, 6.25))
+    db.commit()
+    rows = list(db.execute(SELECT_2_0, (5,)))
+    db.close()
+    assert [(row[0], row[3]) for row in rows] == [(T + 2, "Back"), (T + 1, "Gate open"), (T, "Hi")]
+    assert [m.target for m in opened(path).recent_messages(5)] == [None, "alerts", None]
+
+
 def test_positions_traces_and_the_newest_fix(tmp_path: Path) -> None:
     history = opened(tmp_path / "h.sqlite3")
     fixes = [Fix(Position(53.55 + i / 100, 9.99), T + i * 60, "telemetry", 10.0) for i in range(3)]

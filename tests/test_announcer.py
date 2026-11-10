@@ -93,7 +93,27 @@ def test_discovery_follows_the_radio_identity(tmp_path: Path) -> None:
             states = len(bus.payloads("/state"))
             await bus.wait_for("/state", lambda s: s["radio"] == "connected", since=states)
             assert len(bus.payloads(GATEWAY_DOCUMENT)) == count  # the same radio again
-            assert not any(retain for t, _, retain in bus.published if t.endswith("/config"))
+            discovery = [r for t, _, r in bus.published if t.startswith("homeassistant/")]
+            assert discovery
+            assert not any(discovery)  # never retained
+
+    scenario(main)
+
+
+def test_a_renamed_radio_is_announced_again(tmp_path: Path) -> None:
+    """The radio's name is part of what the discovery depends on (a channel text's room): a
+    rename, seen at the next connect, announces again."""
+    radio = EmulatedRadio()
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            count, states = len(bus.payloads(GATEWAY_DOCUMENT)), len(bus.payloads("/state"))
+            radio.name = "Shed radio"
+            radio.disconnect()
+            await bus.wait_for("/state", lambda s: s["radio"] == "disconnected", since=states)
+            states = len(bus.payloads("/state"))
+            await bus.wait_for("/state", lambda s: s["radio"] == "connected", since=states)
+            assert len(bus.payloads(GATEWAY_DOCUMENT)) == count + 1
 
     scenario(main)
 
@@ -106,7 +126,8 @@ def test_discovery_can_be_switched_off(tmp_path: Path) -> None:
             for callback in bus.on_ha_online:  # Home Assistant announces itself
                 callback()
             await asyncio.sleep(0.05)
-            assert not bus.payloads("/config")  # neither the gateway's nor any other
+            # neither the gateway's discovery document nor any other; its own `config` goes out
+            assert not [t for t, _, _ in bus.published if t.startswith("homeassistant/")]
             assert bus.payloads("/state")[-1]["radio"] == "connected"
 
     scenario(main)
@@ -306,7 +327,7 @@ def test_a_device_home_assistant_clears_is_announced_again(tmp_path: Path) -> No
             for message in bus.on_ha_device:  # several at once, as Home Assistant sends them
                 for _ in range(3):
                     message(own, b"", False)
-            await bus.wait_for("/config", lambda d: True, since=count)
+            await bus.wait_for(own, lambda d: True, since=count)
             await asyncio.sleep(0.05)
             assert len([p for t, p, _ in bus.published if t == own]) == count + 1
 

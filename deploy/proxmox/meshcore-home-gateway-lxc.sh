@@ -53,9 +53,9 @@ CT_ENV=(env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 INSTALLER_KEYS=" setup ct.id ct.hostname ct.storage ct.disk_gb ct.memory_mb ct.bridge ct.ip \
 ct.gateway ct.template_storage radio.choice targets.channels targets.contacts "
 # --- language packs: written by `make translations` from deploy/proxmox/locale/*.po; do not edit
-L10N_ORDER=(en)
-declare -A L10N_NAME=([en]=English)
-declare -A L10N_SHA256=()
+L10N_ORDER=(en de)
+declare -A L10N_NAME=([en]=English [de]=Deutsch)
+declare -A L10N_SHA256=([de]=ac1ecfae46104b15022c1937809d92a8cc9d126cde657753ea9e316e4638bc68)
 # --- end of language packs
 L10N_MENU=()   # code, name, code, name, ...: the items of the language menus
 for code in "${L10N_ORDER[@]}"; do L10N_MENU+=("$code" "${L10N_NAME[$code]}"); done
@@ -564,7 +564,10 @@ self_test() {  # self_test CTID: the running gateway's own check (doctor), retri
   done
   if (( status == 0 )); then
     SELF_TEST=passed
-    log "self-test passed (meshcore-home-gateway doctor in container $ctid)"
+    # its warnings too, which doctor passes with: an ignored code secret (#80), a broker without
+    # login. doctor words them in the dialogs' language, so the whole report
+    log "self-test passed (meshcore-home-gateway doctor in container $ctid):"
+    printf '%s\n' "$report" >&2 || true
   else
     SELF_TEST=problems
     log "warning: the self-test found problems (meshcore-home-gateway doctor in container $ctid):"

@@ -118,6 +118,55 @@ _LABEL_TYPE = {3: " (room)", 4: " (sensor)"}
 NAME_TAKEN = " (name taken)"  # after a label whose node has a name another has (SEC-007)
 _LABEL = re.compile(r"([0-9a-fA-F]{12})(?:…|\.\.\.)([0-9a-fA-F]{8})(?: |\Z)")
 _UNSAFE = frozenset({"Cc", "Cf", "Zl", "Zp"})  # control, format (direction), line breaks
+# Unicode's Default_Ignorable_Code_Point (DerivedCoreProperties.txt, 15.0): drawn as nothing,
+# whatever their category: format characters, but also combining marks (the variation selectors,
+# the grapheme joiner), letters (the Hangul fillers) and code points kept for more of them. One
+# table for names and copies: names compare without all of them (SEC-007, #89); a copied key,
+# link or card loses COPY_INVISIBLE, those a copy may carry and none holds (protocol.links). The
+# rest belongs to a name's text without changing its look: the joiners and variation selectors
+# of an emoji, the fillers of Hangul.
+_INVISIBLE_SPANS = (
+    (0x00AD, 0x00AD),
+    (0x034F, 0x034F),
+    (0x061C, 0x061C),
+    (0x115F, 0x1160),
+    (0x17B4, 0x17B5),
+    (0x180B, 0x180F),
+    (0x200B, 0x200F),
+    (0x202A, 0x202E),
+    (0x2060, 0x206F),
+    (0x3164, 0x3164),
+    (0xFE00, 0xFE0F),
+    (0xFEFF, 0xFEFF),
+    (0xFFA0, 0xFFA0),
+    (0xFFF0, 0xFFF8),
+    (0x1BCA0, 0x1BCA3),
+    (0x1D173, 0x1D17A),
+    (0xE0000, 0xE0FFF),
+)
+INVISIBLE = frozenset(chr(c) for first, last in _INVISIBLE_SPANS for c in range(first, last + 1))
+# the soft hyphen, the Arabic letter mark, the zero-width space (the dashboard's breaks in long
+# words), the direction marks, embeddings, overrides and isolates, the word joiner and the
+# invisible operators, the byte order mark
+COPY_INVISIBLE = "".join(
+    chr(c)
+    for first, last in (
+        (0x00AD, 0x00AD),
+        (0x061C, 0x061C),
+        (0x200B, 0x200B),
+        (0x200E, 0x200F),
+        (0x202A, 0x202E),
+        (0x2060, 0x2064),
+        (0x2066, 0x2069),
+        (0xFEFF, 0xFEFF),
+    )
+    for c in range(first, last + 1)
+)
+_NAME_INVISIBLE = str.maketrans(dict.fromkeys(INVISIBLE))
+_BLANKS = frozenset("\u2800")  # the braille pattern blank (So): drawn as a space
+# the key of a name that is shown, but drawn as nothing (a Hangul filler, a braille blank): the
+# braille blank, which no other key holds (`name_key` makes it a space)
+_BLANK_NAME = "\u2800"
 # Cyrillic and Greek letters that look like Latin ones (SEC-007): a small table, not Unicode's
 # confusables (UTS #39), against the common imitations of a name; mapped before case folding
 _LOOK_ALIKE_LETTERS = str.maketrans(
@@ -128,14 +177,26 @@ _LOOK_ALIKE_LETTERS = str.maketrans(
 
 def name_key(name: str) -> str:
     """A name as compared with others: NFKC, case-folded, Cyrillic and Greek look-alikes as the
-    Latin letters, without the invisible format characters (zero-width, direction), control
-    characters and line breaks as spaces, single spaces (SEC-007). Empty for a name that is
-    none."""
-    plain = "".join(
-        "" if (kind := unicodedata.category(ch)) == "Cf" else " " if kind in _UNSAFE else ch
-        for ch in unicodedata.normalize("NFKC", name)
-    )
-    return " ".join(plain.translate(_LOOK_ALIKE_LETTERS).casefold().split())
+    Latin letters, without the invisible characters (`INVISIBLE` and every format character:
+    zero-width, direction, variation selectors, fillers), control characters, line breaks and
+    the braille blank as spaces, single spaces (SEC-007). Empty for a name that is none, as a
+    label shows none; a name shown but drawn as nothing, such as a Hangul filler, is one blank
+    name (#89)."""
+    # dropped before NFKC, which maps nothing into the table: a grapheme joiner would keep a
+    # mark from composing with its letter
+    folded = unicodedata.normalize("NFKC", name.translate(_NAME_INVISIBLE))
+    plain = "".join(_compared(ch) for ch in folded)
+    key = " ".join(plain.translate(_LOOK_ALIKE_LETTERS).casefold().split())
+    return key if key or not _shown(name) else _BLANK_NAME
+
+
+def _compared(ch: str) -> str:
+    """A character of a name as `name_key` compares it: a format character is dropped, a control
+    character, a line break or a blank is a space."""
+    kind = unicodedata.category(ch)
+    if kind == "Cf":
+        return ""
+    return " " if kind in _UNSAFE or ch in _BLANKS else ch
 
 
 def node_label(key: str, name: str, node_type: int, *, name_taken: bool = False) -> str:
@@ -143,13 +204,19 @@ def node_label(key: str, name: str, node_type: int, *, name_taken: bool = False)
     taken)` for a name another node or the gateway has: the key comes
     first, so no name can push it aside or imitate it. A person compares both parts with the
     node's own screen; an attacker can copy the first 6 bytes of a key, not the rest (ADR 0009)."""
-    plain = " ".join(
-        "".join(" " if unicodedata.category(ch) in _UNSAFE else ch for ch in name).split()
-    )
+    plain = _shown(name)
     named = f" {plain}" if plain else ""
     start, end = key[:PREFIX_HEX_DIGITS], key[-LABEL_SUFFIX_HEX_DIGITS:]
     mark = NAME_TAKEN if name_taken else ""
     return f"{start}…{end}{named}{_LABEL_TYPE.get(node_type, '')}{mark}"
+
+
+def _shown(name: str) -> str:
+    """The name as a label shows it: control, format and line break characters as spaces, single
+    spaces."""
+    return " ".join(
+        "".join(" " if unicodedata.category(ch) in _UNSAFE else ch for ch in name).split()
+    )
 
 
 def key_from_label(label: str, keys: Iterable[str]) -> str | None:

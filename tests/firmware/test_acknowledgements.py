@@ -136,7 +136,9 @@ def test_an_acknowledgement_sooner_than_the_path_allows_is_suspect(scene: Scene)
     """A reaches B over a repeater. B confirms a message, genuinely: not `suspect`. Then B is
     switched off, and a stranger beside A, whom A hears better than the repeater, sends the
     acknowledgement of the next message as soon as A has sent it: sooner than the message can
-    have crossed the repeater, so the gateway reports `confirmed` with `suspect`."""
+    have crossed the repeater, so the gateway reports `confirmed` with `suspect`. The history
+    keeps both verdicts across a restart; the first message went through `contacts/<key>/send`,
+    so it names no target."""
     household = start(scene.nodes, scene.air, hops=1)
     alice, repeater, bob = (n.node_id for n in household.chain)
     stranger = StandIn(STRANGER, scene.air.port, scene.air.settings()[alice])
@@ -151,7 +153,7 @@ def test_an_acknowledgement_sooner_than_the_path_allows_is_suspect(scene: Scene)
         async with running(text, scene.state_dir):
             found = await scene.watcher.wait(f"contacts/{household.bob_key.hex()}")
             assert found.json()["path_hops"] == 1
-            scene.watcher.publish("send/bob", GENUINE)
+            scene.watcher.publish(f"contacts/{household.bob_key.hex()}/send", GENUINE)
             genuine = await scene.watcher.wait("delivery", final(GENUINE), timeout_s=60)
             scene.air.unlink(repeater, bob)  # B is switched off
             scene.air.unlink(repeater, alice, both=False)  # the stranger drowns the repeater
@@ -171,12 +173,25 @@ def test_an_acknowledgement_sooner_than_the_path_allows_is_suspect(scene: Scene)
                 radio=radio,
             )
             forged = await scene.watcher.wait("delivery", final("Smoke"), timeout_s=60)
-        return [genuine.json(), forged.json()]
+            both = await scene.watcher.settled("history", lambda d: d and len(sent(d)) == 2)
+        mark = scene.watcher.mark()
+        async with running(text, scene.state_dir):  # restarted: the history from its file
+            again = await scene.watcher.wait("history", since=mark)
+        return [genuine.json(), forged.json(), both, again.json()]
+
+    def sent(history: Any) -> list[Any]:
+        return [m for m in history["messages"] if m["direction"] == "out"]
 
     try:
-        genuine, forged = asyncio.run(scenario())
+        genuine, forged, history, restarted = asyncio.run(scenario())
     finally:
         stranger.socket.close()
+    assert [(m["text"], m["target"], m["suspect"], m["id"]) for m in sent(history)] == [
+        (LONG_ALARM, "bob", True, forged["id"]),
+        (GENUINE, None, False, genuine["id"]),
+    ]
+    assert all(m["queued_at"] <= m["at"] for m in sent(history))
+    assert restarted == history
     radio = scene.air.settings()[alice]
     lora = meshcore_lora(float(radio.bandwidth_hz), radio.spreading_factor, radio.coding_rate)
 

@@ -16,8 +16,8 @@ import contextlib
 import json
 import logging
 import sqlite3
-from collections.abc import Iterable, Iterator, Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +37,7 @@ MAX_POSITIONS = 100_000  # beyond it the oldest go, except each contact's newest
 MAX_READINGS = 200_000  # beyond it the oldest go, never a contact's newest answer
 MAX_HELD = 10_000  # writes held while a purge runs; beyond them, rows are lost (logged once)
 PURGE_BUSY_S = 10.0  # the purge's connection waits this long for the lock (sqlite3 timeout)
+READ_PAGE = 500  # rows read at a time when messages are sought past others
 _SCHEMA = """
 CREATE TABLE message (
     id INTEGER PRIMARY KEY,
@@ -87,8 +88,22 @@ _ADDED = (
     ),
     "CREATE INDEX IF NOT EXISTS reading_contact_at ON reading (contact_key, at)",
 )
+# columns added the same way, after a look at the table: older versions name their columns in
+# every statement, so they leave these empty. `delivery_id`: the message table has an `id`.
+_ADDED_COLUMNS = (
+    ("message", "target", "TEXT"),
+    ("message", "delivery_id", "TEXT"),
+    ("message", "queued_at", "REAL"),
+    ("message", "suspect", "INTEGER"),
+    ("message", "reason", "TEXT"),
+)
 
 
+_RECENT_MESSAGES = (
+    "SELECT at, direction, kind, text, contact_key, channel_index, name, state, hops, snr_db, "
+    "target, delivery_id, queued_at, suspect, reason FROM message "
+    "ORDER BY at DESC, id DESC LIMIT ? OFFSET ?"
+)
 _MESSAGES_BEYOND_CAP = (
     "DELETE FROM message WHERE id <= (SELECT id FROM message ORDER BY id DESC LIMIT 1 OFFSET ?)"
 )
@@ -180,7 +195,8 @@ class History:
     def add_message(self, entry: HistoryEntry) -> None:
         self._write(
             "INSERT INTO message (at, direction, kind, contact_key, channel_index, name, text, "
-            "state, hops, snr_db) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "state, hops, snr_db, target, delivery_id, queued_at, suspect, reason) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 entry.at,
                 entry.direction,
@@ -192,6 +208,11 @@ class History:
                 entry.state,
                 entry.hops,
                 entry.snr_db,
+                entry.target,
+                entry.id,
+                entry.queued_at,
+                entry.suspect,
+                entry.reason,
             ),
         )
 
@@ -369,13 +390,20 @@ class History:
 
     # --- reading --------------------------------------------------------------------------------
 
-    def recent_messages(self, limit: int) -> list[HistoryEntry]:
-        rows = self._read(
-            "SELECT at, direction, kind, text, contact_key, channel_index, name, state, hops, "
-            "snr_db FROM message ORDER BY at DESC, id DESC LIMIT ?",
-            (limit,),
-        )
-        return [HistoryEntry(*row) for row in rows]
+    def recent_messages(
+        self, limit: int, shown: Callable[[HistoryEntry], bool] | None = None
+    ) -> list[HistoryEntry]:
+        """The newest `limit` messages, the newest first. With `shown`, the newest `limit` of
+        those it shows: read page by page past the others (#103), through at most the
+        MAX_MESSAGES rows the table holds."""
+        entries: list[HistoryEntry] = []
+        offset, page = 0, limit if shown is None else max(limit, READ_PAGE)
+        while True:
+            rows = self._read(_RECENT_MESSAGES, (page, offset))
+            entries += [e for e in map(_message, rows) if shown is None or shown(e)]
+            if len(entries) >= limit or len(rows) < page:
+                return entries[:limit]
+            offset += page
 
     def last_fixes(self) -> dict[str, Fix]:
         """The newest position of every contact that has one."""
@@ -434,6 +462,12 @@ class History:
             return []
 
 
+def _message(row: tuple[Any, ...]) -> HistoryEntry:
+    entry = HistoryEntry(*row)
+    # SQLite keeps a truth value as 1 or 0
+    return entry if entry.suspect is None else replace(entry, suspect=bool(entry.suspect))
+
+
 def _named(values: Mapping[str, float]) -> lpp.Named:
     """An answer's values as the documents name them, from its rows."""
     readings = {q: value for q, value in values.items() if lpp.component_of(q) is not None}
@@ -487,6 +521,10 @@ def _prepare(db: sqlite3.Connection) -> None:
     with _transaction(db):
         for statement in _ADDED:
             db.execute(statement)
+        for table, column, kind in _ADDED_COLUMNS:
+            known = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+            if column not in known:
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
 
 
 @contextlib.contextmanager

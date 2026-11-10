@@ -26,7 +26,7 @@ from typing import Any
 
 from meshcore_home_gateway import __version__, i18n
 from meshcore_home_gateway.cli.backup import _backup
-from meshcore_home_gateway.cli.codes import _enrol
+from meshcore_home_gateway.cli.codes import _enrol, _revoke
 from meshcore_home_gateway.cli.common import (
     DEFAULT_CONFIG,
     EX_CONFIG,
@@ -178,23 +178,7 @@ def _parser() -> argparse.ArgumentParser:
 
     _contacts_parser(commands)
 
-    codes = commands.add_parser("commands", help=tr_help("codes for the senders of commands"))
-    codes_actions = codes.add_subparsers(required=True, metavar="action")
-    enrol = codes_actions.add_parser(
-        "enrol",
-        # Translators: security text (docs/translations.md): a new secret replaces the old one
-        help=tr_help(
-            "give a command sender a new code secret for an authenticator app; its commands "
-            "then need the app's code"
-        ),
-    )
-    enrol.set_defaults(handler=_enrol)
-    enrol.add_argument(
-        "key", help=tr_help("the sender's full public key, as in [commands] senders")
-    )
-    enrol.add_argument(
-        "--config", type=Path, default=DEFAULT_CONFIG, help=tr_help("configuration file")
-    )
+    _codes_parser(commands)
 
     _operations_parser(commands, command, state_dir_help)
 
@@ -321,6 +305,40 @@ def _operations_parser(
         help=tr_help("from this date or time on (ISO 8601; without a zone, UTC)"),
     )
     export.add_argument("--state-dir", type=Path, default=None, help=state_dir_help)
+
+
+def _codes_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """`commands enrol` and `commands revoke`: the code secrets of command senders (IMP-002)."""
+    codes = commands.add_parser("commands", help=tr_help("codes for the senders of commands"))
+    codes_actions = codes.add_subparsers(required=True, metavar="action")
+    enrol = codes_actions.add_parser(
+        "enrol",
+        # Translators: security text (docs/translations.md): a new secret replaces the old one
+        help=tr_help(
+            "give a command sender a new code secret for an authenticator app; its commands "
+            "then need the app's code"
+        ),
+    )
+    enrol.set_defaults(handler=_enrol)
+    enrol.add_argument(
+        "key", help=tr_help("the sender's full public key, as in [commands] senders")
+    )
+    enrol.add_argument(
+        "--config", type=Path, default=DEFAULT_CONFIG, help=tr_help("configuration file")
+    )
+    revoke = codes_actions.add_parser(
+        "revoke",
+        # Translators: security text (docs/translations.md): only for a key that is no sender
+        help=tr_help(
+            "remove the code secret of a key that is no longer in [commands] senders from the "
+            "codes file"
+        ),
+    )
+    revoke.set_defaults(handler=_revoke)
+    revoke.add_argument("key", help=tr_help("the former sender's full public key"))
+    revoke.add_argument(
+        "--config", type=Path, default=DEFAULT_CONFIG, help=tr_help("configuration file")
+    )
 
 
 def _contacts_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

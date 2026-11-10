@@ -28,6 +28,38 @@ def test_a_key_in_any_case_with_spaces(text: str) -> None:
     assert parse_contact_text(text) == LinkContact(KEY, None, 1, "key")
 
 
+# what the dashboard drops from the texts it shows, and so what a copy from it may carry
+INVISIBLE = (
+    "\u00ad\u061c\u200b\u200e\u200f\u202a\u202b\u202c\u202d\u202e"
+    "\u2060\u2061\u2062\u2063\u2064\u2066\u2067\u2068\u2069\ufeff"
+)
+
+
+def broken(text: str, mark: str, every: int = 20) -> str:
+    """The text with `mark` after every `every` characters, as the dashboard breaks long words."""
+    return mark.join(text[i : i + every] for i in range(0, len(text), every))
+
+
+@pytest.mark.parametrize("mark", list(INVISIBLE), ids=lambda m: f"U+{ord(m):04X}")
+def test_invisible_characters_of_a_copy_are_dropped(mark: str) -> None:
+    """A key copied from a chat on the dashboard carries its word breaks (U+200B every 20
+    characters), a copy from elsewhere direction marks or a byte order mark: none of them is
+    part of a key, link or card."""
+    assert parse_contact_text(broken(KEY, mark)) == LinkContact(KEY, None, 1, "key")
+    link = broken(f"meshcore://contact/add?name=Bob&public_key={KEY}&type=1", mark)
+    assert parse_contact_text(mark + link + "\ufeff") == LinkContact(KEY, "Bob", 1, "link")
+    assert parse_contact_text(broken(card(), mark)).public_key == KEY
+
+
+@pytest.mark.parametrize("joiner", ["\u200c", "\u200d"])
+def test_the_joiners_of_a_name_stay(joiner: str) -> None:
+    """Zero-width non-joiner and joiner belong to the text they are in."""
+    claim = parse_contact_text(f"meshcore://contact/add?name=Ali{joiner}ce&public_key={KEY}")
+    assert claim.name == f"Ali{joiner}ce"
+    with pytest.raises(LinkError):
+        parse_contact_text(broken(KEY, joiner))
+
+
 @pytest.mark.parametrize(
     ("query", "name", "node_type"),
     [

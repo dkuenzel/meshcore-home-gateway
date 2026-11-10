@@ -4,12 +4,16 @@ on standard error."""
 from __future__ import annotations
 
 import io
+import json
+import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
 
 from meshcore_home_gateway import dashboard
+from meshcore_home_gateway.catalog import read_po
 from meshcore_home_gateway.cli import EX_CONFIG, EX_FAILURE, EX_OK, main
 from meshcore_home_gateway.config import load_config
 from meshcore_home_gateway.core.model import Position
@@ -21,6 +25,20 @@ CONFIG = (
     '[mqtt]\nhost = "broker.example.org"\nnode_id = "radio-1"\n'
 )
 HERE = Position(52.1, 9.2)
+FLOOR = "This dashboard needs Home Assistant 2026.10 or later.\n"
+POT = (
+    Path(__file__).resolve().parent.parent
+    / "src/meshcore_home_gateway/locale/meshcore-home-gateway.pot"
+)
+
+
+def read_at(state: Path) -> str:
+    """The line on the age of the contacts: the state file's time, local."""
+    written = time.localtime((state / "state.json").stat().st_mtime)
+    return (
+        f"Contacts as of the gateway's state written at {time.strftime('%Y-%m-%d %H:%M', written)}"
+        "; a contact added since then is missing until the dashboard is made again.\n"
+    )
 
 
 @pytest.fixture
@@ -56,7 +74,11 @@ def test_the_dashboard_goes_to_standard_output(
     assert printed.out.startswith("# meshcore-home-gateway dashboard for node radio-1, ")
     assert "binary_sensor.meshcore_home_gateway_radio_1_radio" in printed.out
     assert 'entities: ["device_tracker.mesh_alice"]' in printed.out
-    assert printed.err == "The map lists 1 contact with a position.\n"
+    assert printed.err == (
+        "The map lists 1 contact with a position.\nChat pages: 0 for channels, 1 for people.\n"
+        + read_at(state)
+        + FLOOR
+    )
 
 
 def test_the_state_directory_is_the_services_by_default(
@@ -70,12 +92,19 @@ def test_the_state_directory_is_the_services_by_default(
     assert main(["dashboard", "--config", str(config)]) == EX_OK
     printed = capsys.readouterr()
     assert 'entities: ["device_tracker.mesh_alice", "device_tracker.mesh_hilltop"]' in printed.out
-    assert printed.err == "The map lists 2 contacts with a position.\n"
+    assert printed.err == (
+        "The map lists 2 contacts with a position.\nChat pages: 0 for channels, 1 for people.\n"
+        + read_at(state)
+        + FLOOR
+    )
     monkeypatch.setenv("STATE_DIRECTORY", str(tmp_path / "nothing"))
     assert main(["dashboard", "--config", str(config)]) == EX_OK
     printed = capsys.readouterr()
     assert "type: map" not in printed.out
-    assert printed.err == "The map lists 0 contacts with a position.\n"
+    assert printed.err == (
+        "The map lists 0 contacts with a position.\nChat pages: 0 for channels, 0 for people.\n"
+        + FLOOR
+    )
     assert not (tmp_path / "nothing").exists()  # read only
 
 
@@ -112,3 +141,57 @@ def test_the_yaml_is_utf8_whatever_the_terminal_takes(
     assert main(["dashboard", "--config", str(config), "--state-dir", str(tmp_path)]) == EX_OK
     assert "\u2013".encode() in raw.getvalue()  # the dash of a time not known
     assert raw.getvalue().decode("utf-8") == dashboard.dashboard(load_config(config), tmp_path)[0]
+
+
+TARGETS = "[targets.family]\nchannel = 1\n[targets.a-b]\nchannel = 4\n[targets.a_b]\nchannel = 5\n"
+
+
+def test_standard_error_tells_the_floor_the_pages_and_the_state_it_read(
+    config: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The Home Assistant the dashboard needs, after every dashboard; how many chat pages it
+    has; the alias pairs that get no field; the pages left out and skipped, and the switches and
+    buttons skipped; and how old the contacts are."""
+    config.write_text(CONFIG + TARGETS, encoding="utf-8")
+    state = tmp_path / "state"
+    state.mkdir()
+    announced = {
+        f"{i:02x}" * 32: {"slug": f"p{i:02d}", "cmps": {"send": "notify"}} for i in range(31)
+    }
+    announced["ff" * 32] = {"slug": "x\x1b[2J", "cmps": {"send": "notify", "remove": "button"}}
+    (state / "state.json").write_text(
+        json.dumps({"ha_contact_devices": {"announced": announced}}), encoding="utf-8"
+    )
+    os.utime(state / "state.json", (1_800_000_000, 1_800_000_000))
+    assert main(["dashboard", "--config", str(config), "--state-dir", str(state)]) == EX_OK
+    err = capsys.readouterr().err
+    assert err == (
+        "The map lists 0 contacts with a position.\n"
+        "Chat pages: 3 for channels, 30 for people.\n"
+        "1 contact has no chat page; it shows in Chats without one.\n"
+        "Skipped a chat page: its path 'contact-x\\x1b[2J' is not allowed.\n"
+        "Skipped a contact's switch or button: its entity 'button.mesh_x\\x1b[2J_remove' is "
+        "not allowed.\n"
+        "The targets a-b and a_b get the same entity IDs in Home Assistant; their chat pages "
+        "have no message field. Rename one of them.\n" + read_at(state) + FLOOR
+    )
+
+
+def test_without_a_state_standard_error_says_the_floor_and_no_contacts(
+    config: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["dashboard", "--config", str(config), "--state-dir", str(tmp_path)]) == EX_OK
+    assert capsys.readouterr().err == (
+        "The map lists 0 contacts with a position.\nChat pages: 0 for channels, 0 for people.\n"
+        + FLOOR
+    )
+
+
+def test_the_line_of_the_people_without_a_page_tells_translators_the_tab() -> None:
+    """Its Chats is the dashboard's tab, a text of another context: the note says to use the
+    tab's translation."""
+    _, entries = read_po(POT.read_text(encoding="utf-8"))
+    (entry,) = [e for e in entries if e.msgid.startswith("{count} contact has no chat page")]
+    assert any("Chats" in note and "tab" in note for note in entry.comments), entry

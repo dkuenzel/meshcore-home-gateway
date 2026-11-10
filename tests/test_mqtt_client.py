@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import re
 import socket
 import threading
 import time
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -27,7 +29,7 @@ from meshcore_home_gateway.mqtt.client import MqttBus, make_paho_client
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.ports import ContactRequest, SendRequest
 from meshcore_home_gateway.wiring import event_expiries
-from tests.conftest import Broker
+from tests.conftest import SKIP_BROKER, Broker, free_port, start_mosquitto, stop_mosquitto
 
 TOPICS = Topics("meshcore", "radio1")
 
@@ -136,9 +138,11 @@ def test_connection_subscribes_and_announces_availability() -> None:
                     (f"meshcore/radio1/{name}", 1)
                     for name in (
                         "availability",
+                        "config",
                         "contacts",
                         "history",
                         "nodes",
+                        "pending",
                         "settings",
                         "state",
                         "stats",
@@ -194,6 +198,31 @@ def test_refused_connection_is_only_logged(caplog: pytest.LogCaptureFixture) -> 
         assert "check-config --broker" in caplog.text
         assert "'p'" not in caplog.text
         assert "without answering" not in caplog.text  # the refusal was the answer
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("protocol", ["5", "3.1.1"])
+def test_a_refused_protocol_version_names_the_setting_not_the_login(
+    caplog: pytest.LogCaptureFixture, protocol: str
+) -> None:
+    """#107: a broker that does not speak the MQTT version of `[mqtt] protocol` (a broker of
+    MQTT 3.1.1 only, asked with MQTT 5) refuses every connection with this reason, whatever the
+    login: the log names the setting, not the login check."""
+
+    async def scenario() -> None:
+        config = MqttConfig(host="broker.example.org", node_id="radio1", username="u", password="p")
+        bus, fake = make_bus(dataclasses.replace(config, protocol=protocol))
+        await bus.start()
+        refused = paho.convert_connack_rc_to_reason_code(paho.CONNACK_REFUSED_PROTOCOL_VERSION)
+        fake.on_connect(fake, None, None, refused, None)
+        await asyncio.sleep(0)
+        assert not bus.connected
+        assert (
+            f"MQTT: connection refused: Unsupported protocol version: the broker does not speak "
+            f"MQTT {protocol}; set protocol in [mqtt] to the version it speaks"
+        ) in caplog.text
+        assert "check-config --broker" not in caplog.text
 
     asyncio.run(scenario())
 
@@ -455,12 +484,14 @@ def test_discovery_topics_and_the_show_request_reach_the_loop() -> None:
         await bus.start()
         await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
         subscriptions = dict(fake.calls)["subscribe"][0]
-        assert subscriptions[-4:] == [
+        assert subscriptions[-5:] == [
             (own, 1),
             (watch, 1),
             ("meshcore/radio1/homeassistant/show_hidden", 1),
             ("meshcore/radio1/homeassistant/add_node", 1),
+            ("meshcore/radio1/homeassistant/draft/+/+/request", 1),  # the chats' drafts
         ]
+        assert ("meshcore/radio1/homeassistant/draft/+/+", 1) in subscriptions  # read back
 
         def deliver(topic: str, payload: bytes, retain: bool = False) -> None:
             fake.on_message(
@@ -500,6 +531,7 @@ def test_without_contact_devices_their_topics_are_not_watched() -> None:
         assert "meshcore/radio1/homeassistant/show_hidden" not in topics
         assert "meshcore/radio1/homeassistant/add_node" not in topics
         assert not any(topic.startswith("homeassistant/device") for topic in topics)
+        assert not any("/homeassistant/draft/" in topic for topic in topics)  # no chats either
 
     asyncio.run(scenario())
 
@@ -542,11 +574,12 @@ def test_a_refused_subscription_is_named(caplog: pytest.LogCaptureFixture) -> No
         await bus.start()
         await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
         granted, refused = (ReasonCode(PacketTypes.SUBACK, identifier=c) for c in (1, 0x80))
-        fake.on_subscribe(fake, None, 6, [refused] * 14, None)  # another subscription's answer
+        fake.on_subscribe(fake, None, 6, [refused] * 15, None)  # another subscription's answer
         assert "refused the subscription" not in caplog.text
-        fake.on_subscribe(fake, None, 7, [granted] * 5 + [refused] * 8 + [granted], None)
+        fake.on_subscribe(fake, None, 7, [granted] * 5 + [refused] * 10 + [granted], None)
         assert (
-            "refused the subscription to meshcore/radio1/availability, meshcore/radio1/contacts,"
+            "refused the subscription to meshcore/radio1/availability, meshcore/radio1/config, "
+            "meshcore/radio1/contacts,"
         ) in caplog.text
         assert "meshcore/radio1/contacts/+ (the gateway's user needs read access" in caplog.text
         assert "homeassistant/status" not in caplog.text
@@ -696,6 +729,26 @@ def test_stop_announces_offline_and_disconnects() -> None:
         await bus.stop()
         assert fake.published[-1] == ("meshcore/radio1/availability", b"offline", 1, True)
         assert names(fake)[-2:] == ["disconnect", "loop_stop"]
+
+    asyncio.run(scenario())
+
+
+def test_what_a_stop_must_publish_goes_out_before_offline() -> None:
+    """A clean stop clears the chats' drafts (drafts.py) while the connection is still up, in
+    the order of QoS 1 before `offline`."""
+
+    async def scenario() -> None:
+        bus, fake = make_bus()
+        await bus.start()
+        await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
+        await asyncio.sleep(0.05)
+        draft = "meshcore/radio1/homeassistant/draft/target/family"
+        bus.on_stopping.append(lambda: bus.publish(draft, b'{"text":""}', retain=True))
+        await bus.stop()
+        assert fake.published[-2:] == [
+            (draft, b'{"text":""}', 1, True),
+            ("meshcore/radio1/availability", b"offline", 1, True),
+        ]
 
     asyncio.run(scenario())
 
@@ -916,6 +969,76 @@ def test_with_broker_a_forged_document_is_restored(broker: Broker) -> None:
             late.close()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.broker
+def test_with_broker_what_paho_sends_again_after_a_restart_is_the_gateways_own(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#101 against Mosquitto: a document published as the broker stops stays in paho's queue,
+    and paho sends it again after the reconnect. Its copy is the gateway's own: no warning that
+    another client wrote it, and the broker keeps the document the connect published."""
+    if SKIP_BROKER:
+        pytest.skip("MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1")
+    port = free_port()
+    conf = tmp_path / "mosquitto.conf"
+    conf.write_text(f"listener {port} 127.0.0.1\nallow_anonymous true\npersistence false\n")
+    broker = Broker("127.0.0.1", port)
+    old, current = b'{"radio": "disconnected"}', b'{"radio": "connected"}'
+    copies: list[bytes] = []  # of the state, as they come back to the gateway
+    arrived = asyncio.Event()
+    received = retained_module.RetainedTopics.received
+
+    def record(self: Any, topic: str, payload: bytes, retained: bool) -> None:
+        if topic == TOPICS.state and not retained:
+            copies.append(payload)
+            arrived.set()
+        received(self, topic, payload, retained)
+
+    async def back(payloads: set[bytes], since: int = 0) -> None:
+        while not payloads <= set(copies[since:]):
+            arrived.clear()
+            await asyncio.wait_for(arrived.wait(), 5)
+
+    monkeypatch.setattr(retained_module.RetainedTopics, "received", record)
+    mosquitto = start_mosquitto(conf, port)
+
+    async def scenario() -> None:
+        nonlocal mosquitto
+        config = MqttConfig(host=broker.host, port=broker.port, node_id="radio1", keepalive_s=10)
+        bus = MqttBus(config, TOPICS, None)
+        connects: asyncio.Queue[None] = asyncio.Queue()
+        bus.on_connected.append(lambda: bus.publish(TOPICS.state, current, retain=True))
+        bus.on_connected.append(lambda: connects.put_nowait(None))
+        await bus.start()
+        try:
+            await asyncio.wait_for(connects.get(), 5)
+            await back({current})
+            stop_mosquitto(mosquitto)  # the loop learns of the loss only after this step
+            bus.publish(TOPICS.state, old, retain=True)  # the broker is gone: paho keeps it
+            await asyncio.sleep(0.2)
+            restarted = len(copies)
+            mosquitto = start_mosquitto(conf, port)
+            await asyncio.wait_for(connects.get(), 15)
+            await back({old, current}, restarted)
+            await asyncio.sleep(0.2)  # a restore would come back by now
+        finally:
+            await bus.stop()
+        late = Observer(broker)  # subscribes after the fact: sees what the broker keeps
+        try:
+            await asyncio.to_thread(late.wait_for, TOPICS.state, current)
+            assert (TOPICS.state, old, True) not in late.messages
+        finally:
+            late.close()
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        stop_mosquitto(mosquitto)
+    assert copies.count(old) == 1, copies  # paho's, from before the restart
+    # (Mosquitto also sends the gateway its own last will as it stops: a warning about
+    # `availability`, docs/platform-notes.md)
+    assert f"another client wrote {TOPICS.state}" not in caplog.text
 
 
 def test_events_queued_for_the_reconnect_are_not_logged_as_refused(

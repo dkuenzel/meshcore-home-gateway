@@ -50,9 +50,12 @@ from meshcore_home_gateway.i18n import N_ha
 from meshcore_home_gateway.mqtt.discovery import (
     controls_off,
     device_id,
+    draft_options,
     gateway_names,
+    never_available,
     origin,
     placeholder,
+    text_room,
 )
 from meshcore_home_gateway.mqtt.payloads import encode
 from meshcore_home_gateway.mqtt.topics import Topics
@@ -201,6 +204,11 @@ def slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", ascii_name).strip("_")[:SLUG_CHARS].rstrip("_")
 
 
+def target_keys(config: Config) -> frozenset[str]:
+    """The keys of the contact targets, hidden or not: their chats are the targets' own."""
+    return frozenset(t.public_key for t in config.targets if t.public_key is not None)
+
+
 def contact_device_id(config: Config, key: str) -> str:
     return f"{device_id(config)}_contact_{key}"
 
@@ -304,6 +312,41 @@ def contact_payload(
     if node.node_type == NodeType.CHAT or "send" in kept:
         components["send"] = component(  # no name: the device's main feature, named like it
             "send", "notify", "", name=None, command_topic=topics.contact_send(key)
+        )
+    # the chat's draft and its Send button (design §6.7), not for a contact target's key, hidden
+    # or not: its chat is the target's, with its prefix, suffix and priority. One announced
+    # before stays (the keep rule), always unavailable.
+    writes = "send" in components and key not in target_keys(config)
+    if writes or "write" in kept:
+        text, send = draft_options(
+            topics.contact_draft(key),
+            topics.contact_draft_request(key),
+            text_room(config, None, None),
+        )
+        unavailable: dict[str, Any] = {}
+        if not writes:
+            unavailable = {
+                "availability": [{"topic": topics.availability}, never_available(topics)],
+                "availability_mode": "all",
+            }
+        components["write"] = component(
+            "write",
+            "text",
+            "_write",
+            # Translators: text entity of a companion: the draft of a message to it, kept by
+            # the gateway until it is sent. Home Assistant shows the contact's name first.
+            name=ha_name("Write"),
+            **text,
+            **unavailable,
+        )
+        components["write_send"] = component(
+            "write_send",
+            "button",
+            "_write_send",
+            # Translators: button of a companion: sends the draft of "Write"
+            name=ha_name("Send what is written"),
+            **send,
+            **unavailable,
         )
     components["remove"] = component(  # on every contact; available while it would be taken
         "remove",
@@ -559,6 +602,19 @@ class ContactDevices:
         self._without = 0  # contacts without a device because of the limit, as last logged
         self._taken: frozenset[str] = frozenset()  # contacts whose name another device has
         self._beyond: set[tuple[str, str]] = set()  # (contact, reading key) logged beyond the cap
+        # told the companions whose device has the draft and its Send button, after each change
+        # of the devices: the chats of the drafts (drafts.py)
+        self.on_writable: list[Callable[[frozenset[str]], None]] = []
+
+    def writable(self) -> frozenset[str]:
+        """The contacts whose device has the draft and its Send button, available: as the last
+        announcement, of this run or the last one, built it."""
+        targets = target_keys(self._config)
+        return frozenset(
+            key
+            for key, record in self._records.announced.items()
+            if "write" in record.components and key not in targets
+        )
 
     @property
     def watching(self) -> bool:
@@ -584,6 +640,7 @@ class ContactDevices:
         }
         records.prune(mesh.contacts.keys(), now)
         records.save()
+        self._tell_writable()
 
     def announce_all(self, *, birth: bool = False) -> None:
         """Send every document again: the broker connected, the radio became known, or (`birth`)
@@ -623,6 +680,7 @@ class ContactDevices:
         self._published.pop(key, None)
         self._records.hidden.add(key)
         self._records.save()
+        self._tell_writable()
         asked = self._config.telemetry.enabled and "telemetry" in record.components
         log.info(
             "Home Assistant: contact %s deleted by the user, hidden there%s",
@@ -642,6 +700,12 @@ class ContactDevices:
             self._records.save()
 
     # --- internals -------------------------------------------------------------------------------
+
+    def _tell_writable(self) -> None:
+        """After the devices' documents went out: a chat that is gone loses its draft then."""
+        writable = self.writable()
+        for callback in self.on_writable:
+            callback(writable)
 
     def _select(self, mesh: Mesh) -> list[str]:
         """Contacts with a device: those that have one keep it unless the limit went down."""

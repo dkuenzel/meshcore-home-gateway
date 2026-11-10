@@ -116,6 +116,7 @@ from meshcore_home_gateway.ports import (
     ContactsRead,
     MessageReceived,
     PacketLogged,
+    SendRequest,
     StatsRead,
 )
 from meshcore_home_gateway.protocol import codec
@@ -486,8 +487,14 @@ class _Topic:
 
 def mqtt(tmp: Path) -> dict[str, Any]:
     # the scenario's clock stands still: the `nodes` document goes out with every change, not
-    # at most every NODES_DOCUMENT_INTERVAL_S as in a run (SEC-011)
-    with mock.patch.object(observer_module, "NODES_DOCUMENT_INTERVAL_S", 0.0):
+    # at most every NODES_DOCUMENT_INTERVAL_S as in a run (SEC-011); the Homie device goes out
+    # at the loop's next turn, before the radio's first contact table (the gateway's node alone)
+    # and after each change of its nodes, not HOLD_S and SETTLE_S later
+    with (
+        mock.patch.object(observer_module, "NODES_DOCUMENT_INTERVAL_S", 0.0),
+        mock.patch.object(homie, "HOLD_S", 0.0),
+        mock.patch.object(homie, "SETTLE_S", 0.0),
+    ):
         client, homie_paho = asyncio.run(_published(tmp))
     seen: dict[str, _Topic] = {}
     for topic, payload, retained, qos in client.published + homie_paho.published:
@@ -603,7 +610,9 @@ async def _published(tmp: Path) -> tuple[_Paho, _Paho]:
     )
     await connection.start()
     homie_paho.on_connect(homie_paho, None, None, SimpleNamespace(is_failure=False), None)
-    await asyncio.sleep(0)
+    # the connection reaches the event loop, and the device's wait for the radio's contacts
+    # (HOLD_S, here 0) ends: the device with the gateway's node alone
+    await asyncio.sleep(0.01)
     store = JsonStateFile(tmp / "state.json")
     records = ContactDeviceRecords(store)
     devices = ContactDevices(config, topics, bus, records, wall_clock=lambda: T)
@@ -621,13 +630,29 @@ async def _published(tmp: Path) -> tuple[_Paho, _Paho]:
     observer = bridge.observer
     alice, bob = _record(KEY, "Alice", NodeType.CHAT), _record(KEY_B, "Bob", NodeType.CHAT)
     observer.radio_connected(350, codec.TuningParams(0, 9000))
+    bridge._configuration(None)  # the `config` document, as at the start and a radio connect
     before = dataclasses.replace(alice, last_advert=TA - 60, last_modified=TA - 60)
     observer.radio_event(ContactsRead({KEY: before}, T))  # her record before her newest advert
     # Alice's advert: its log, the radio's push directly after it, and the read that shows it
     observer.radio_event(PacketLogged(codec.RxLog(5.0, -90, ADVERT_RAW), T, 10, 1))
     observer.radio_event(AdvertHeard(codec.Advert(bytes.fromhex(KEY), False), T, 11, 1))
     observer.radio_event(ContactsRead({KEY: alice, KEY_B: bob}, T))  # added; position_in_advert
-    observer.radio_event(ContactsRead({KEY: alice}, T))  # removed: its document and device cleared
+    # a chat's draft and its Send, of a target and of a companion, on the chat's request topic
+    # as Home Assistant has it from discovery: the text is echoed, the press queues it and clears
+    # the draft; a press on a blank draft is refused as empty (design §6.7)
+    target, companion = _draft_requests(config, topics)
+    for request, payload in (
+        (target[ALIAS], b'{"text": "Dinner is ready"}'),
+        (target[ALIAS], b'{"send": true}'),
+        (companion, b'{"text": "Back soon"}'),
+        (companion, b'{"send": true}'),
+        (target[CHANNEL_ALIAS], b'{"send": true}'),
+    ):
+        client.on_message(
+            client, None, SimpleNamespace(topic=request, payload=payload, retain=False)
+        )
+        await asyncio.sleep(0)  # the request reaches the event loop
+    observer.radio_event(ContactsRead({KEY: alice}, T))  # removed: its document, device and draft
     observer.telemetry(KEY, Answer(lpp.decode(LPP_ALL), T, False, 1, False))  # every reading key
     observer.telemetry_event("answered", KEY, "answering")
     observer.telemetry_event("unanswered", KEY, "away")
@@ -668,6 +693,26 @@ async def _published(tmp: Path) -> tuple[_Paho, _Paho]:
         )
     )
     bridge.outbox._deliver_event(DeliveryEvent("id", ALIAS, DeliveryState.CONFIRMED, text="Hello"))
+    # the history's keys of a sent message filled: a suspect acknowledgement, a failure's reason
+    for final, extra in (
+        (DeliveryState.CONFIRMED, {"suspect": True}),
+        (DeliveryState.FAILED, {"reason": "no_acknowledgement"}),
+    ):
+        event = DeliveryEvent("id", ALIAS, final, text="Hi", attempt=3, queued_at=T - 5, **extra)
+        bridge.outbox._deliver_event(event)
+    # a message on its way: queued, then sent once (`pending` goes out after a moment's steps);
+    # then a list longer than the document holds
+    bridge.outbox.accept(SendRequest(ALIAS, b"On my way", False))
+    await asyncio.sleep(0)
+    (on_its_way,) = [m for m in bridge.outbox._pending.values() if m.text == "On my way"]
+    sent = DeliveryEvent(on_its_way.id, ALIAS, DeliveryState.SENT, text="On my way", attempt=1)
+    bridge.outbox._deliver_event(sent)
+    await asyncio.sleep(0)
+    long = views.PendingEntry(
+        "id", T, ALIAS, "contact", KEY, None, "Alice", "x" * 150, "sent", 1, 4
+    )
+    observer.pending([long] * 40)
+    bridge.outbox.publish_pending()
     bridge.announcer.announce()  # discovery, the controls, the contacts' devices; state
     bridge.radio.ready.set()
     bridge.status.publish()  # the radio connected
@@ -697,6 +742,22 @@ async def _published(tmp: Path) -> tuple[_Paho, _Paho]:
     await connection.stop()
     await bus.stop()
     return client, homie_paho
+
+
+def _draft_requests(config: Config, topics: Topics) -> tuple[dict[str, str], str]:
+    """The request topics of the drafts as discovery gives them to Home Assistant: per target
+    alias its text's and its button's (one topic), and that of the companion KEY_B's."""
+    gateway = discovery_payload(config, topics)["cmps"]
+    target = {}
+    for alias in (t.alias for t in config.targets):
+        text, button = gateway[f"write_{alias}"], gateway[f"write_{alias}__send"]
+        if text["command_topic"] != button["command_topic"]:
+            raise AssertionError(f"{alias}: the draft and its Send on two topics")
+        target[alias] = text["command_topic"]
+    bob = contact_payload(config, topics, _tracked(NodeType.CHAT, KEY_B), SLUG)["cmps"]
+    if bob["write"]["command_topic"] != bob["write_send"]["command_topic"]:
+        raise AssertionError("a companion's draft and its Send on two topics")
+    return target, bob["write"]["command_topic"]
 
 
 def _homie_send(key: str) -> str:
@@ -751,6 +812,7 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
     readings = views.RadioReadings(codec.Battery(0, 0, 0), errors, None, None, T)
     states, statuses = "contacts/<key>:telemetry_state", "state:telemetry"
     reasons, event_states = "state:telemetry_reason", "telemetry:state"
+    steps = "pending:messages.step"
     _within(states, _emitted(published, "contacts/<key>", "telemetry_state"), STATES)
     _within(statuses, _emitted(published, "state", "telemetry"), STATUSES)
     _within(reasons, _emitted(published, "state", "telemetry_reason"), PAUSE_REASONS)
@@ -774,6 +836,9 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
             cast(str, views.setting_value(profile.ADVERT_LOCATION, shared)) for shared in (0, 1)
         ],
         "contacts/<key>:type": list(NODE_TYPES.values()),
+        steps: _declared(
+            steps, _listed(published, "pending", "messages", "step"), [*views.PENDING_STEPS]
+        ),
         "contacts/<key>:flags": views.flag_names(sum(ContactFlag)),
         "stats:errors": views.stats_document(readings, AirtimeMeter(), None)["errors"],
         states: _options(states, contact["telemetry_state"]["options"], STATES),
@@ -790,6 +855,19 @@ def _emitted(published: Sequence[tuple[str, bytes, bool, int]], name: str, key: 
         json.loads(payload)[key]
         for published_on, payload, _, _ in published
         if placeholders(published_on) == topic and payload
+    }
+
+
+def _listed(
+    published: Sequence[tuple[str, bytes, bool, int]], name: str, items: str, key: str
+) -> set[Any]:
+    """The values of `key` in the entries of the list `items` of the document `name`."""
+    topic = _DOCUMENTS + name
+    return {
+        entry[key]
+        for published_on, payload, _, _ in published
+        if placeholders(published_on) == topic and payload
+        for entry in json.loads(payload)[items]
     }
 
 
@@ -1591,9 +1669,13 @@ def homeassistant(language: str = "en") -> dict[str, Any]:
     config = dataclasses.replace(config, homeassistant=names)
     contact = contact_device_id(config, KEY)
     contacts: dict[str, dict[str, Any]] = {}
+    # a contact target's companion has no draft of its own: the target's is its chat
+    companion = dataclasses.replace(
+        config, targets=tuple(t for t in config.targets if t.public_key != KEY)
+    )
     for node_type in NodeType:  # the components of a contact depend on its type
         tracked = _tracked(node_type)
-        found = _components(contact_payload(config, topics, tracked, SLUG)["cmps"], contact)
+        found = _components(contact_payload(companion, topics, tracked, SLUG)["cmps"], contact)
         for key, entry in found.items():
             known = contacts.setdefault(key, entry | {"node_types": []})
             if {name: value for name, value in known.items() if name != "node_types"} != entry:
@@ -1659,11 +1741,11 @@ def _key_part(slug: str, key: str) -> str:
     return slug
 
 
-def _tracked(node_type: int) -> Tracked:
+def _tracked(node_type: int, key: str = KEY) -> Tracked:
     """A contact with all that it can have: a component that exists only with data is there."""
     position = Position(1.0, 2.0)
     node = Node(
-        KEY,
+        key,
         "Alice",
         node_type,
         flags=sum(ContactFlag),

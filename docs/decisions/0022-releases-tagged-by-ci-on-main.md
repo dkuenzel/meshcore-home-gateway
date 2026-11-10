@@ -160,3 +160,17 @@ only a release waits a day. A pre-release reaches only an installation that name
 version commit. A faulty candidate is now followed by the next one as soon as CI passed on it, not
 two days later. The review had suggested that candidates wait too (SUP-001); the maintainer chose
 otherwise.
+
+Amended on 2026-11-07 (#84): a tag pushed by hand is checked too. The first job of `release.yml`
+(`tools/release_plan.py admit`) refuses a commit off `main`, and a release that `release-due.yml`
+would not tag, asked the same way on `main`: not on the commit that wrote the version of `main`,
+not a day after that commit's date, without CI passed on it on `main`, or while `release-due.yml`
+is disabled. Within its day a release is stopped by disabling `release-due.yml`, which this check
+makes hold against a tag pushed by hand too; a revert of its version does not stop it, because the
+release plan refuses that revert (the tag of the version it goes back to is on another commit).
+`release-due.yml` does not count a run that this job refused, and starts the release on a tag
+pushed within the day once it is due and CI passed on it; a run of `release.yml` that failed before
+it published is re-run on the same tag ([development.md](../development.md#release)). A pre-release
+is admitted on any commit of `main` that carries its version, also one where CI has not passed. The
+check is part of the tagged commit, so a tag on a commit off `main` can bring a `release.yml`
+without it; only who may create tags stands in its way there (SECURITY.md).

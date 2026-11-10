@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import deque
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import replace
 from typing import Any, Protocol
 
@@ -72,7 +72,10 @@ from meshcore_home_gateway.state import (
 from meshcore_home_gateway.views import (
     SETTING_NAMES,
     HistoryEntry,
+    PendingEntry,
     RadioReadings,
+    TargetSetting,
+    config_document,
     contact_document,
     contact_event,
     contacts_document,
@@ -82,6 +85,7 @@ from meshcore_home_gateway.views import (
     look_alike_nodes,
     name_taken_nodes,
     nodes_document,
+    pending_document,
     restated,
     setting_value,
     settings_document,
@@ -165,10 +169,12 @@ class Observer:
         self._current = current.documents if current is not None else {}
         self._protected = protected
         self._wall = wall_clock
+        self._started_at = wall_clock()  # since when the settings of `config` are in effect
         self._meter = AirtimeMeter()
         self._readings: RadioReadings | None = None
         self._tuning: codec.TuningParams | None = None
         self._recent: deque[HistoryEntry] = deque(maxlen=RECENT_MESSAGES)
+        self._on_their_way: list[PendingEntry] = []  # the outbox's messages not final yet
         self._logged: dict[str, tuple[float, Signal]] = {}  # key -> logged advert's signal
         self._published: dict[str, bytes] = {}  # topic -> payload last published
         self._first_read = True
@@ -221,6 +227,22 @@ class Observer:
             self._restore_contact(key, None, fix, readings.pop(key, None))
         for key, kept in readings.items():
             self._restore_contact(key, None, None, kept)
+
+    def show_channels(self, published: Callable[[int | None], bool]) -> None:
+        """The channels whose received messages are published (`[messages] publish_channels`,
+        `ignore_channels`). Those of the others that the history holds, which an earlier version
+        kept of every channel, leave the `history` document, and the newest of the rest take
+        their place; they stay in the history until they are `messages_days` old (#103). The
+        gateway's own messages to a channel stay, as while it runs."""
+
+        def shown(entry: HistoryEntry) -> bool:
+            channel, own = entry.kind == "channel", entry.direction == "out"
+            return not channel or own or published(entry.channel_index)
+
+        recent: Iterable[HistoryEntry] = filter(shown, self._recent)
+        if self._history is not None and not self._history.broken:  # also from further back
+            recent = reversed(self._history.recent_messages(RECENT_MESSAGES, shown))
+        self._recent = deque(recent, maxlen=RECENT_MESSAGES)
 
     def _restore_contact(
         self, key: str, heard: Heard | None, fix: Fix | None, readings: Readings | None
@@ -400,8 +422,11 @@ class Observer:
         readings of its statistics."""
         return self._meter.used_s()
 
-    def message(self, message: InboundMessage, sender: Contact | None) -> None:
-        """A received message, after the bridge published it."""
+    def message(
+        self, message: InboundMessage, sender: Contact | None, target: str | None = None
+    ) -> None:
+        """A received message, after the bridge published it; `target`: the alias it came
+        through, as the `received` event names it."""
         signal = Signal(message.hops, message.snr_db)
         text, name = message.text, sender.name if sender else None
         if message.kind is MessageKind.CHANNEL:
@@ -424,11 +449,14 @@ class Observer:
                 name=name,
                 hops=message.hops,
                 snr_db=message.snr_db,
+                target=target,
             )
         )
 
     def delivery(self, event: DeliveryEvent, target: Target | None) -> None:
-        """A delivery event; final ones of messages that may have left go into the history."""
+        """A delivery event; final ones of messages that may have left go into the history. A
+        message to `contacts/<key>/send` has no target there: its alias is the key, which
+        `contact_key` holds (aliases have at most 32 characters)."""
         channel = target is not None and target.kind is MessageKind.CHANNEL
         final = event.state in _KEPT or (channel and event.state is DeliveryState.SENT)
         if not final or event.text is None or target is None:
@@ -445,8 +473,28 @@ class Observer:
                 channel_index=target.channel_index,
                 name=contact.node.name if contact else target.alias,
                 state=event.state.value,
+                target=None if target.alias == key else target.alias,
+                id=event.id,
+                queued_at=event.queued_at,
+                suspect=event.suspect,
+                reason=event.reason,
             )
         )
+
+    def pending(self, entries: list[PendingEntry]) -> None:
+        """The messages the outbox accepted that are not final yet, the oldest first: after
+        their steps, and so after the history entry of one that became final."""
+        self._on_their_way = entries
+        self._publish(self._topics.pending, pending_document(entries))
+
+    def configuration(
+        self, targets: Sequence[TargetSetting], settings: Mapping[str, Mapping[str, Any]]
+    ) -> None:
+        """The `config` document: the settings in effect since the start (config_view). At the
+        start and at each radio connect, as the radio's name changes a channel text's room; the
+        broker's connects publish it with every document."""
+        document = config_document(self._started_at, targets, settings)
+        self._publish(self._topics.config, document, force=True)
 
     def publish_all(self) -> None:
         """Publish every document again, and clear the topics of contacts removed: the broker
@@ -457,6 +505,7 @@ class Observer:
             self._bus.publish(topic, payload, retain=True)
         self._restate_all(connect=True)
         self._publish(self._topics.history, history_document(self._recent), force=True)
+        self._publish(self._topics.pending, pending_document(self._on_their_way), force=True)
 
     def tick(self) -> None:
         """Called about once a minute: forget stale heard nodes and logged adverts, purge the

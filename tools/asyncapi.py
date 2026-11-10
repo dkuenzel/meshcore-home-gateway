@@ -53,6 +53,14 @@ PARAMETERS: dict[str, dict[str, Any]] = {
         "description": "a device on the gateway's: `contact_<key>` or `manage_contacts`",
         "examples": ["manage_contacts"],
     },
+    "kind": {
+        "description": "the kind of a chat in Home Assistant: `target` or `contact`",
+        "examples": ["target", "contact"],
+    },
+    "chat": {
+        "description": "a chat in Home Assistant: a target's alias, or a contact's key",
+        "examples": ["family"],
+    },
     "status_topic": {
         "description": "`[homeassistant] status_topic`: Home Assistant's birth message",
         "default": "homeassistant/status",
@@ -93,6 +101,13 @@ REQUESTS: dict[str, tuple[str | None, str]] = {
         None,
         "any payload: show the contacts deleted in Home Assistant again",
     ),
+    "homeassistant/draft/{kind}/{chat}/request": (
+        JSON,
+        (
+            'JSON {"text": "..."}: keep the text as the chat\'s draft, or {"send": true}: send the '
+            "draft; QoS 0 from Home Assistant"
+        ),
+    ),
     "homie/{homie_device}/{key}/send/set": (
         TEXT,
         "UTF-8 text for that companion, as on `contacts/<key>/send`",
@@ -105,7 +120,9 @@ DISCOVERY = "Home Assistant's device discovery (docs/home-assistant.md)"
 CLEARED = {
     "contacts/{key}": "an empty retained message clears it when the contact leaves the table",
     "{prefix}/device/{device}/{component}/config": "an empty message removes the device",
+    "homeassistant/draft/{kind}/{chat}": "an empty retained message deletes it when the chat goes",
 }
+DRAFTS = ["homeassistant", "draft"]  # below them the kind and the chat: `draft/target/<alias>`
 HOMIE = "homie/{homie_device}/"  # the topics of the Homie device (docs/mqtt-api.md, Homie)
 HOMIE_CLEARED = "an empty retained message: none, an unknown value, or a node that is gone"
 
@@ -130,7 +147,11 @@ def address(topic: str) -> str:
     out = []
     for index, part in enumerate(parts):
         before = parts[index - 1] if index else ""
-        if part == "+" and parts[0] == "homie":  # a node of the Homie device: a contact's key
+        if index >= 2 and parts[index - 2 : index] == DRAFTS:  # a draft's kind, then its chat
+            out.append("{kind}")
+        elif index >= 3 and parts[index - 3 : index - 1] == DRAFTS:
+            out.append("{chat}")
+        elif part == "+" and parts[0] == "homie":  # a node of the Homie device: a contact's key
             out.append("{key}")
         elif part == "+":
             out.append({"contacts": "{key}", "send": "{alias}"}.get(before, "{component}"))

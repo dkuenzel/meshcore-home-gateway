@@ -20,18 +20,20 @@ from typing import Any
 import pytest
 import yaml
 from freezegun.api import FrozenDateTimeFactory
+from ha_plugin import async_fire_mqtt_message
 from homeassistant import const
 from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.json import json_bytes
 from homeassistant.helpers.template import Template
 from homeassistant.setup import async_setup_component
 from homeassistant.util import slugify
-from pytest_homeassistant_custom_component.common import async_fire_mqtt_message
 
 from meshcore_home_gateway import __version__
 from meshcore_home_gateway.config import Config, parse_config
+from meshcore_home_gateway.config_view import shown_settings, target_settings
 from meshcore_home_gateway.core.commands import Command
 from meshcore_home_gateway.core.contacts import Contact
 from meshcore_home_gateway.core.model import (
@@ -53,7 +55,16 @@ from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.ports import RadioInfo
 from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
 from meshcore_home_gateway.protocol.links import contact_link
-from meshcore_home_gateway.views import settings_document
+from meshcore_home_gateway.views import (
+    ATTRIBUTE_LIMIT_BYTES,
+    HistoryEntry,
+    PendingEntry,
+    config_document,
+    encode,
+    history_document,
+    pending_document,
+    settings_document,
+)
 
 GUIDE = Path(__file__).resolve().parents[2] / "docs" / "home-assistant.md"
 SENDER = "a1" * 32
@@ -63,6 +74,12 @@ TARGETS = (
     "[targets.my-target]\nchannel = 2\n"
 )
 PREFIX = "meshcore_home_gateway_radio1"
+# Since 2026.11 Home Assistant clears a device's discovery topic once for each entity it removes
+# with the device, and no longer when a single component goes while the device stays
+# (components/mqtt/entity.py:816-875, async_remove_entity_discovery_payload); a cleared topic now
+# removes the device's disabled components too (components/mqtt/discovery.py:290-326). Before,
+# it cleared the topic once, and itself whenever it removed a disabled component (#115).
+CLEARS_PER_ENTITY = (const.MAJOR_VERSION, const.MINOR_VERSION) >= (2026, 11)
 
 
 def make_config(targets: str = TARGETS, node_id: str = "radio1") -> Config:
@@ -216,10 +233,8 @@ async def test_a_hyphen_in_the_node_id_becomes_an_underscore_only_in_the_entity_
     hyphen, underscore = make_config(node_id="radio-1"), make_config(node_id="radio_1")
     document = discovery_payload(hyphen, Topics(hyphen.mqtt.base_topic, "radio-1"))
     await fire(hass, discovery_topic(hyphen), document)
-    expected = {
-        f"{c['p']}.meshcore_home_gateway_radio_1_{key.replace('-', '_')}"
-        for key, c in document["cmps"].items()
-    }
+    # the default entity IDs with '_' for '-' (a draft's Send button: not its key, D-47)
+    expected = {c["default_entity_id"].replace("-", "_") for c in document["cmps"].values()}
     assert entity_ids(hass) == expected
 
     other = discovery_payload(underscore, Topics(underscore.mqtt.base_topic, "radio_1"))
@@ -255,7 +270,12 @@ async def test_the_device_page_shows_the_radio_once_it_is_known(
     assert (found.manufacturer, found.model) == ("MeshCore", "Heltec V3")
     assert found.sw_version == "v1.18.0"
     assert found.serial_number == RADIO_KEY
-    assert snapshot(hass, entity_ids(hass)) == before  # the re-announcement changes no state
+    after = snapshot(hass, entity_ids(hass))
+    # the radio's name takes room from channel texts: only the channel drafts' `max` follows it
+    for alias in ("alerts", "my_target"):
+        draft = f"text.{PREFIX}_write_{alias}"
+        assert (before[draft][2].pop("max"), after[draft][2].pop("max")) == (158, 151)
+    assert after == before  # the re-announcement changes no state
 
     await announce(hass, discovery_payload(CONFIG, TOPICS))  # a restart before the radio is known
     assert device(hass).model == "Heltec V3"  # Home Assistant keeps the stored identity
@@ -321,10 +341,11 @@ node_id = "radio1"
 async def test_a_disabled_component_goes_without_losing_the_device_for_long(
     hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """The packet sensors are disabled by default. Removing a disabled entity makes Home
-    Assistant clear the device's topic itself, and the broker hands that back to it: all the
-    device's entities go. The gateway sees it and announces again, which restores them; the
-    removal, sent again, then finds nothing disabled and Home Assistant stays quiet."""
+    """The packet sensors are disabled by default. Before 2026.11, removing a disabled entity
+    makes Home Assistant clear the device's topic itself, and the broker hands that back to it:
+    all the device's entities go. The gateway sees it and announces again, which restores them;
+    the removal, sent again, then finds nothing disabled and Home Assistant stays quiet. Since
+    2026.11 the device keeps its other entities throughout (CLEARS_PER_ENTITY)."""
     await announce(hass, discovery_payload(CONFIG, TOPICS))
     fewer = parse_config(f"""
 [radio]
@@ -341,7 +362,9 @@ words = ["status", "arm"]
 {TARGETS}
 """)
     removed = {"rx_rssi": "sensor", "rx_snr": "sensor"}
-    expected = set(discovery_payload(fewer, TOPICS)["cmps"])
+    # the entity IDs' object parts: a key's, but `write_<alias>_send` for `write_<alias>__send`
+    components = discovery_payload(fewer, TOPICS)["cmps"].values()
+    expected = {c["default_entity_id"].rsplit("_radio1_", 1)[1] for c in components}
 
     async def announce_removal() -> list[tuple[Any, ...]]:
         mqtt.async_publish.reset_mock()
@@ -352,16 +375,22 @@ words = ["status", "arm"]
             await fire(hass, topic, "" if payload is None else payload)
         return published
 
+    def kept() -> set[str]:
+        return {e.rsplit("_radio1_", 1)[1] for e in entity_ids(hass)}
+
     cleared = await announce_removal()
-    assert {(t, p, r) for t, p, _q, r in cleared} == {(discovery_topic(CONFIG), None, True)}
-    assert entity_ids(hass) == set()  # until the gateway announces again
+    if CLEARS_PER_ENTITY:
+        assert cleared == []
+        assert kept() == {k.replace("-", "_") for k in expected}
+    else:
+        assert {(t, p, r) for t, p, _q, r in cleared} == {(discovery_topic(CONFIG), None, True)}
+        assert entity_ids(hass) == set()  # until the gateway announces again
     assert await announce_removal() == []  # the gateway's answer to the cleared topic
-    assert {e.rsplit("_radio1_", 1)[1] for e in entity_ids(hass)} == {
-        k.replace("-", "_") for k in expected
-    }
-    assert {p.split(":")[0] for p in problems(caplog)} == {
-        "WARNING homeassistant.components.mqtt.discovery"
-    }  # "No device components to cleanup" for the copies of the cleared topic
+    assert kept() == {k.replace("-", "_") for k in expected}
+    # before 2026.11: "No device components to cleanup" for the copies of the cleared topic
+    assert {p.split(":")[0] for p in problems(caplog)} == (
+        set() if CLEARS_PER_ENTITY else {"WARNING homeassistant.components.mqtt.discovery"}
+    )
 
 
 # --- state -------------------------------------------------------------------------------------
@@ -483,6 +512,222 @@ async def test_the_radio_profile_shows_its_status_and_settings(
         "written",
         "manual_add",
     )
+    assert problems(caplog) == []
+
+
+# --- the message history -----------------------------------------------------------------------
+
+
+async def test_the_message_history_shows_the_newest_message_and_outlives_the_gateway(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The `history` document as a timestamp sensor: unknown while it holds no message, with its
+    keys readable; then the newest message's time, the messages as attributes with every key.
+    Its own availability keeps it while the gateway is offline: the messages stay readable."""
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "online", retain=True)
+    sensor = f"sensor.{PREFIX}_message_history"
+    await fire(hass, TOPICS.history, history_document([]), retain=True)
+    empty = hass.states.get(sensor)
+    assert empty.state == "unknown"
+    assert [empty.attributes[k] for k in ("total", "truncated", "messages")] == [0, False, []]
+
+    entries = [
+        HistoryEntry(
+            1_800_000_000.0,
+            "in",
+            "channel",
+            "On my way",
+            channel_index=1,
+            name="Carol",
+            hops=1,
+            snr_db=6.25,
+            target="alerts",
+        ),
+        HistoryEntry(
+            1_800_000_060.0,
+            "out",
+            "contact",
+            "Back soon",
+            contact_key=SENDER,
+            name="Alice",
+            state="confirmed",
+            target="operator",
+            id="1a2b3c4d",
+            queued_at=1_800_000_058.0,
+            suspect=False,
+        ),
+    ]
+    document = history_document(entries)
+    await fire(hass, TOPICS.history, document)
+    history = hass.states.get(sensor)
+    assert (history.state, history.attributes["device_class"]) == (
+        "2027-01-15T08:01:00+00:00",
+        "timestamp",
+    )
+    assert history.attributes["messages"] == document["messages"]
+    assert history.attributes["messages"][0]["queued_at"] == "2027-01-15T08:00:58+00:00"
+
+    await fire(hass, TOPICS.availability, "offline")  # the last will, or a clean stop
+    assert hass.states.get(f"sensor.{PREFIX}_queue").state == "unavailable"
+    kept = hass.states.get(sensor)
+    assert (kept.state, kept.attributes["messages"]) == (history.state, document["messages"])
+    assert problems(caplog) == []
+
+
+async def test_the_message_history_comes_back_after_a_restart_of_home_assistant(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Home Assistant restarted while the gateway is offline: the broker's retained history is
+    all it gets, and the sensor shows it; the gateway's availability says offline."""
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "offline", retain=True)
+    entry = HistoryEntry(1_800_000_000.0, "in", "contact", "hi", SENDER, name="Alice")
+    await fire(hass, TOPICS.history, history_document([entry]), retain=True)
+    history = hass.states.get(f"sensor.{PREFIX}_message_history")
+    assert (history.state, history.attributes["total"]) == ("2027-01-15T08:00:00+00:00", 1)
+    assert hass.states.get(f"sensor.{PREFIX}_queue").state == "unavailable"
+    assert problems(caplog) == []
+
+
+# --- the messages on their way ------------------------------------------------------------------
+
+NOW = 1_800_000_300.0  # 2027-01-15T08:05:00+00:00
+# the rule of the dashboard's status line (#112): messages not sent yet, accepted over a minute ago
+WAITING = """
+{%- set ns = namespace(waiting=0) -%}
+{%- for e in (state_attr('sensor.meshcore_home_gateway_radio1_pending_messages', 'messages')
+   or []) -%}
+{%- set t = (e.get('queued_at') or '') | as_datetime(default=none) -%}
+{%- if e.get('step') == 'queued' and t is not none and now() - t > timedelta(seconds=60) -%}
+{%- set ns.waiting = ns.waiting + 1 -%}
+{%- endif -%}
+{%- endfor -%}
+{{ ns.waiting }}"""
+
+
+def on_its_way(step: str, age_s: float, text: str = "Back soon") -> PendingEntry:
+    attempt = 0 if step == "queued" else 1
+    return PendingEntry(
+        f"{int(age_s):08x}",
+        NOW - age_s,
+        "operator",
+        "contact",
+        SENDER,
+        None,
+        "Alice",
+        text,
+        step,
+        attempt,
+        3,
+    )
+
+
+async def test_the_messages_on_their_way_show_their_count_and_outlive_the_gateway(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The `pending` document as a sensor: the number of messages on their way, 0 with its keys
+    readable when there is none, the messages as attributes. Its own availability keeps it while
+    the gateway is offline, and after a restart of Home Assistant meanwhile."""
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "online", retain=True)
+    sensor = f"sensor.{PREFIX}_pending_messages"
+    await fire(hass, TOPICS.pending, pending_document([]), retain=True)
+    empty = hass.states.get(sensor)
+    assert empty.state == "0"
+    assert [empty.attributes[k] for k in ("total", "truncated", "messages")] == [0, False, []]
+
+    document = pending_document([on_its_way("sent", 30), on_its_way("queued", 10, "Gate open")])
+    await fire(hass, TOPICS.pending, document)
+    pending = hass.states.get(sensor)
+    assert (pending.state, pending.attributes["messages"]) == ("2", document["messages"])
+    assert pending.attributes["friendly_name"].endswith("Messages on their way")
+
+    await fire(hass, TOPICS.availability, "offline")  # the last will, or a clean stop
+    assert hass.states.get(f"sensor.{PREFIX}_queue").state == "unavailable"
+    kept = hass.states.get(sensor)
+    assert (kept.state, kept.attributes["messages"]) == ("2", document["messages"])
+    assert problems(caplog) == []
+
+
+async def test_the_messages_on_their_way_come_back_after_a_restart_of_home_assistant(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "offline", retain=True)
+    await fire(hass, TOPICS.pending, pending_document([on_its_way("queued", 5)]), retain=True)
+    assert hass.states.get(f"sensor.{PREFIX}_pending_messages").state == "1"
+    assert problems(caplog) == []
+
+
+async def test_a_stuck_message_waits_over_a_minute_while_the_queue_reads_0(
+    hass: HomeAssistant,
+    mqtt: Any,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """#112: the only message is the one in flight, which the queue never counts. Counted from
+    the pending sensor, it waits over a minute once it was accepted more than 60 s ago and is
+    not sent yet; one that was sent and waits for its acknowledgement as long does not count."""
+    freezer.move_to("2027-01-15T08:05:00+00:00")
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "online", retain=True)
+    await fire(hass, TOPICS.state, state_document(known=True) | {"queue": 0}, retain=True)
+    waiting = Template(WAITING, hass)
+    for entries, count in (
+        ([on_its_way("queued", 59)], "0"),
+        ([on_its_way("queued", 61)], "1"),
+        ([on_its_way("sent", 61)], "0"),
+        ([on_its_way("sent", 300), on_its_way("queued", 61, "Gate open")], "1"),
+    ):
+        await fire(hass, TOPICS.pending, pending_document(entries))
+        assert hass.states.get(f"sensor.{PREFIX}_queue").state == "0"
+        assert hass.states.get(f"sensor.{PREFIX}_pending_messages").state == str(len(entries))
+        assert waiting.async_render(parse_result=False).strip() == count, entries
+    assert problems(caplog) == []
+
+
+# --- the configuration ----------------------------------------------------------------------------
+
+
+async def test_the_configuration_shows_the_settings_since_the_start(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The `config` document as a diagnostic timestamp sensor: its state the time the gateway
+    started, the settings as attributes, the targets with their room as the radio's name leaves
+    it. The largest document the gateway writes is recorded whole: its attributes stay below the
+    recorder's 16 KiB."""
+    await announce(hass, discovery_payload(CONFIG, TOPICS, RADIO))
+    await fire(hass, TOPICS.availability, "online", retain=True)
+    document = config_document(
+        1_800_000_000.0, target_settings(CONFIG, RADIO), shown_settings(CONFIG)
+    )
+    await fire(hass, TOPICS.config, document, retain=True)
+    sensor = f"sensor.{PREFIX}_configuration"
+    shown = hass.states.get(sensor)
+    assert (shown.state, shown.attributes["device_class"]) == (
+        "2027-01-15T08:00:00+00:00",
+        "timestamp",
+    )
+    entry = er.async_get(hass).async_get(sensor)
+    assert entry is not None
+    assert entry.entity_category is const.EntityCategory.DIAGNOSTIC
+    attributes = {key: shown.attributes[key] for key in document}
+    assert attributes == document
+    rooms = {t["alias"]: t["room"] for t in shown.attributes["targets"]["items"]}
+    draft = hass.states.get(f"text.{PREFIX}_write_alerts")
+    assert rooms["alerts"] == draft.attributes["max"]  # the room of the chat's draft
+
+    many = "".join(f"[targets.t{i:03d}{'-x' * 14}]\nchannel = {i % 8}\n" for i in range(200))
+    largest = make_config(TARGETS + many)
+    document = config_document(1.0, target_settings(largest, RADIO), shown_settings(largest))
+    assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES
+    await fire(hass, TOPICS.config, document)
+    shown = hass.states.get(sensor)
+    assert shown.attributes["targets"] == document["targets"]
+    # as the recorder measures them, which stores no attributes above 16 KiB
+    # (components/recorder/db_schema.py:586-598, MAX_STATE_ATTRS_BYTES)
+    assert len(json_bytes(dict(shown.attributes))) <= 16 * 1024
     assert problems(caplog) == []
 
 
@@ -764,5 +1009,13 @@ async def test_the_actions_of_the_first_steps_send_a_message(
 
 
 def test_the_guide_names_the_tested_release() -> None:
+    """The requirements line names every release series the contract tests run with (`make
+    ha-test HA_SERIES=…`), this one among them: "tested with 2026.10 and 2026.11" (#115)."""
     tested = f"{const.MAJOR_VERSION}.{const.MINOR_VERSION}"
-    assert f"tested with {tested}" in GUIDE.read_text(encoding="utf-8")
+    (line,) = [
+        line
+        for line in GUIDE.read_text(encoding="utf-8").splitlines()
+        if line.startswith("* Home Assistant ") and "tested with" in line
+    ]
+    named = re.findall(r"\d{4}\.\d+", line.split("tested with", 1)[1])
+    assert tested in named, line

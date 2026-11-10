@@ -29,8 +29,10 @@ flowchart LR
   path reset to flood after unanswered attempts, as the official clients do.
 - **Respectful of the shared channel:** an airtime budget computed from the radio's own modulation
   settings, duplicate suppression ("one alert per cause"), a bounded queue with expiry.
-- **Receive** every message as JSON, with sender, channel, SNR and hop count; retries of a sender
-  are deduplicated.
+- **Receive** the messages of contacts and of the channels that are a target as JSON (every
+  channel with `[messages] publish_channels = "all"`), with sender, channel, SNR and hop count;
+  retries of a sender are deduplicated, and a sender or a channel that floods is cut to bursts of
+  10 per sender and 20 per channel.
 - **Commands** only from direct messages of allowlisted contacts (bound to their full public key),
   with replay protection; channel messages never command.
 - **Telemetry of the household's companions:** battery, sensor readings and position, asked only
@@ -58,10 +60,10 @@ flowchart LR
   ([`contrib/mqtt2prometheus`](contrib/mqtt2prometheus/README.md)); the MQTT API as an AsyncAPI
   document generated from the code and attached to each release
   ([`docs/mqtt-api.asyncapi.yaml`](docs/mqtt-api.asyncapi.yaml)).
-- **Translatable:** the command line, the installer, the names in Home Assistant and the
-  dashboard come from gettext catalogs; English for now, more languages by contribution
-  ([`docs/translations.md`](docs/translations.md)). Machine output never changes with the
-  language.
+- **In English and German:** the command line, the installer, the names in Home Assistant and
+  the dashboard, since 2.1.0, from gettext catalogs; more languages by contribution
+  ([`docs/translations.md`](docs/translations.md)). The guides stay English, and machine output
+  never changes with the language.
 - **Small supply chain:** Python standard library plus `paho-mqtt` from the Linux distribution; no
   other runtime dependency.
 - **One-step installation on Proxmox VE** in an unprivileged container, configured through dialogs
@@ -71,7 +73,7 @@ flowchart LR
 
 ## Status
 
-Version 2.0. Developed against MeshCore companion firmware 1.18.0 (protocol version 3) and Home
+Version 2.1. Developed against MeshCore companion firmware 1.18.0 (protocol version 3) and Home
 Assistant 2026.10 (2026.8 or newer is required); tested on hardware with a LilyGo T-Echo Lite on
 companion firmware 1.18.0 over USB, in a Proxmox container. Its four public interfaces follow
 Semantic Versioning: the MQTT API, the configuration format, the command line and Home Assistant

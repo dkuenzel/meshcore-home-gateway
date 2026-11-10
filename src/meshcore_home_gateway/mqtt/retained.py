@@ -7,7 +7,9 @@ own publishes come back unchanged (MQTT 3.1.1 has no option to leave them out); 
 client is undone: the topic gets the gateway's last payload again, or is cleared where the
 gateway has none, at most once per topic every HEAL_INTERVAL_S, with a warning. The copies the
 broker sends for a new subscription (with the retain flag) are not compared: the gateway
-publishes all its documents at every connect, after the subscription.
+publishes all its documents at every connect, after the subscription. After a reconnect paho
+sends again what the broker had not acknowledged (docs/platform-notes.md): those copies are the
+gateway's too, and one that comes after the current payload's is followed by it again (#101).
 
 This keeps a forged or stale document short-lived; it does not prevent one. That only the gateway
 writes its topics is the broker's ACL's job (docs/mqtt-api.md, Securing the broker).
@@ -42,6 +44,8 @@ class Cancellable(Protocol):
 class _Topic:
     payload: bytes  # what the gateway wrote last
     echoes: deque[bytes] = field(default_factory=lambda: deque(maxlen=ECHOES))
+    # out before the last reconnect and not back: paho sends them again (QoS 1)
+    resent: deque[bytes] = field(default_factory=lambda: deque(maxlen=ECHOES))
     restored_at: float | None = None
     restore: Cancellable | None = None  # a restore that waits for the interval
     warned_at: float | None = None
@@ -55,8 +59,13 @@ class RetainedTopics:
         publish: Callable[[str, bytes], None],
         call_later: Callable[[float, Callable[[], None]], Cancellable],
         monotonic: Callable[[], float],
+        *,
+        drafts: bool = False,
     ) -> None:
-        """`publish`: writes a retained payload, if the broker is connected."""
+        """`publish`: writes a retained payload, if the broker is connected; `drafts`: the drafts
+        of Home Assistant's chats are the gateway's too (`homeassistant/draft/<kind>/<id>`). The
+        broker's copies of those reach the drafts part first (mqtt.client), which deletes those
+        of no current chat."""
         self._fixed = frozenset(
             {
                 topics.availability,
@@ -65,11 +74,17 @@ class RetainedTopics:
                 topics.contacts,
                 topics.nodes,
                 topics.history,
+                topics.pending,
                 topics.settings,
+                topics.config,
             }
         )
         self._contact_prefix = topics.contacts + "/"
+        self._topics_layout = topics
+        self._drafts = drafts
         self.filters = (*sorted(self._fixed), topics.contact("+"))
+        if drafts:
+            self.filters += (topics.draft_subscription,)
         self._publish = publish
         self._call_later = call_later
         self._now = monotonic
@@ -79,8 +94,11 @@ class RetainedTopics:
         self._closed = False
 
     def covers(self, topic: str) -> bool:
-        """One of the gateway's retained topics, or a topic where a contact's document would be."""
+        """One of the gateway's retained topics, or a topic where a contact's document or a draft
+        would be."""
         if topic in self._fixed:
+            return True
+        if self._drafts and self._topics_layout.draft_from_topic(topic) is not None:
             return True
         key = topic.removeprefix(self._contact_prefix)
         return key != topic and bool(key) and "/" not in key
@@ -98,9 +116,10 @@ class RetainedTopics:
             entry.echoes.append(payload)
 
     def connected(self) -> None:
-        """A new connection: the payloads in flight are lost or arrive as copies for the new
-        subscription; the connect publishes every payload again."""
+        """A new connection: the connect publishes every payload again. The payloads in flight
+        arrive as copies for the new subscription or once more, as paho sends them again."""
         for entry in self._topics.values():
+            entry.resent.extend(entry.echoes)
             entry.echoes.clear()
             self._cancel(entry)
 
@@ -121,6 +140,12 @@ class RetainedTopics:
         if payload in entry.echoes:  # the gateway's own, in the order it published them
             while entry.echoes.popleft() != payload:
                 pass
+            return
+        if payload in entry.resent:  # the gateway's own, sent again by paho after a reconnect
+            entry.resent.remove(payload)
+            if payload != entry.payload and entry.payload not in entry.echoes:
+                self._cancel(entry)  # it came after the current one: the broker keeps it
+                self._restore(topic, entry)
             return
         if payload == entry.payload:
             return

@@ -9,7 +9,9 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import os
+import shlex
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +23,10 @@ from meshcore_home_gateway.health import DISK_LOW_MB
 
 CLOCK_OFF_S = 60.0  # a radio clock this far off the host's is worth a word (SEC-002)
 UPGRADER = Path("/usr/bin/unattended-upgrade")  # installed by the installer (OPS-001)
+APT_CONFIG = Path("/usr/bin/apt-config")
+# what apt's daily job reads (apt.systemd.daily): it updates the package lists, then runs
+# unattended-upgrade, each only while its setting is not "0", which is also its default (#107)
+PERIODIC = ("APT::Periodic::Update-Package-Lists", "APT::Periodic::Unattended-Upgrade")
 REBOOT_REQUIRED = Path("/run/reboot-required")  # Debian: an update waits for a restart
 
 OK, WARNING, PROBLEM = "ok", "warning", "problem"
@@ -175,14 +181,81 @@ def host_findings(state_dir: Path) -> list[Finding]:
     else:
         level = PROBLEM if free < DISK_LOW_MB else OK
         findings.append(Finding(level, tr("{free} MB free for {path}", free=free, path=state_dir)))
-    if UPGRADER.exists():
-        findings.append(Finding(OK, tr("security updates are installed automatically")))
-    else:
+    findings.append(_updates())
+    if REBOOT_REQUIRED.exists():
+        findings.append(Finding(WARNING, tr("an update waits for a restart of the container")))
+    return findings
+
+
+def _updates() -> Finding:
+    """Whether apt's daily job installs the security updates: unattended-upgrades installed, and
+    both of its settings on, as the job reads them (#107)."""
+    if not UPGRADER.exists():
         updates = tr(
             "unattended-upgrades is not installed: security updates wait for someone to install "
             "them (docs/deployment.md)"
         )
-        findings.append(Finding(WARNING, updates))
-    if REBOOT_REQUIRED.exists():
-        findings.append(Finding(WARNING, tr("an update waits for a restart of the container")))
-    return findings
+        return Finding(WARNING, updates)
+    names = [f"SETTING{n}" for n in range(len(PERIODIC))]
+    pairs = [part for pair in zip(names, PERIODIC, strict=True) for part in pair]
+    try:
+        answer = subprocess.run(  # noqa: S603 - a fixed program with fixed arguments
+            [str(APT_CONFIG), "shell", *pairs],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        values = _shell_values(answer.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        return Finding(
+            WARNING,
+            tr(
+                "cannot read apt's settings for automatic updates ({error}): apt-config dump "
+                "APT::Periodic shows them",
+                error=_failure(exc),
+            ),
+        )
+    for name, setting in zip(names, PERIODIC, strict=True):
+        value = values.get(name)
+        if value is None:
+            # Translators: {setting} is the name of an apt setting, such as
+            # APT::Periodic::Unattended-Upgrade
+            off = tr(
+                "automatic updates are off: apt has no {setting}, which counts as 0: security "
+                "updates wait for someone to install them (docs/deployment.md)",
+                setting=setting,
+            )
+            return Finding(WARNING, off)
+        if value.strip() in ("", "0"):
+            # Translators: {setting} is the name of an apt setting, {value} its value
+            off = tr(
+                'automatic updates are off: apt has {setting} "{value}": security updates wait '
+                "for someone to install them (docs/deployment.md)",
+                setting=setting,
+                value=value,
+            )
+            return Finding(WARNING, off)
+    return Finding(OK, tr("security updates are installed automatically"))
+
+
+def _shell_values(output: str) -> dict[str, str]:
+    """The `NAME='value'` lines of `apt-config shell`; a ValueError for one it cannot read."""
+    values: dict[str, str] = {}
+    for line in output.splitlines():
+        name, sep, quoted = line.partition("=")
+        if not sep:
+            raise ValueError(line)
+        values[name] = "".join(shlex.split(quoted))
+    return values
+
+
+def _failure(exc: Exception) -> str:
+    """Why apt-config gave no answer, in a few words."""
+    if isinstance(exc, subprocess.CalledProcessError):
+        # Translators: why apt-config gave no answer, shown in brackets in a line of doctor;
+        # {status} is the number it exited with
+        return tr("exit status {status}", status=exc.returncode)
+    if isinstance(exc, OSError):
+        return str(exc.strerror or exc)
+    return str(exc) or type(exc).__name__

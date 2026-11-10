@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlencode
 
-from meshcore_home_gateway.core.contacts import NODE_TYPES_ADDED
+from meshcore_home_gateway.core.contacts import COPY_INVISIBLE, NODE_TYPES_ADDED
 from meshcore_home_gateway.protocol.packet import parse_advert, parse_packet
 from meshcore_home_gateway.texts import TextError
 
@@ -22,6 +22,9 @@ ADD_PATH = "contact/add"
 _KEY = re.compile(r"[0-9a-fA-F]{64}")
 _HEX = re.compile(r"(?:[0-9a-fA-F]{2})+")
 _ONCE = ("public_key", "name", "type")
+# Invisible characters a copy may carry and no key, link or card holds (core.contacts, the one
+# table of them). The joiners (U+200C, U+200D) and variation selectors stay: they belong to a name.
+_INVISIBLE = str.maketrans("", "", COPY_INVISIBLE)
 
 
 class LinkError(TextError):
@@ -42,8 +45,9 @@ class LinkContact:
 
 
 def parse_contact_text(text: str) -> LinkContact:
-    """A key, contact link or contact card; LinkError with the reason otherwise."""
-    value = text.strip()
+    """A key, contact link or contact card; LinkError with the reason otherwise. Invisible
+    characters are dropped first: a key copied from the dashboard carries its word breaks."""
+    value = text.translate(_INVISIBLE).strip()
     try:  # a lone surrogate (a JSON escape, a command line argument): no text
         value.encode("utf-8")
     except UnicodeEncodeError:

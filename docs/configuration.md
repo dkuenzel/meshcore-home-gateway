@@ -19,7 +19,7 @@ A complete example: [`deploy/config.example.toml`](../deploy/config.example.toml
 | `host` | – | radio address (host name or IP address, without port). Required for `tcp`, an error with `serial` |
 | `port` | `5000` | TCP port; only with `tcp` |
 | `tcp_unauthenticated` | `false` | required as `true` with `tcp`, an error with `serial`: says that you know what the TCP interface exposes (below) |
-| `set_clock` | `true` | keep the radio clock on the host's: move it forward when it is behind, at connect and every minute, when the host's clock is plausible (`set_clock_max_days`); restart the radio when it is 1 minute to 1 hour ahead, which sets it back (at most once a day, when no message is being delivered) |
+| `set_clock` | `true` | keep the radio clock on the host's: move it forward when it is behind, at connect and every minute, when the host's clock is plausible (`set_clock_max_days`); restart the radio when it is 1 minute to 1 hour ahead, which sets it back to its newest contact time (at most once a day, when no message is being delivered, and only when the next connect may move it forward from there by `set_clock_max_days`) |
 | `set_clock_max_days` | `30` | the largest step, in days, by which `set_clock` moves a radio clock that was set, 0–3650; a host clock further ahead, before the gateway's release or more than ten years after it is not written (a warning says why). A radio without a clock chip restarts at the newest time it wrote to a contact, so a radio that lay unused needs a larger step once. `0`: no limit (the behaviour of earlier versions) |
 
 The serial port always runs at 115200 baud with DTR asserted; 1200 baud is refused because it
@@ -34,7 +34,8 @@ alerts and the companions' positions are direct messages. Prefer USB. For TCP, p
 network that only the gateway's host reaches (a VLAN of its own, or a second SSID with client
 isolation), never the household's WiFi, and if you build the firmware yourself, leave the two
 flags out, as their own comment in `platformio.ini` suggests. The gateway tells when another
-client took the link (`radio_link_contested` in [`state`](mqtt-api.md#state-state);
+client took the link while it was connected, as a best effort: a client that connects while the
+gateway is stopped leaves no trace (`radio_link_contested` in [`state`](mqtt-api.md#state-state);
 [deployment.md](deployment.md#5-troubleshooting) says what to do then).
 
 ## `[radio.profile]`
@@ -94,7 +95,7 @@ connect.
 | `base_topic` | `meshcore` | first topic levels; segments of `A-Z a-z 0-9 - _` separated by `/` |
 | `node_id` | required | this gateway's name in topics and in Home Assistant; 1–32 of `a-z 0-9 - _`, starting with a letter or digit, not ending with `-` or `_`, no two of them in a row (Home Assistant would merge those). Only the entity IDs have `_` for `-` ([home-assistant.md](home-assistant.md#entities)) |
 | `insecure` | `false` | accept a broker connection without a user name, or without TLS to a broker that is not on this host or the link (loopback, link-local address). Commands (`[commands] senders`) need it then: any client that reaches the broker could publish command events. It also silences the warnings about it at start and in `check-config` ([mqtt-api.md](mqtt-api.md#securing-the-broker)) |
-| `protocol` | `"3.1.1"` | the MQTT version of the gateway's connection: `"3.1.1"` or `"5"`. With 5 its messages say who published them and when, its events expire, and the delivery events of a send request carry its correlation data ([mqtt-api.md](mqtt-api.md#mqtt-5)); a broker that does not speak 5 refuses the connection. Clients of either version share a broker |
+| `protocol` | `"3.1.1"` | the MQTT version of the gateway's connection: `"3.1.1"` or `"5"`. With 5 its messages say who published them and when, its events expire, and the delivery events of a send request carry its correlation data ([mqtt-api.md](mqtt-api.md#mqtt-5)); a broker that does not speak 5 refuses the connection, and the log says `Unsupported protocol version: the broker does not speak MQTT 5`. Clients of either version share a broker |
 
 A TLS file that cannot be loaded (missing, unreadable, not a certificate or key) is a
 configuration error: `check-config` and `config render` load the files, and the service exits with
@@ -110,7 +111,7 @@ directory where `check-config` is started.
 | `device_name` | `MeshCore radio` | name of the device in Home Assistant (the default is translated, see `language`) |
 | `status_topic` | `homeassistant/status` | topic of Home Assistant's birth message (MQTT options, *birth message*); it does not follow `prefix`. Segments of `A-Z a-z 0-9 - _` separated by `/` |
 | `contact_devices` | `50` | contacts that get a device of their own, 0–1000; `0` removes them ([home-assistant.md](home-assistant.md#contacts)) |
-| `language` | `en` | language of the names the gateway sends to Home Assistant (entities, devices, models), also of the dashboard (`meshcore-home-gateway dashboard`): `en`, the only one so far ([more by contribution](translations.md#adding-a-language)); any other value is an error that lists the choices. A change renames the display names at the next start; entity IDs, automations and names you changed stay. The default `device_name` (`MeshCore radio`) is shown in this language; a name you set is kept (write another name to keep it English) |
+| `language` | `en` | language of the names the gateway sends to Home Assistant (entities, devices, models), also of the dashboard (`meshcore-home-gateway dashboard`): `en` or `de` ([more by contribution](translations.md#adding-a-language)); any other value is an error that lists the choices. A change renames the display names at the next start; entity IDs, automations and names you changed stay. The default `device_name` (`MeshCore radio`) is shown in this language; a name you set is kept (write another name to keep it English) |
 | `controls` | `true` | with `false`, Home Assistant shows the controls that change the radio or the telemetry unavailable, so no user of it can operate them: *Add heard node*, *Add contact (key or link)*, *Show hidden contacts*, and each contact's *Remove from radio* and *Telemetry*. The requests on MQTT and the command line keep working ([shared households](home-assistant.md#shared-households)) |
 | `hidden_targets` | `[]` | aliases of targets without a notify entity in Home Assistant, such as an alarm channel only automations should use; `send/<alias>` keeps working. Each must be a target |
 | `contact_entity_prefix` | `mesh` | how the entity IDs of the contacts' devices begin (`device_tracker.mesh_alice`); a second gateway takes another, such as `mesh_2`. Lower-case letters and digits, words joined by single underscores, at most 20 characters. A change applies to new entities; Home Assistant keeps the IDs of those it has ([second gateway](home-assistant.md#a-second-gateway)) |
@@ -120,7 +121,11 @@ directory where `check-config` is started.
 Named destinations; publish to `send/<alias>`. Channels can be reached only through a target;
 companions in the radio's contact table also through `contacts/<key>/send`
 ([mqtt-api.md](mqtt-api.md#sending-sendalias)). The alias is 1–32 of
-`a-z 0-9 - _`, starting with a letter or digit. Set exactly one of:
+`a-z 0-9 - _`, starting with a letter or digit. Two aliases that differ only in `-` and `_`, such
+as `a-b` and `a_b`, are both valid, but Home Assistant makes the same entity IDs of them and
+numbers the later ones (`_2`), so nothing tells which is which: the gateway warns at the start and
+in `check-config`, the dashboard gives their chat pages no message field and says why, and
+`meshcore-home-gateway dashboard` names the pair. Rename all but one. Set exactly one of:
 
 | Key | Meaning |
 | --- | --- |
@@ -138,6 +143,8 @@ The prefix and suffix count toward the radio's limit and stay whole when a text 
 (`truncate`); `ascii_only` transliterates them with the text. A request whose text is empty stays
 rejected (`empty`). The delivery events and the history carry the text as sent, and duplicates
 are judged on it. A message to `contacts/<key>/send` gets neither: that recipient is no target.
+With [`confirm_nonce`](#messages), only the final delivery event and the history carry the random
+suffix of a direct message too, and duplicates are judged on the text without it.
 
 ## `[messages]`
 
@@ -145,16 +152,16 @@ are judged on it. A message to `contacts/<key>/send` gets neither: that recipien
 | --- | --- | --- |
 | `ascii_only` | `false` | transliterate to ASCII (ä → ae, typographic quotes, accents); for handhelds without Unicode fonts |
 | `truncate` | `true` | cut texts above the radio limit between whole characters (flags and emoji sequences included) and mark them with `...`; `false` rejects them |
-| `dedup_window_s` | `300` | the same text to the same target is sent once per window, 0–86400; `0` disables |
+| `dedup_window_s` | `300` | the same text to the same target is sent once per window, 0–86400; `0` disables. A message that ended `failed` or `expired` does not count |
 | `queue_size` | `20` | waiting messages, 1–1000; more are rejected. A stop keeps the waiting messages in `state.json` for the next start, which queues them again with their `id` ([ADR 0028](decisions/0028-outgoing-queue-kept-across-restarts.md)) |
 | `queue_ttl_s` | `600` | time to live of a message, 1–86400: no attempt starts after it. Never sent within it, it expires; sent but not acknowledged, it fails when the acknowledgement wait of its last attempt ends (up to 60 s after the time to live) |
 | `max_attempts` | `3` | sends of a direct message until acknowledged, 1–4 (the radio's attempt counter) |
 | `flood_after` | `2` | unacknowledged attempts after which the stored path is reset, so the next attempt floods; 1 to `max_attempts` (equal to it: never floods) |
 | `ignore_channels` | `[]` | channel indices (0–255) whose messages are not published (busy public channels); they do not hold telemetry back |
 | `publish_channels` | `targets` | `targets`: only the messages of channels that are a [target](#targetsalias) are published and kept in the history, the others are dropped like those of `ignore_channels` (the *Public* channel's key is in the firmware: there, most messages are strangers'); `all`: every channel's |
-| `clean_received` | `false` | drop control and direction characters (escape sequences, the right-to-left override) from received texts before they are published and kept in the history, as from outgoing ones; off, texts are data and stay as they came ([mqtt-api.md](mqtt-api.md#received-messages-received)) |
-| `confirm_nonce` | `false` | end every direct message with a random suffix, ` #` and 8 hex digits, the same on each attempt, which the recipient sees: the acknowledgement is a hash of the text, so then only a radio that received the message can send it, not one that guesses a fixed text such as an alarm's ([mqtt-api.md](mqtt-api.md#what-confirmed-proves)). A direct text is then limited to 150 bytes; the events and the history carry it as sent, duplicates are judged without the suffix |
-| `alert_targets` | `[]` | [targets](#targetsalias) whose messages leave before the others: an alert overtakes the waiting messages and goes between two attempts of one in flight, which continues after it. A request chooses by its target, so a second target for the same recipient gives a client both ([design §6.2](design.md#62-outbound-path)) |
+| `clean_received` | `false` | drop control and direction characters (escape sequences, the right-to-left override) from received texts before they are published and kept in the history, as from outgoing ones, and so from the name a channel message claims; a contact's name stays as it came. Off, texts are data and stay as they came ([mqtt-api.md](mqtt-api.md#received-messages-received)) |
+| `confirm_nonce` | `false` | end every direct message with a random suffix, ` #` and 8 hex digits, the same on each attempt, which the recipient sees: the acknowledgement is a hash of the text, so then only a radio that received the message can send it, not one that guesses a fixed text such as an alarm's ([mqtt-api.md](mqtt-api.md#what-confirmed-proves)). A direct text is then limited to 150 bytes. The suffix is the only secret of the acknowledgement, so the gateway publishes it only once the delivery ended: in the final delivery event and the history, which carry the text as sent; `queued`, `sent` and `pending` show the text without it. Duplicates are judged without the suffix |
+| `alert_targets` | `[]` | [targets](#targetsalias) whose messages leave before the others: an alert overtakes the waiting messages, also one taken out of the queue that waits for the radio or for airtime before its first attempt, and goes between two attempts of one in flight, which continues after it. A request chooses by its target, so a second target for the same recipient gives a client both ([design §6.2](design.md#62-outbound-path)) |
 
 ## `[airtime]`
 
@@ -182,8 +189,8 @@ The radio's own traffic (acknowledgements it sends, adverts) is not counted; in 
 | `senders` | `[]` | full public keys (64 hex digits) allowed to send commands |
 | `words` | `[]` | command words, case-insensitive single words; the first word of a direct message |
 | `max_age_s` | `900` | accept only commands whose sender timestamp is within this many seconds of the gateway clock, 0–86400; `0` disables the check, except that timestamps more than a day ahead are always refused (one of them would make every later command of that sender a replay); it also bounds when a replayed copy of a rejected command can still pass ([design §7.4](design.md#74-residual-risks)) |
-| `codes_file` | none | absolute path of the senders' code secrets, which `meshcore-home-gateway commands enrol` writes (below); a file that cannot be read, also a missing one, is a configuration error |
-| `reply` | `none` | answer the sender by direct message: `accepted`: `ok: <word>` when the command was published; `all`: also `rejected: <reason>` when the checks identified the sender but refused the command (`replay`, `too_old`, `from_the_future`, `code_missing`, `code_invalid`, `code_reused`, `state_unwritable`, `broker_unavailable`); `none`: no answer (below) |
+| `codes_file` | none | absolute path of the senders' code secrets, which `meshcore-home-gateway commands enrol` writes (below); a file that cannot be read, also a missing one, is a configuration error. The secret of a key that is not in `senders` is ignored, with a warning; while one is, senders without a secret cannot command (below) |
+| `reply` | `none` | answer the sender by direct message: `accepted`: `ok: <word>` when the command was published; `all`: also `rejected: <reason>` when the checks identified the sender but refused the command (`replay`, `too_old`, `from_the_future`, `code_missing`, `code_invalid`, `code_reused`, `code_locked`, `state_unwritable`, `broker_unavailable`); `none`: no answer (below) |
 
 Commands also need a sender timestamp newer than that sender's last accepted command; the gateway
 keeps these timestamps in `/var/lib/meshcore-home-gateway/state.json`.
@@ -203,9 +210,21 @@ as the rate limit of received messages lets it through ([mqtt-api.md](mqtt-api.m
 authenticator app (TOTP, RFC 6238: SHA-1, 30 s), as in `arm now 492039`; the code is not part of
 `args`. The gateway accepts the code of the current 30 seconds of its clock and of those before
 and after, each code once (`code_missing`, `code_invalid`, `code_reused` otherwise,
-[mqtt-api.md](mqtt-api.md#commands-command)). A code authenticates the text whatever reached the
-gateway: a host that poses as a radio over TCP, or a node that shares an allowed sender's key
-prefix, cannot command without the secret. Senders without a secret keep the rules above. To
+[mqtt-api.md](mqtt-api.md#commands-command)). A code shows that the sender's authenticator app
+made it in that time window, whatever reached the gateway: a node that shares an allowed sender's
+key prefix, or a host that poses as a radio over TCP, cannot command without a current code. A
+code does not bind the text: whoever reads a command before the gateway does, such as that host,
+can send another text with its code, once, within about 90 seconds
+([design §7.4](design.md#74-residual-risks)). Senders without a secret keep the rules above,
+except while a secret is ignored (below).
+After 5 wrong codes of a sender within an hour, a command without a code included (but not
+the refusals of a sender without a secret while one is ignored, below), the gateway
+refuses that sender's commands without a look at the code (`code_locked`) until the first of
+them is an hour old, and its log warns: someone may be guessing the codes. A restart does not
+end it. So a guess wins with at most 3 in a million, and 5 guesses an hour are all there are
+([design §7.4](design.md#74-residual-risks)). A command that waited in the radio (a restart, an
+update, a re-plug) or in the mesh carries the code of the time it was sent: it is refused as
+`code_invalid` when it comes too late, but it does not count as a wrong code. To
 give one a secret (or a new one, which ends the old):
 
 ```sh
@@ -222,6 +241,29 @@ systemd credential of its name is read instead, as for the broker password
 ([deployment.md](deployment.md#4-operations)). The phone's clock and the host's must agree within
 30 seconds; phones set theirs from the network. The code travels in the message's text: the
 `received` event and the history show it, which is harmless once the code is used.
+
+**A lost phone.** Remove its key from `senders`, remove its secret from the file, and restart
+the service:
+
+```sh
+meshcore-home-gateway commands revoke <full key>
+systemctl restart meshcore-home-gateway
+```
+
+`revoke` takes only a key that is no longer in `senders`: a sender without its secret would
+command without a code. To keep the sender with a new phone, run `enrol` again instead; the new
+secret ends the old one.
+
+**An ignored secret.** The gateway ignores the secret of a key that is not a sender, and its
+start, `check-config`, `doctor` and the installer's self-test warn about it. Such a secret may
+be a sender's under its key before a correction by hand: the corrected key has none. So while a
+secret is ignored, the commands of every sender without a secret are refused as `code_missing`,
+and the warnings name each such sender. Senders with a secret command with their codes, and the
+rest of the gateway keeps running. `enrol` gives the sender a secret; `revoke` removes the
+ignored one, and once none is ignored, every sender without a secret commands without a code
+again: `revoke` then names them. So enrol a key corrected by hand before its old secret is
+revoked, or instead. The gateway reads the file only at its start: restart it after either.
+These refusals do not count as wrong codes.
 
 Commands that the gateway fetches while it connects are rejected: those that waited in the radio
 while the gateway was not running (restart, update, unplugged radio), and those that arrive during
@@ -380,7 +422,7 @@ connection to the broker is a second one, with the settings of `[mqtt]`.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `enabled` | `false` | publish the device `homie/meshcore-<node_id>` (`_` as `-`); the broker's ACL needs `homie/meshcore-<node_id>/#` for the gateway's user |
+| `enabled` | `false` | publish the device `homie/meshcore-<node_id>` (`_` as `-`); the broker's ACL needs `homie/meshcore-<node_id>/#` for the gateway's user. Switched off, the device stays on the broker until you clear it ([Homie](mqtt-api.md#homie-homiehomie_device)) |
 | `contacts` | `50` | contacts with a node, 0 to 1000, chosen as for their devices in Home Assistant (`homeassistant.contact_devices`) |
 
 ## Installer answers
@@ -402,11 +444,13 @@ includes the broker password when the file holds it, and only the path with `pas
 ## Language of the command line
 
 The command line's texts for people (help, errors, warnings, the summary of `check-config`, the
-report of `probe`) follow the environment, as Python's gettext reads it: the first of `LANGUAGE`,
-`LC_ALL`, `LC_MESSAGES` and `LANG` that is set and not empty decides. `LANGUAGE` may list several
-languages (`LANGUAGE=pl:de`): the first of them that the gateway has its texts in, English
-included, wins; with none of them, English. `LANGUAGE=en` gives English. `LC_ALL=C` (or `C.UTF-8`) gives English only while
-`LANGUAGE` is unset: unlike GNU programs, which ignore `LANGUAGE` under `C`, Python reads it first.
+report of `probe`) are in English and German and follow the environment, as Python's gettext
+reads it: the first of `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG` that is set and not empty
+decides, so `LANG=de_DE.UTF-8` gives German. `LANGUAGE` may list several languages
+(`LANGUAGE=pl:de`): the first of them that the gateway has its texts in, English included, wins;
+with none of them, English. `LANGUAGE=en` gives English. `LC_ALL=C` (or `C.UTF-8`) gives English
+only while `LANGUAGE` is unset: unlike GNU programs, which ignore `LANGUAGE` under `C`, Python
+reads it first.
 
 `run` and the service's log stay English, so the journal reads the same everywhere; so do the
 outputs that programs read (`probe --list`, `--json`, `listen`, `send --wait`, the results of
