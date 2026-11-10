@@ -1,6 +1,6 @@
 # The environment of tools/browser_check.py (not part of make check), hash-pinned for Linux:
 #   printf 'playwright==1.56.0\n' | uv pip compile - --python-version 3.11 --python-platform linux \
-#     --generate-hashes --no-header --exclude-newer "$(date -u -d '14 days ago' +%Y-%m-%d)"
+#     --generate-hashes --no-header --exclude-newer "$(date -u -d '14 days ago' +%Y-%m-%dT%H:%M:%SZ)"
 # Playwright 1.56.0 drives its own Chromium build 1194 (Chromium 141).
 greenlet==3.5.6 \
     --hash=sha256:0616b8f878098c5681fd8f0dc92d887551717402342a70f0abcbfea5f5ad8a44 \

@@ -59,6 +59,7 @@ One line per fact, by section.
 * On Python 3.11, `asyncio.wait_for()` can lose a cancellation.
 * Python's `gettext` reads `LANGUAGE` also under the `C` locale; the C library ignores it there.
 * argparse %-formats help texts, and a description that contains `%(prog)`: a lone `%` there stops the program.
+* uv reads a bare date given to `--exclude-newer` as the end of that day.
 
 **[GNU gettext](#gnu-gettext)**
 
@@ -579,6 +580,18 @@ One line per fact, by section.
   ([design §6.12](design.md#612-translations)); `common._speaking()` (`cli/`) sets argparse's words for one
   command and restores them. *Check:* `python3 -c "import argparse; p =
   argparse.ArgumentParser(); p.add_argument('--x', help='10 % of it'); p.print_help()"` raises.
+* **uv reads a bare date given to `--exclude-newer` as the end of that day.** `--exclude-newer
+  2026-10-27` takes a release uploaded at 2026-10-27T21:30Z, as `2026-10-28T00:00:00Z` does;
+  `2026-10-27T00:00:00Z` does not. The help says only "uploaded prior to the given date".
+  *Verified:* uv 0.11.32, `uv pip compile` of `pytest` for Python 3.11 on Linux on 2026-11-10:
+  pytest 9.2.0 (uploaded 2026-10-27T21:30:19Z, PyPI JSON) with the bare date and with the next
+  midnight, 9.1.1 with the midnight of the date. *Here:* `make lock` and `make ha-lock` give uv
+  the time `COOLDOWN_DAYS` days before the run, so every release they take is at least that old
+  ([development.md](development.md#tool-chain-updates)); with the bare date a release from the
+  cutoff day was taken at 13 days old. `tests/test_tooling.py` checks the recipes' cutoff.
+  *Check:* `printf 'pytest\n' | uv pip compile - --python-version 3.11 --python-platform linux
+  --exclude-newer 2026-10-27 --no-header -q` prints `pytest==9.2.0`, with
+  `2026-10-27T00:00:00Z` `pytest==9.1.1`.
 
 ## GNU gettext
 
