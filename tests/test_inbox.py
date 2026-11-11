@@ -23,6 +23,7 @@ from meshcore_home_gateway.core.commands import (
 )
 from meshcore_home_gateway.protocol.codes import AutoAdd, Command, Push
 from meshcore_home_gateway.state import CommandLedger, JsonStateFile
+from meshcore_home_gateway.views import iso
 from meshcore_home_gateway.wiring import gateway
 from tests.bridge_harness import (
     ALICE,
@@ -1123,6 +1124,27 @@ def test_refused_commands_are_kept_without_their_word_until_the_next_refusal(
                 ("Bob", "sender_not_allowed"),
                 ("Alice", "code_invalid"),
             ]
+
+    scenario(main)
+
+
+def test_a_refusal_is_dated_when_the_gateway_took_the_message_from_the_radio(
+    tmp_path: Path,
+) -> None:
+    """#141, mqtt-api.md: a refusal's `at` is the `received_at` of its `received` event, the time
+    the session took the message from the radio, not the time the inbox judged it, which may come
+    later (it can wait for a contacts read). Here the inbox's clock is a minute ahead."""
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def main() -> None:
+        later = lambda: NOW + 60  # noqa: E731
+        async with running(make_config(), radio, tmp_path, wall_clock=later) as (_, bus, _n):
+            radio.queue_direct_message(BOB.public_key[:6], "status", NOW - 7)  # not allowed
+            received = await bus.wait_for("/received", lambda r: True)
+            document = await bus.wait_for("radio1/refused_commands", lambda d: d["total"] == 1)
+            assert received["command"]["reason"] == "sender_not_allowed"
+            assert received["received_at"] == iso(NOW)  # the session's clock
+            assert document["commands"][0]["at"] == received["received_at"]
 
     scenario(main)
 
