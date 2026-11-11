@@ -39,7 +39,8 @@ pins, the release check against a real installation ([testing.md](testing.md#rel
 
 | Gateway | Contract tests | Release check |
 | --- | --- | --- |
-| 2.1.1rc1 | 2026.10.2, and 2026.11.0 from its own environment | the browser check on 2026.10.2 and 2026.11.0; the maintainer's use before 2.1.1 |
+| 2.1.1rc2 | 2026.10.2, and 2026.11.0 from its own environment | the browser check of 2.1.1rc1 on 2026.10.2 and 2026.11.0; the maintainer's use before 2.1.1 |
+| 2.1.1rc1 | 2026.10.2, and 2026.11.0 from its own environment | the browser check on 2026.10.2 and 2026.11.0; not finished: the clock fixes followed in 2.1.1rc2 |
 | 2.1.0, the program of 2.1.0rc1 | 2026.10.2, and 2026.11.0 from its own environment | the browser check of 2.1.0rc1 on 2026.10.2 and 2026.11.0; the maintainer's use follows 2.1.0, as they decided |
 | 2.1.0rc1 | 2026.10.2, and 2026.11.0 from its own environment | the browser check on 2026.10.2 and 2026.11.0; the maintainer's use follows 2.1.0, as they decided |
 | 2.0.0, the program of 2.0.0rc3 | 2026.10.2 | 2026.11.0 |
@@ -60,7 +61,7 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | --- | --- | --- |
 | `binary_sensor.meshcore_home_gateway_radio1_radio` | connectivity, diagnostic | radio link up; attributes below |
 | `sensor.meshcore_home_gateway_radio1_battery` | voltage (V), diagnostic | radio battery |
-| `sensor.meshcore_home_gateway_radio1_radio_clock_offset` | duration (s), diagnostic | how far the radio's clock is ahead of the gateway's (negative: behind); the gateway moves it forward, and sets it back by restarting the radio when it is up to an hour ahead ([deployment.md](deployment.md#5-troubleshooting)) |
+| `sensor.meshcore_home_gateway_radio1_radio_clock_offset` | duration (s), diagnostic | how far the radio's clock is ahead of the gateway's (negative: behind); the gateway moves it forward, and sets it back by restarting the radio when it is up to an hour ahead, or whole jumps of MeshCore's nRF52 clock ([deployment.md](deployment.md#5-troubleshooting)) |
 | `binary_sensor.meshcore_home_gateway_radio1_radio_link_contested` | problem, diagnostic; only with a radio over TCP | *Radio link taken over*: on for an hour after another client took the TCP link to the radio, which lets it control the radio and read its private key ([deployment.md](deployment.md#5-troubleshooting)); a best effort, since a client that connects while the gateway is stopped leaves no trace; unknown while the radio is away or reports no uptime |
 | `sensor.meshcore_home_gateway_radio1_airtime` | duration (s), diagnostic | airtime of the last hour |
 | `sensor.meshcore_home_gateway_radio1_airtime_available` | duration (s), diagnostic | airtime that may be spent now; attribute `budget_s_per_hour` |

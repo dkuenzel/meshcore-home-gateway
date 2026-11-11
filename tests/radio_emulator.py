@@ -546,6 +546,8 @@ class EmulatedRadio:
         last_advert, latitude, longitude = (
             struct.unpack_from("<Iii", p, 132) if len(p) >= 144 else (0, 0, 0)
         )
+        # the record's time: the command's last field, else the radio's clock (MyMesh.cpp:1331)
+        last_modified = struct.unpack_from("<I", p, 144)[0] if len(p) >= 148 else self.clock
         existing = next((c for c in self.contacts if c.public_key == key), None)
         if existing is None and len(self.contacts) >= self.max_contacts:
             oldest = next((c for c in self.contacts if not c.flags & 0x01), None)
@@ -569,6 +571,7 @@ class EmulatedRadio:
             latitude,
             longitude,
         )
+        contact.last_modified = last_modified
         if existing is None:
             self.contacts.append(contact)
 

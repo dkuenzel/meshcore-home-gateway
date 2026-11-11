@@ -8,6 +8,34 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [2.1.1rc2] - 2026-11-11
+
+The release candidate of 2.1.1: the program of 2.1.1rc1, and the gateway also sets back a radio
+clock that MeshCore's firmware made jump 28 hours ahead, and one whose contact times it stamped
+ahead. It has had no release check yet: 2.1.1 ships this program after the maintainer has used
+this candidate.
+
+For the administrator: make the dashboard again after the update; nothing else changes.
+
+CI, with the Home Assistant contract tests on 2026.10.2 and 2026.11.0 and the tests against the
+real firmware, checked it. The browser check of 2.1.1rc1 was not run again for the one sentence
+the dashboard's clock card changed.
+
+### Fixed
+
+- On nRF52 boards without a clock chip, MeshCore's clock jumps 100,663 s (27 h 58 min) ahead
+  every 48.5 days of uptime (meshcore-dev/MeshCore#3565, not fixed in its 1.18.0). The gateway
+  left a clock that far ahead, as more than an hour; it now sets whole jumps back at once, by
+  restarting the radio as it does a clock up to an hour ahead: the sooner the clock is back, the
+  fewer nodes keep the radio's adverts ahead and ignore its next ones
+  ([design §6.1](docs/design.md#61-radio-session)). `doctor` and the fold of the dashboard's
+  clock card say so; make the dashboard again after the update.
+- A restart did not set the radio's clock back while a contact's time was ahead: the radio
+  stamps a contact with its own clock at every advert and message it takes, and starts its clock
+  at the newest contact time (meshcore-dev/MeshCore#3050). The gateway waited until no contact
+  had changed for as long as the clock was ahead, which after a jump never comes. It now writes
+  those times back first, as far back as the clock is ahead, and then restarts the radio.
+
 ## [2.1.1rc1] - 2026-11-11
 
 The release candidate of 2.1.1: the fixes from the maintainer's first use of 2.1.0, and #134,

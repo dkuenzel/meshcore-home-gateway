@@ -917,8 +917,8 @@ msgstr "das Funkgerät über TCP: wer seinen Port erreicht, steuert das Funkger�
 
 #: src/meshcore_home_gateway/cli/doctor.py
 #, python-brace-format
-msgid "the radio's clock is {seconds} s ahead of the host's: up to an hour ahead, the gateway restarts the radio to set it back once no message is being delivered (docs/deployment.md, Troubleshooting)"
-msgstr "die Uhr des Funkgeräts geht gegenüber der des Hosts {seconds} s vor: bei bis zu einer Stunde Vorlauf startet das Gateway das Funkgerät neu, um sie zurückzustellen, sobald gerade keine Nachricht zugestellt wird (docs/deployment.md, Troubleshooting)"
+msgid "the radio's clock is {seconds} s ahead of the host's: up to an hour ahead, or by whole jumps of MeshCore's nRF52 clock, the gateway restarts the radio to set it back once no message is being delivered (docs/deployment.md, Troubleshooting)"
+msgstr "die Uhr des Funkgeräts geht gegenüber der des Hosts {seconds} s vor: geht sie bis zu einer Stunde oder um ganze Sprünge der nRF52-Uhr von MeshCore vor, startet das Gateway das Funkgerät neu, um sie zurückzustellen, sobald gerade keine Nachricht zugestellt wird (docs/deployment.md, Troubleshooting)"
 
 #: src/meshcore_home_gateway/cli/doctor.py
 #, python-brace-format
@@ -4114,8 +4114,8 @@ msgstr "Das Gateway hält einige Funkeinstellungen so, wie dieses Zuhause sie br
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "The gateway moves the clock forward when it is behind, if the computer's clock looks right, and sets it back by restarting the radio only when it is up to an hour ahead, at most once a day, and only when it can move it forward again afterwards. A clock that stays this far off is beyond that."
-msgstr "Das Gateway stellt die Uhr vor, wenn sie nachgeht und die Uhr des Computers stimmig aussieht. Zurück stellt es sie durch einen Neustart des Funkgeräts nur, wenn sie höchstens eine Stunde vorgeht, höchstens einmal am Tag und nur, wenn es sie danach wieder vorstellen kann. Eine Uhr, die so weit daneben bleibt, kann es damit nicht richten."
+msgid "The gateway moves the clock forward when it is behind, if the computer's clock looks right, and sets it back by restarting the radio only when it is up to an hour ahead, or ahead by the jumps of about 28 hours that MeshCore's clock makes on some boards, at most once a day, and only when it can move it forward again afterwards. A clock that stays this far off is beyond that."
+msgstr "Das Gateway stellt die Uhr vor, wenn sie nachgeht und die Uhr des Computers stimmig aussieht. Zurück stellt es sie durch einen Neustart des Funkgeräts nur, wenn sie höchstens eine Stunde vorgeht oder um die Sprünge von etwa 28 Stunden, die die Uhr von MeshCore auf manchen Geräten macht, höchstens einmal am Tag und nur, wenn es sie danach wieder vorstellen kann. Eine Uhr, die so weit daneben bleibt, kann es damit nicht richten."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"

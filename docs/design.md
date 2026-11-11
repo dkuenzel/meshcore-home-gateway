@@ -311,7 +311,11 @@ sequenceDiagram
         B->>R: SYNC_NEXT_MESSAGE
         R-->>B: CONTACT_MSG_RECV_V3 / CHANNEL_MSG_RECV_V3
     end
-    opt set_clock, radio clock 1 min to 1 h ahead, a restart sets it back, nothing delivered
+    opt set_clock, radio clock 1 min to 1 h or whole jumps ahead, nothing delivered
+        B->>R: GET_CONTACTS
+        R-->>B: contacts
+        B->>R: ADD_UPDATE_CONTACT (each time the clock stamped ahead, back)
+        R-->>B: OK
         B->>R: REBOOT
         Note over B,R: the session ends; the next connect sets the clock forward
     end
@@ -328,13 +332,20 @@ sequenceDiagram
   before the release never was); otherwise a warning says why ([SEC-002](audit/2026-11-security-architecture-review/03-security-findings.md#sec-002-set_clock-moves-the-radios-clock-forward-irreversibly-from-a-wrong-host-clock)).
   `set_clock_max_days = 0` lifts both bounds. Ahead by more than a minute and at most an hour,
   the session restarts the radio: at start the firmware sets its clock to its newest contact time
-  plus a second, also back, and the next connect sets it forward. It does so only when that time
-  is behind the host's and the bounds above let the next connect, within an hour, set it forward
-  from there (else the restart would leave it days behind, #86), after taking the radio's
+  plus a second, also back, and the next connect sets it forward. The radio stamps a contact with
+  its clock at every advert and message it takes, so before the restart the session reads the
+  contacts again and writes back each time the clock stamped ahead, as far back as the clock is
+  ahead and at least 3 s behind the host's (MeshCore #3050); a write refused stops the restart. It
+  restarts only when the bounds above let the next connect, within an hour, set the clock forward
+  from that time (else the restart would leave it days behind, #86), after taking the radio's
   messages, when no message is queued or being delivered, and at most once a day (the bridge's
   `may_restart`); the check runs at connect and at every heartbeat. Further ahead, a warning says
   so: nodes and repeaters ignore the radio's adverts and logins until real time passes the times
-  it sent before, which is fine for minutes but not for days. Command age checks do not use the
+  it sent before, which is fine for minutes but not for days, and an hour of it may be a wrong
+  host clock. Whole jumps of MeshCore's clock on nRF52 boards without a clock chip, 100,663.296 s
+  each every 48.5 days of uptime ([protocol.md](protocol.md#5-semantics)), within 10 minutes and
+  up to 8 of them, are no wrong host clock: they are set back at any size, as the sooner the clock
+  is back, the fewer nodes keep its times ahead. Command age checks do not use the
   radio's clock: they compare the sender's timestamp with the host's clock (§7.3). The unit is
   ordered after `time-sync.target`, which waits for a synchronised clock only where
   `systemd-time-wait-sync` or `chrony-wait` is enabled: neither is by default, and
@@ -1004,7 +1015,7 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
 | Radio unplugged or rebooted | read error, command timeout | session closed, reconnect with back-off; queue waits; an interrupted attempt is repeated | `state.radio = disconnected`; connectivity entity off |
 | Malformed or unexpected answer | decoding | session closed, resynchronised on reconnect | log warning |
 | Malformed pushes (a radio out of step, or a client posing as one over TCP) | decoding | each dropped; 20 in a row end the session, which the reconnect resynchronises | a log warning at most once a minute with the count |
-| Radio clock wrong | `CURR_TIME` vs host clock, at connect and every heartbeat | with `set_clock`: set forward from a plausible host clock; 1 min to 1 h ahead, a restart of the radio sets it back; further ahead, warn | `radio_clock_offset_s`; log warning; its adverts carry the later time, and nodes that took them ignore the radio's adverts and logins for as long once it is set back |
+| Radio clock wrong | `CURR_TIME` vs host clock, at connect and every heartbeat | with `set_clock`: set forward from a plausible host clock; 1 min to 1 h ahead, or whole jumps of MeshCore's nRF52 clock, a restart of the radio sets it back, after the contact times it stamped ahead; further ahead, warn | `radio_clock_offset_s`; log warning; its adverts carry the later time, and nodes that took them ignore the radio's adverts and logins for as long once it is set back |
 | Host clock wrong | sender timestamps vs host clock; the release date and the step from the radio's clock | commands outside `max_age_s` rejected; a host clock before the release, more than ten years after it or more than `set_clock_max_days` ahead of the radio's is not written to the radio | command rejections `too_old` / `from_the_future`; log warning `radio clock left ... behind` |
 | Broker unreachable | paho disconnect (a silent loss: after one to two `keepalive_s`) | paho reconnects (1..60 s); up to 1000 events queued in memory; commands refused; command events (QoS 0) are never queued | availability `offline` via last will; `received`: `broker_unavailable` after the reconnect |
 | Bridge hangs | systemd watchdog | process restarted | journal entry; availability `offline` then `online` |
@@ -1196,7 +1207,8 @@ reasons (security review 2026-11, ARC-017).
 * **The gateway writes the radio's clock.** A radio without a clock starts at the newest time its
   contacts gave it, and its adverts carry that time; the host's clock is the better source, so
   `[radio] set_clock` keeps the radio on it within plausible bounds, and restarts the radio for a
-  clock up to an hour ahead, which the firmware sets back no other way (SEC-002, §6.1).
+  clock up to an hour ahead, or whole jumps of MeshCore's nRF52 clock ahead, which the firmware
+  sets back no other way (SEC-002, §6.1).
 * **Text from the mesh is published as it came.** Texts and names are data for automations and
   people, never commands or markup; cleaning them on the way in would change what was received
   and hide what an attacker sent. Consumers escape them where they display them
@@ -1209,9 +1221,14 @@ reasons (security review 2026-11, ARC-017).
 * An acknowledgement proves knowledge of the text, not receipt
   ([protocol.md](protocol.md#5-semantics)); proving receipt needs a change of the firmware
   (SEC-001).
-* Whether radio clocks drift: one that runs fast is set back by a restart of the radio at most
-  once a day (§6.1). The *Radio clock offset* of real installations over days shows whether that
-  is enough, or whether the firmware should take a bounded step back.
+* Radio clocks drift and jump. MeshCore's clock on nRF52 boards without a clock chip follows the
+  board's oscillator and jumps 100,663.296 s ahead every 48.5 days of uptime (MeshCore #3565; its
+  fix, #3595, is not merged). The gateway sets a clock that runs fast back at most once a day,
+  and whole jumps at once (§6.1); the *Radio clock offset* of real installations over days shows
+  whether a day is often enough. Open pull requests in MeshCore would let a client set the clock
+  back (#1349, #3195), or stop the start from setting it back (#3741), which would leave the
+  restart without effect: the firmware tests of the next release show which came
+  (`tests/firmware/test_clock.py`).
 * Proposals for MeshCore, drafted and not yet sent: [upstream/](upstream/README.md).
 * What the security and architecture review of 2026-11 deferred, each with the condition that
   brings it back, is in its
