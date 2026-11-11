@@ -24,6 +24,14 @@ format, the command line and Home Assistant discovery are public interfaces
   `mosquitto_pub -r -n -t meshcore/radio1/refused_commands`
   ([mqtt-api.md](docs/mqtt-api.md#refused-commands-refused_commands)).
 
+### Fixed
+
+- The dashboard's *Latest of each kind* on the page *Gateway* shows a refused command until the
+  gateway accepts a command after it. It read the refusal from the newest message's `received`
+  event, so the next message of any kind, a channel message too, hid it. It now reads *Refused
+  commands*, and the line names the sender and the reason, no longer the command's word, such as
+  "Bob: command refused: wrong code" (#141). Make the dashboard again after the update.
+
 ## [2.1.1rc2] - 2026-11-12
 
 The release candidate of 2.1.1: the program of 2.1.1rc1, and the gateway also sets back a radio

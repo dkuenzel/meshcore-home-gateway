@@ -2898,17 +2898,22 @@ def test_help_names_both_meanings_of_no_code() -> None:
     assert "ignore" in codes
 
 
-def test_help_says_a_refused_command_shows_until_the_next_message() -> None:
-    """The refusal is only on `received` (command.accepted false), whose next message of any
-    kind, a channel message included, replaces it: Latest of each kind shows a refused command
-    only until then (home-assistant/tests/test_gateway.py), and a sender locked out after wrong
-    codes stays in the gateway's log. Help and the guide say that, not that it is the newest."""
+def test_help_says_a_refused_command_shows_until_a_command_is_accepted() -> None:
+    """#141: Latest of each kind reads the refusal from the gateway's `refused_commands`, which
+    the next message no longer replaces: it shows a refused command until the gateway accepts
+    one after it (home-assistant/tests/test_gateway.py), without its word (ADR 0009), and a sender
+    locked out after wrong codes stays in the gateway's log. Help, the card's fold and the guide
+    say that; none of them says any more that it shows only until the next message."""
     first = _command_fold()[0]
-    assert "until the next message" in first
+    assert "until the gateway accepts a command" in first
+    assert "its word is left out" in first
     assert "log" in first
+    (latest,) = [t for t in rules.texts(view_of("gateway")) if "_refused_commands" in t]
+    assert "until the gateway accepts a command after it" in latest
     guide = " ".join(rules.GUIDE.read_text(encoding="utf-8").split())
-    assert "counts as the newest while it came after the newest accepted one" not in guide
-    assert "until the next message" in guide
+    for said in (first, latest, guide):
+        assert "until the next message" not in said
+    assert "until the gateway accepts a command" in guide
 
 
 def _configuration_keys() -> dict[str, set[str]]:
