@@ -216,9 +216,9 @@ its rule; the shipped template breaks none of them.
 10. The counts in the tests follow the template.
 11. No GitHub alert (`> [!`): a coloured box is a `<div><ha-alert>` line.
 12. The tabs are `overview`, `messages` and `contacts`, without icons. *Overview*'s status line
-    has one row of links under it, outside every `<details>`: *Map*, *Gateway*, *Settings* and
-    *Help*, in this order; and a heading of *Contacts* has buttons to *Gateway*, *Settings* and
-    *Help*.
+    has one row of links under it, at the top level of its card (outside every `{% if %}`,
+    `{% for %}`, `<details>` and comment): *Map*, *Gateway*, *Settings* and *Help*, in this order;
+    and a heading of *Contacts* has buttons to *Gateway*, *Settings* and *Help*.
 13. A card that prints a message's text prints it through `mt()`; `m()` and `mt()` read the same
     in every card.
 14. The three tabs' titles have at most 22 letters together in every language shipped, or the
@@ -251,14 +251,19 @@ its rule; the shipped template breaks none of them.
 22. A card prints a number through `num(v, digits=none)`, which it defines after `m()` and which
     reads the same in every card: the number with the dashboard's decimal mark in place of the
     point (`@decimal@`; German writes 0,4), a whole number without `.0`, rounded to `digits`
-    places when given; anything else as `m()` prints it. No number is formatted with `'%.1f'`,
-    `m()` prints a number only as a whole one (set from `| int` or `| count`), and a value whose
-    key names a unit (`frequency_mhz`, `burst_s`) goes through `num()`. A message's text and a
-    name keep their points. A Markdown card's template knows neither the viewer's language nor
-    the number format of their profile
+    places when given; anything else as `m()` prints it. A field of a text that is a number
+    (`NUMBERS` in `tests/dashboard_rules.py`: `{volts}`, `{mhz}`, `{snr}` …) is set through
+    `num()` in the card that prints it, or as a whole number (from `| int` or `| count`);
+    `m(x | string)` prints only a whole number; a value whose key names a unit (`frequency_mhz`,
+    `burst_s`) goes through `num()`, not `m()`; no number is formatted with `'%.1f'`. A number
+    printed another way, such as `m()` of a value from Home Assistant inside a text, is beyond
+    these patterns: the contract test `test_numbers_follow_the_dashboards_language` prints every
+    number of the dashboard in German. A message's text and a name keep their points. A Markdown
+    card's template knows neither the viewer's language nor the number format of their profile
     ([platform-notes.md](platform-notes.md#home-assistant-dashboards)), so the dashboard's
-    language decides when the dashboard is made. A fraction below 0.0001 comes out in Python's
-    exponent form (`1e-05`).
+    language decides when the dashboard is made. `num()` goes through a float: a fraction below
+    0.0001 comes out in Python's exponent form (`1e-05`), and a whole number above 2^53 loses
+    its last digits (no value the dashboard prints comes near it).
 
 A translation of a dashboard text is used only when `dashboard.unsafe()` finds nothing in it (no
 Jinja, HTML, Markdown link or address, no line break); the catalog check applies the same test.

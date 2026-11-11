@@ -955,6 +955,11 @@ def rule_12(template: str, source: Any, loaded: Any, household: Household) -> li
         found.append(f"rule 12: {len(rows)} rows of links under overview's status line")
     elif (targets := re.findall(r'<a href="\./([^"]*)">', rows[0])) != list(ROW_PAGES):
         found.append(f"rule 12: the links under overview's status line are {targets}")
+    elif depth := _depth(status[0].split(rows[0])[0]):
+        found.append(
+            "rule 12: the row of links under overview's status line is inside an {% if %}, a"
+            f" {{% for %}}, a <details> or a comment (depth {depth})"
+        )
     badges = [
         badge.get("tap_action", {}).get("navigation_path")
         for card, _ in nodes(by_path.get("contacts", {}))
@@ -967,6 +972,19 @@ def rule_12(template: str, source: Any, loaded: Any, household: Household) -> li
         if f"./{target}" not in badges
     ]
     return found
+
+
+# rule 12: what opens and what closes a block that can hide what is in it, and a comment on one line
+_OPENS = re.compile(r"\{%-?\s*(?:if|for|macro)\b|<details\b|\{#|<!--")
+_CLOSES = re.compile(r"\{%-?\s*end(?:if|for|macro)\b|</details>|#\}|-->")
+_COMMENT = re.compile(r"\{#.*?#\}|<!--.*?-->")
+
+
+def _depth(text: str) -> int:
+    """How many blocks are open at the end of a card's text: Jinja's if, for and macro, HTML's
+    <details>, and comments over several lines."""
+    plain = _COMMENT.sub("", text)
+    return len(_OPENS.findall(plain)) - len(_CLOSES.findall(plain))
 
 
 def rule_13(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
@@ -1001,19 +1019,27 @@ def rule_13(template: str, source: Any, loaded: Any, household: Household) -> li
 UNIT_KEY = re.compile(
     r"\bm\((?:state_attr\([^()]*, |\w+\.get\()'(\w+_(?:s|mb|v|db|dbm|mhz|khz|percent|hour))'\)"
 )
+# rule 22: the fields of the texts that are numbers, which may have a fraction (the template sets
+# each through num(), tests/test_dashboard.py checks that this list names them all)
+NUMBERS = frozenset(
+    {"volts", "slow", "spare", "hour", "mhz", "khz", "dbm", "cr", "budget", "burst", "hops", "snr"}
+)
+NUM_MACRO = re.compile(r"\{%-?\s*macro num\(")
 _PERCENT_FORMAT = re.compile(r"""['"]%[-+ #0]*\d*\.""")
 _WHOLE = re.compile(r"\|\s*(?:int|count)(?:\([^()]*\))?$")
+_SET = re.compile(r"set (\w+) = (.*?)\s*-?%\}")
 
 
 def rule_22(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
     """Numbers in the dashboard's language (#145): a card prints a number that may have a
-    fraction through num(), which it defines and which reads the same in every card; no number
-    is formatted with '%.', and m() prints a number only as a whole one (set from | int or
-    | count)."""
+    fraction through num(), which it defines and which reads the same in every card. A card
+    that prints a field of NUMBERS sets it through num(), or as a whole number (from | int or
+    | count); m(x | string) prints only a whole number; a value whose key names a unit goes
+    through num(), not m(); no number is formatted with '%.'. A number printed some other way,
+    such as m() of a value Home Assistant gives, is beyond these patterns: the contract test
+    test_numbers_follow_the_dashboards_language prints every number in German."""
     found = []
-    written = {
-        line for card in cards(template) for line in card.lines if line.startswith("{%- macro num(")
-    }
+    written = {line for card in cards(template) for line in card.lines if NUM_MACRO.search(line)}
     if len(written) > 1:
         found.append(f"rule 22: {len(written)} forms of num()")
     for card in cards(template):
@@ -1022,11 +1048,16 @@ def rule_22(template: str, source: Any, loaded: Any, household: Household) -> li
             found.append(f"rule 22: {card.first}: num() without its macro")
         if _PERCENT_FORMAT.search(body):
             found.append(f"rule 22: {card.first}: a number formatted with '%.'")
-        whole = {
-            name
-            for name, value in re.findall(r"set (\w+) = (.*?)\s*-?%\}", body)
-            if _WHOLE.search(value)
-        }
+        sets = _SET.findall(body)
+        whole = {name for name, value in sets if _WHOLE.search(value)}
+        printed = {name for text in msgids(body) for name in fields(text)}
+        printed |= set(re.findall(r"\{\{ (\w+) \}\}", body))
+        found += [
+            f"rule 22: {card.first}: the number {{{name}}} not set through num()"
+            for name in sorted(NUMBERS & printed)
+            if not (values := [value for named, value in sets if named == name])
+            or not all(value.startswith("num(") or _WHOLE.search(value) for value in values)
+        ]
         found += [
             f"rule 22: {card.first}: m({name} | string) of a number"
             for name in re.findall(r"\bm\((\w+) \| string\)", body)

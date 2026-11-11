@@ -1027,8 +1027,15 @@ def test_the_shipped_template_keeps_its_rules() -> None:
         "telemetry",
         "what",
     } <= names
-    assert {line for _, line in _lines(template) if line.startswith("{%- macro num(")} == {NUM}
+    assert {line for _, line in _lines(template) if rules.NUM_MACRO.search(line)} == {NUM}
     assert template.count(MACRO) == 42
+    assert template.count(NUM) == 7
+    # the number fields of rule 22: those the template sets through num()
+    assert {
+        name
+        for name, value in re.findall(r"set (\w+) = (.*?)\s*-?%\}", template)
+        if value.startswith("num(")
+    } == rules.NUMBERS
     assert len(list(dashboard.MARKER.finditer(template))) > 70
 
 
@@ -1931,8 +1938,12 @@ FIELD = (
     '          - type: entities\n            entities:\n              - entity: "@chats.write@"\n'
 )
 IN_FOOTER = "          - type: markdown\n            content: x\n"
-# the first two links of the row under Overview's status line
+# the first two links of the row under Overview's status line, and the row
 MAP_LINK, GATEWAY_LINK = '<a href="./map">_("Map")</a>', '<a href="./gateway">_("Gateway")</a>'
+ROW = (
+    f'<div>{MAP_LINK} · {GATEWAY_LINK} · <a href="./settings">_("Settings")</a> · '
+    '<a href="./help">_("Help")</a></div>'
+)
 BROKEN = [
     # rule 2: a mapping over a closed list
     (
@@ -2102,6 +2113,19 @@ BROKEN = [
         ["@@", f"<div>{MAP_LINK} · ", f"<div>{MAP_LINK}</div>\n              <div>{MAP_LINK} · "],
         "rule 12: 2 rows of links under overview's status line",
     ),
+    # rule 12: the row in a condition that never holds, or in a fold over several lines
+    (
+        ["@@", ROW, f"{{%- if false %}}\n              {ROW}\n              {{%- endif %}}"],
+        "rule 12: the row of links under overview's status line is inside",
+    ),
+    (
+        [
+            "@@",
+            ROW,
+            f'<details><summary>_("Help")</summary>\n              {ROW}\n              </details>',
+        ],
+        "rule 12: the row of links under overview's status line is inside",
+    ),
     # rule 13: a message's text through m(), a card without mt(), two forms of m()
     (
         card(
@@ -2183,6 +2207,14 @@ BROKEN = [
         ),
         "rule 22: 2 forms of num()",
     ),
+    (
+        card(
+            MACRO,
+            "{% macro num(v) -%}{{ m(v) }}{%- endmacro -%}",
+            "<div>{{ num(states('sensor.x')) }}</div>",
+        ),
+        "rule 22: 2 forms of num()",
+    ),
     (card(MACRO, "<div>{{ num(states('sensor.x')) }}</div>"), "num() without its macro"),
     (
         card(MACRO, "<div>{{ m('%.1f' | format(states('sensor.x') | float(0))) }}</div>"),
@@ -2198,7 +2230,55 @@ BROKEN = [
         card(MACRO, "<div>{{ m(state_attr('binary_sensor.@gw@_radio', 'frequency_mhz')) }}</div>"),
         "frequency_mhz through m(), not num()",
     ),
+    # rule 22: a number field printed as it is, or not set in its card
+    (
+        card(MACRO, NUM, "{%- set volts = m(states('sensor.x')) -%}", "<div>{{ volts }}</div>"),
+        "the number {volts} not set through num()",
+    ),
+    (card(MACRO, NUM, '<div>_("{volts} V")</div>'), "the number {volts} not set through num()"),
+    (
+        card(
+            MACRO,
+            NUM,
+            "{%- set volts = num(states('sensor.x'), 1) -%}",
+            "{%- set volts = m(states('sensor.y')) -%}",
+            '<div>_("{volts} V")</div>',
+        ),
+        "the number {volts} not set through num()",
+    ),
+    # rule 22: a number field set through m() from a variable: a contact's battery, the lag
+    (
+        ["@@", "{%- set volts = num(r.battery, 1) -%}", "{%- set volts = m(r.battery) -%}"],
+        "the number {volts} not set through num()",
+    ),
+    (
+        [
+            "@@",
+            "{%- set slow = num(lag if lag is number else none, 1) -%}",
+            "{%- set slow = m(lag) -%}",
+        ],
+        "the number {slow} not set through num()",
+    ),
 ]
+
+
+@pytest.mark.parametrize(
+    ("text", "depth"),
+    [
+        ("{#- Translators: the <details> below -#}\n{%- if x %}a{% endif %}\n<!-- {% if -->", 0),
+        ("{%- macro m(x) -%}{{ x }}{%- endmacro -%}\n{%- for e in y if e -%}\n{%- endfor -%}", 0),
+        ("{%- if x -%}\n{%- elif y -%}\n{%- else -%}", 1),
+        ("<details><summary>a</summary>\n{%- for e in y %}", 2),
+        ("{#- the row is hidden:\n", 1),
+        ("{#- a comment\nover two lines -#}", 0),
+        ("<!-- the row is hidden:\n", 1),
+    ],
+)
+def test_rule_12_counts_the_blocks_open_before_the_row(text: str, depth: int) -> None:
+    """Rule 12: the row under Overview's status line stands at the top level of its card, outside
+    every {% if %}, {% for %}, macro, <details> and comment over several lines; a comment on one
+    line hides nothing, and an elif or else opens no block."""
+    assert rules._depth(text) == depth
 
 
 @pytest.mark.real_catalogs
