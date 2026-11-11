@@ -8,6 +8,14 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Fixed
+
+- On a chat's page of the dashboard, the line that says why *Send* was refused stands above the
+  thread, where the field does not cover it; under the thread, the field covered it until the
+  page was scrolled. While it shows, the thread starts lower. The line no longer repeats the
+  text: the field keeps it, and a text sent twice is in the thread (#143). Make the dashboard
+  again after the update.
+
 ## [2.1.0] - 2026-11-09
 
 The household's chat, its problems and its settings on the generated dashboard, and German. It

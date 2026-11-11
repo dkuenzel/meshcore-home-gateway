@@ -253,3 +253,12 @@ Assistant, [testing.md](../testing.md#the-dashboard-in-a-browser)).
   entity in its interface, or dashboard variables; when the frontend's footer cap changes; and
   when the use after the release shows stale drafts being sent (a change time in the draft
   document).
+* Amended on 2026-11-11 (#143): why a *Send* was refused stands right above the thread,
+  superseding the Decision's bullet that puts it under the thread, the Bad consequence that it
+  can stand behind the footer, and the Confirmation's "under the thread (rule 18)". Under the
+  thread, the footer, which sticks to the bottom of the screen, covered the line until the page
+  was scrolled; above it, its place depends on neither the thread's length nor the screen. Bad,
+  because while the line shows, the thread starts lower by its height, and on a phone its newest
+  rows may stand behind the field until the page is scrolled. The line no longer quotes the text:
+  the field keeps a refused draft, and a text sent twice is in the thread. Rule 18 checks the
+  place ([platform-notes.md](../platform-notes.md#home-assistant-dashboards)).

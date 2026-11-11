@@ -713,7 +713,8 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
 * *Chats*: *All chats*, every chat page with its kind and newest message, those only automations
   write to last, then the contacts with a device that have no chat page yet and the channels
   heard that have none; and *Latest messages*, all messages together as a thread.
-* A chat's page shows the chat's messages: received on the left, sent from this home on the
+* A chat's page shows the chat's messages, under the line that says why the gateway refused a
+  message to the chat, while there is one: received on the left, sent from this home on the
   right with their time and ✓ (sent) or ✓✓ (delivered, which the person's radio confirmed);
   a message not delivered, not sent or maybe forged in yellow, with the reason in words; one on
   its way in italics. The newest six stay open, fewer when they are long, the older ones in a
@@ -725,13 +726,13 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   was sent: after a change, the messages sent before it, also one kept on its way across the
   restart that changed it, show the other way until they leave the history. While the gateway
   is offline, Home Assistant drops *Configuration*'s attributes and the cards cut it as before.
-  The thread's help links to *Help*, which explains each reason. Under the thread, why the
-  gateway refused a message to the chat, why writing is not possible when it is not, and
-  *About*: where the person is, the battery, asking for position and battery with how the
-  device answers, or the chat's text before and after messages. On a desktop screen with a long
-  thread, the line that says why a message was refused can stand behind the field until the page
-  is scrolled; on a phone it stands above it. The page ends in the field
-  to write in and its *Send* button (writing, below). A person whose device is gone, removed from
+  The thread's help links to *Help*, which explains each reason. The line that says why a
+  message was refused stands above the thread, where the field does not cover it; it does not
+  repeat the text, which stays in the field, and a text sent twice is in the thread. Under the
+  thread, why writing is not possible when it is not, and *About*: where the person is, the
+  battery, asking for position and battery with how the device answers, or the chat's text
+  before and after messages. The page ends in the field to write in and its *Send* button
+  (writing, below). A person whose device is gone, removed from
   the radio or hidden ([Contacts](#contacts)), keeps the page with the messages; its head says
   how to get the contact back.
 * *Contacts*: buttons to *Gateway*, *Settings* and *Help* at the top; *People and devices*,
@@ -829,7 +830,7 @@ tap on a link does nothing.
 **Writing.** A chat's page ends in a field *Write to …* and a tile *Return, then Send*: type,
 tap Return (↵), then *Send*. Return, or leaving the field, keeps the text at the gateway; only
 *Send* sends it, once. The field is shared by everyone in the home who uses Home Assistant, and
-a text left in it is cleared after 15 minutes. A *Send* the gateway refuses says why under the
+a text left in it is cleared after 15 minutes. A *Send* the gateway refuses says why above the
 thread, also when the field held no text. The field and the button are entities of a gateway of
 version 2.1; with an earlier gateway, the page says so instead. A channel that only automations
 write to (`homeassistant.hidden_targets`) has no field, nor have two targets whose aliases differ

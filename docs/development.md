@@ -207,7 +207,7 @@ its rule; the shipped template breaks none of them.
 7. No marker inside an HTML attribute.
 8. Every card but a heading has a `<details>` last; a tile, entities, map or history-graph card
    may have it in a `text_only` card that follows it, and a chat's refused line has the help of
-   the thread above it (rule 18); every page ends with such a card; what a mapping macro says is explained there or on *Help*
+   the thread under it (rule 18); every page ends with such a card; what a mapping macro says is explained there or on *Help*
    (but the names of the months); *Help* names every page and every control.
 9. The status line and the problem cards list the same problems in the same order: the branches
    of the status line's `problem()`, and the problem a card names on its first line,
@@ -234,9 +234,10 @@ its rule; the shipped template breaks none of them.
     starts with "For your administrator:" names Home Assistant's menus.
 18. A chat page's footer is a `vertical-stack` of one text row whose three actions are `none`
     and a tile with a `button` feature. The refused line (a Markdown card that hides while empty,
-    rule 21) is the card right under the thread, whose help it shares (rule 8): the frontend caps
+    rule 21) is the card right above the thread, whose help it shares (rule 8): the frontend caps
     the footer at a quarter of the screen, and on top of the field the line pushed *Send* below
-    a phone's screen ([platform-notes.md](platform-notes.md#home-assistant-dashboards)).
+    a phone's screen; under the thread, the footer covered it until the page was scrolled (#143,
+    [platform-notes.md](platform-notes.md#home-assistant-dashboards)).
 19. `m()` removes the C0 and C1 controls but tab, LF and CR, and the invisible characters the
     gateway drops before it reads a contact link; never U+200C and U+200D.
 20. No page has a `back_path`: the back arrow goes back to the page it came from.

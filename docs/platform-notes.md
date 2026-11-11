@@ -1847,14 +1847,16 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   2026.11.0 (the dashboard's [browser check](testing.md#the-dashboard-in-a-browser)), a chat
   page's footer held the field and the *Send* tile (162 px) and, while a *Send* was refused, the
   line that says why on top of them (61 to 77 px): that line pushed the *Send* tile 15 px below
-  the screen at 360x800 and 4 px at 390x844. *Here:* since 2.1.0 the refused line stands under
-  the thread, and the footer holds only the field and the tile
-  ([development.md](development.md#translations), rule 18). On a phone the line then stands
-  above the footer (at 360x800 with a full thread it ends 8 px above it), but the footer still
-  covers the bottom of the page until it is scrolled: at 1280x800 with a full thread, the line
-  stood at 589 to 638 px and the footer's top at 606 px, so 32 of its 49 px were behind the
-  field on first paint, on both versions, and 10 px in a later run with another full thread.
-  *Check:* `grep -n max-height
+  the screen at 360x800 and 4 px at 390x844. The footer also covers the bottom of the page
+  until it is scrolled: in 2.1.0 the refused line stood under the thread, and at 1280x800 with a
+  full thread it stood at 589 to 638 px and the footer's top at 606 px, so 32 of its 49 px were
+  behind the field on first paint, on both versions, and 10 px in a later run with another full
+  thread (#143). On a phone the line then ended 8 px above the footer at 360x800, but that
+  thread had 3 open rows; six short ones, which a thread also opens, were not measured.
+  *Here:* the footer holds only the field and the tile, and since 2.1.1 the refused line stands
+  right above the thread, where its place depends on neither the thread's length nor the
+  screen; while it shows, the thread starts lower
+  ([development.md](development.md#translations), rule 18). *Check:* `grep -n max-height
   src/panels/lovelace/views/hui-view-footer.ts` in the frontend's source.
 * **Core strips what a template renders, so a Markdown card whose content renders only spaces or
   line breaks counts as empty; markup without text, an HTML entity such as `&nbsp;` and a

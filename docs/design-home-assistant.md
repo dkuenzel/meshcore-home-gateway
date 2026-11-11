@@ -155,10 +155,12 @@ their way, a draft and its *Send* for each chat and the configuration
   gateway's draft of that chat, the text entity *Write to …*, and its button *Send*: the gateway
   keeps the draft until it is sent ([home-assistant.md](home-assistant.md#dashboard)). The
   script stays for automations. The field and *Send* are the view's footer, which stays at the
-  bottom of the screen; why the gateway refused a *Send* stands under the thread, not in the
-  footer: the frontend caps the footer at a quarter of the screen, and the refused line on top
-  of the field pushed *Send* below a phone's screen
-  ([platform-notes.md](platform-notes.md#home-assistant-dashboards)).
+  bottom of the screen; why the gateway refused a *Send* stands right above the thread, not in
+  the footer: the frontend caps the footer at a quarter of the screen, and the refused line on
+  top of the field pushed *Send* below a phone's screen. Under the thread, as in 2.1.0, the
+  footer covered the line until the page was scrolled (#143); above it, its place depends on
+  neither the thread's length nor the screen, and while it shows, the thread starts lower by its
+  height ([platform-notes.md](platform-notes.md#home-assistant-dashboards)).
 * **What changes while the dashboard stays** comes from Markdown templates over the device
   registry: the contacts of this gateway (the contact devices whose via device is the gateway's),
   the heard nodes, the last contact event. What a card needs as fixed IDs is written when the

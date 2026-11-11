@@ -38,4 +38,4 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0028](0028-outgoing-queue-kept-across-restarts.md) | The outgoing queue kept across restarts, alerts first | accepted; amended 2026-11-03 (where its tests are) |
 | [0029](0029-what-a-contact-is-trusted-with.md) | What a contact of the radio is trusted with | accepted |
 | [0030](0030-release-checked-by-ci-self-test-and-use.md) | A release checked by CI, the installer's self-test and the maintainer's use, not by a manual checklist | accepted |
-| [0031](0031-household-chat-problems-and-settings-on-the-generated-dashboard.md) | Household chat, problems and settings on the generated dashboard | accepted |
+| [0031](0031-household-chat-problems-and-settings-on-the-generated-dashboard.md) | Household chat, problems and settings on the generated dashboard | accepted; amended 2026-11-11 (the refused line above the thread) |
