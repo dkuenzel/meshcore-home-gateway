@@ -1058,7 +1058,7 @@ retained with QoS 1, the echo of `send` aside.
 | `$state` | gateway → | yes | `init` while the device is announced, and after a start until 5 s after the radio's first contact table; `ready`; `alert` while the radio is not connected; `disconnected` after a clean stop; `lost` as the last will |
 | `gateway/$name`, `gateway/$type`, `gateway/$properties` | gateway → | yes | `Gateway`, `gateway`, `radio`: the gateway's own node |
 | `gateway/radio`, `gateway/radio/$<attribute>` | gateway → | yes | `connected` or `disconnected`, as `radio` in [`state`](#state-state); `$datatype` `enum`, `$format` `connected,disconnected` |
-| `<key>/$name`, `<key>/$type`, `<key>/$properties` | gateway → | yes | the contact's name and type (as in its document), its properties |
+| `<key>/$name`, `<key>/$type`, `<key>/$properties` | gateway → | yes | the contact's name and type (as in its document; since 2.2 the key's first 12 digits for a name that shows nothing, as the device in Home Assistant), its properties |
 | `<key>/<property>`, `<key>/<property>/$<attribute>` | gateway → | yes | the property's value (below) and its Homie attributes |
 | `<key>/send` | gateway → | no | the echo of a text taken on `send/set` |
 

@@ -232,6 +232,22 @@ def test_a_companion_is_a_node_with_its_values_and_a_settable_send() -> None:
     assert all(HOMIE_ID.fullmatch(level) for level in node.split("/")[1:])
 
 
+@pytest.mark.parametrize("name", ["", "\u200b", "\u00ad", "\u3164", "\x07", None])
+def test_a_node_whose_name_shows_nothing_is_named_by_its_key(name: str | None) -> None:
+    """#137: as the device in Home Assistant, a node whose name is empty, invisible or
+    drawn as nothing has its key's first 12 digits as `$name`."""
+    recorder = Recorder()
+    started(recorder)
+    contact(recorder.device, ALICE, "Alice")
+    contact(recorder.device, BOB, name)  # type: ignore[arg-type]  # a document without a name
+    recorder.timers.fire()
+    latest = recorder.latest()
+    assert (latest[f"{BASE}/{ALICE}/$name"], latest[f"{BASE}/{BOB}/$name"]) == (
+        b"Alice",
+        BOB[:12].encode(),
+    )
+
+
 def test_a_sensor_has_no_send_and_an_unknown_value_is_cleared() -> None:
     recorder = Recorder()
     started(recorder)

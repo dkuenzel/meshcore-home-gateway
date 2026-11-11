@@ -38,6 +38,11 @@ format, the command line and Home Assistant discovery are public interfaces
   The setting stays off by default; with heard nodes' names published by default, switch it on
   ([configuration.md](docs/configuration.md#messages), #137). A device whose name changes keeps
   its entity IDs.
+- The device of a contact whose name shows nothing, made only of invisible characters such as a
+  zero-width space or a soft hyphen, or drawn as nothing such as a Hangul filler, is named by the
+  first 12 digits of its key in Home Assistant, and so is its Homie node; before, only an empty
+  name was, and the others left a device without a name to read
+  ([home-assistant.md](docs/home-assistant.md#contacts), #137).
 
 ### Security
 

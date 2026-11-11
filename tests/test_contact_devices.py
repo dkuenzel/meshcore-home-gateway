@@ -884,15 +884,23 @@ def test_a_device_name_another_device_has_gets_the_key_digits(tmp_path: Path) ->
     assert renamed["dev"]["name"] == "\u0410LICE"
 
 
-def test_a_name_drawn_as_nothing_another_device_has_gets_the_key_digits(tmp_path: Path) -> None:
-    """#89: a name of a Hangul filler alone shows as a blank name, not as none: a later contact
-    named so gets its key's digits in its device name."""
+@pytest.mark.parametrize(
+    "name",
+    ["", " ", "\u200b", "\u200b\u200d", "\u00ad", "\u3164", "\u2800", "\x07"],
+    ids=["empty", "space", "zwsp", "zwsp-zwj", "soft-hyphen", "hangul-filler", "braille", "bel"],
+)
+def test_a_device_whose_name_shows_nothing_is_named_by_its_key(tmp_path: Path, name: str) -> None:
+    """#137: a name that is empty, made only of invisible characters, or drawn as nothing
+    (#89: a Hangul filler, the braille blank) would give a device that reads as no name in Home
+    Assistant's lists: the device is named by its key's first 12 digits, also when a contact
+    before it had the same name (SEC-007)."""
     contacts, bus = devices(tmp_path)
-    contacts.update(mesh_of(node(ALICE, "\u3164")))
-    bus.take()
-    contacts.update(mesh_of(node(ALICE, "\u3164"), node(BOB, "\u3164")))
+    contacts.update(mesh_of(node(ALICE, name)))
+    ((_, alice),) = bus.take()
+    assert alice["dev"]["name"] == ALICE[:12]
+    contacts.update(mesh_of(node(ALICE, name), node(BOB, name)))
     names = {key_from_discovery_topic(CONFIG, t): d["dev"]["name"] for t, d in bus.take()}
-    assert names == {BOB: f"\u3164 ({BOB[:8]})"}
+    assert names == {BOB: BOB[:12]}
 
 
 def test_a_name_without_letters_uses_the_key(tmp_path: Path) -> None:
