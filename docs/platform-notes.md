@@ -192,6 +192,7 @@ One line per fact, by section.
 * A device tracker is `force_update`: every write is a new state, so a write after an MQTT reconnect or a restart adds a second point on one spot. A card open while its entity is kept out of the recorder still draws the points that come while it stays open, and a `person` keeps its own copy of the position.
 * A map card's `conditions` filter only the markers: with `show_all`, every entity with a location draws its trail, a phone's and a person's too, also when its marker is filtered out. `show_all` takes the entities that have a location when the card gets its configuration; one without a location then (an `unavailable` tracker) gets neither marker nor trail until the page loads again.
 * A Markdown card's `entity_id` option does nothing: Home Assistant renders the template again when what it read changes, and a template that calls `now()` also each minute.
+* A Markdown card's template knows two variables, `config` (the card's own configuration) and `user` (the viewer's name), and Home Assistant's template functions; none of them gives the viewer's language or the number format of their profile, so a number prints as Python writes it, with a point.
 * Since Home Assistant 2026.10 the frontend decides only some visibility conditions itself and sends the others to core: a `state` or `state_not` condition on an entity that does not exist then hides the card, and a template condition is evaluated again every second.
 * A script saved in the script editor takes its ID from its alias (`_2` if that is taken), and its more-info dialog shows a form for its `fields`.
 * A script's `data` written as a mapping of templates reads each value as Python would: `message: "{{ message }}"` sends `+493023125000` as `493023125000`, `1.10` as `1.1`, a text without the spaces around it, and refuses `None`. One template for the whole mapping, `data: "{{ {'message': message} }}"`, keeps the text as it was.
@@ -1789,6 +1790,23 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   table calls `now()` once, so a new contact shows within a minute also when no row has a time,
   and reads its contacts from the registry, which sets up no listener; `test_dashboard.py` checks
   `has_time` and that no card listens to a whole domain. *Check:* `make ha-test`.
+* **A Markdown card's template knows two variables, `config` (the card's own configuration) and
+  `user` (the viewer's name), and Home Assistant's template functions; none of them gives the
+  viewer's language or the number format of their profile, so a number prints as Python writes
+  it, with a point.** The card sends just these two with the `render_template` subscription, and
+  core renders the template with what the message holds. *Verified:* frontends `20260930.4`
+  (Home Assistant 2026.10.2), `src/panels/lovelace/cards/hui-markdown-card.ts` lines 236-239, and
+  `20261028.4` (2026.11.0), lines 291-294; core `components/websocket_api/commands.py` lines
+  777 and 837 at 2026.10.2, 826 and 886 at 2026.11.0 (`variables = msg.get("variables")`, then
+  `TrackTemplate(template_obj, variables)`, nothing added); no function or filter in `helpers/template/` of either release reads a language or a
+  number format (`grep -rn "language\|number_format\|locale"` finds none). The contract tests
+  render the cards with the same two variables. *Here:* the dashboard writes its numbers in its
+  own language, which it knows when it is made: each card's `num()` puts the language's decimal
+  mark in place of the point ([development.md](development.md#translations), rule 22), so a
+  viewer whose profile sets another number format still reads the dashboard's
+  ([home-assistant.md](home-assistant.md#dashboard)). `home-assistant/tests/test_numbers.py`
+  checks the numbers in English, German and the pseudo-language. *Check:* `make ha-test`; the
+  lines above in the next frontend's source.
 * **Since Home Assistant 2026.10 the frontend decides only some visibility conditions itself and
   sends the others to core: a `state` or `state_not` condition on an entity that does not exist
   then hides the card, and a template condition is evaluated again every second.** The browser

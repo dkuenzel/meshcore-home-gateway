@@ -107,6 +107,11 @@ delivery steps, telemetry states and contact events it shows.
   would read them as HTML, Jinja, a Markdown link or an address. The command then uses the English
   text, and `make check` refuses the translation.
 * The counts have no plural forms: write them as "Messages waiting: {queue}.".
+* A number in a field comes written as the language writes it, from locale data, not from the
+  catalog: with the language's decimal mark (`DECIMAL_MARKS` in
+  `src/meshcore_home_gateway/i18n.py`, 0,4 in German) and a whole number without `.0`. Keep the
+  field and its unit (`{slow} s`); the card adds no digit grouping. Numbers in a message or a name
+  stay as their sender wrote them.
 * Reason codes (`no_acknowledgement`, `look_alike`) are not in the catalog: the dashboard shows
   them as codes in every language.
 * `{#- Translators: … -#}` notes inside a card's content reach the catalog like `# Translators:`
@@ -132,7 +137,10 @@ For a language `ll` (its ISO 639-1 code, two lower-case letters):
    (*Plural forms*). `make translations` writes the rest of the header.
 2. Translate every text of both files.
 3. Add the language to `LANGUAGES` in `src/meshcore_home_gateway/i18n.py`, with its own name for
-   itself: `"ll": "Name"`.
+   itself: `"ll": "Name"`; and to `DECIMAL_MARKS` beside it, with the decimal mark the Unicode CLDR
+   gives for the language with Latin digits (its `decimal` number symbol): `"ll": ","` for most
+   European languages. The dashboard writes its numbers with it, and the tests refuse a language
+   without one.
 4. Run `make translations`: it merges both catalogs, writes the installer's pack
    `deploy/proxmox/locale/ll.messages` and pins it in the script.
 5. Run `make interface`: the language is a new choice of `[homeassistant] language`, which the

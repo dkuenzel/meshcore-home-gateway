@@ -788,7 +788,11 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
 
 It uses only the gateway's entities and the cards of Home Assistant, no custom card. Its texts
 follow `homeassistant.language`; entity IDs, reason codes and names from the mesh stay as they
-are. A card that finds the contacts' devices in Home Assistant's registry, which tells no card
+are. Its numbers follow the language too: German writes 0,4 s and 3,9 V, every language a whole
+number without `.0`; a number in a message or a name stays as it was written. The number format of your
+Home Assistant profile does not reach these cards, whose templates know neither the viewer's
+language nor that format ([platform-notes.md](platform-notes.md#home-assistant-dashboards)). A
+card that finds the contacts' devices in Home Assistant's registry, which tells no card
 of a change, renders again each minute: a contact that gets its device, or a tracker, shows
 within a minute. Every name and text from the mesh shows as text: no name or message can add a link or load
 an image ([platform-notes.md](platform-notes.md#home-assistant-dashboards)).

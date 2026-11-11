@@ -158,8 +158,9 @@ lines of its own, which `dashboard.py` reads:
   lines of the content, such as the keys of the contacts a list holds.
 * `# @if trackers`, `# @if chats` (a list that is not empty) or, inside its `@each`,
   `# @if chats.write` (a field that is not empty), then `# @else` and `# @end`.
-* `@gw@`, `@node@`, `@version@`, `@major@`, `@minor@` and `@guide@` (the guide of this
-  version, for a link to one of its sections) are filled in;
+* `@gw@`, `@node@`, `@version@`, `@major@`, `@minor@`, `@guide@` (the guide of this
+  version, for a link to one of its sections) and `@decimal@` (the decimal mark of the
+  dashboard's language, `i18n.DECIMAL_MARKS`, which `num()` writes, rule 22) are filled in;
   `["@trackers@"]` and `["@chats@"]` become JSON lists, `["@models@"]` the pairs of each model of
   a contact's device, as the gateway names it in the dashboard's language, and its node type. A chat page in `["@chats@"]` says with
   `write` only whether it has a field: the entity IDs of its field and its *Send* button stand
@@ -247,6 +248,17 @@ its rule; the shipped template breaks none of them.
     the card's own content: Home Assistant's card wrapper takes a card that hides itself out of
     the page, and it does not come back until the page is loaded again; a card hidden by its
     conditions comes back once they hold.
+22. A card prints a number through `num(v, digits=none)`, which it defines after `m()` and which
+    reads the same in every card: the number with the dashboard's decimal mark in place of the
+    point (`@decimal@`; German writes 0,4), a whole number without `.0`, rounded to `digits`
+    places when given; anything else as `m()` prints it. No number is formatted with `'%.1f'`,
+    `m()` prints a number only as a whole one (set from `| int` or `| count`), and a value whose
+    key names a unit (`frequency_mhz`, `burst_s`) goes through `num()`. A message's text and a
+    name keep their points. A Markdown card's template knows neither the viewer's language nor
+    the number format of their profile
+    ([platform-notes.md](platform-notes.md#home-assistant-dashboards)), so the dashboard's
+    language decides when the dashboard is made. A fraction below 0.0001 comes out in Python's
+    exponent form (`1e-05`).
 
 A translation of a dashboard text is used only when `dashboard.unsafe()` finds nothing in it (no
 Jinja, HTML, Markdown link or address, no line break); the catalog check applies the same test.

@@ -30,6 +30,10 @@ format, the command line and Home Assistant discovery are public interfaces
   marker goes, as on Home Assistant's own Map panel, but the map keeps its line, which ends in a
   dot where it was last, until that is more than 24 hours ago. Make the dashboard again after the
   update.
+- The dashboard writes numbers as its language does: in German with a decimal comma (0,4 s;
+  869,618 MHz; 3,9 V), and in every language a whole number without `.0` (a duty cycle of 10, a
+  budget of 36 s). The decimal mark comes from locale data, not from a translator; a number in a
+  message or a name stays as it was written (#145). Make the dashboard again after the update.
 
 ## [2.1.0] - 2026-11-09
 
