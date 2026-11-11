@@ -36,6 +36,7 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0026](0026-gateway-tested-against-the-real-firmware-built-natively.md) | The gateway is tested against the real firmware, built natively | accepted; amended by 0030 |
 | [0027](0027-message-catalogs-compiled-when-loaded.md) | Message catalogs compiled when they are loaded | accepted |
 | [0028](0028-outgoing-queue-kept-across-restarts.md) | The outgoing queue kept across restarts, alerts first | accepted; amended 2026-11-03 (where its tests are) and 2026-11-07 (the queue kept through a stop; an alert ends a wait) |
-| [0029](0029-what-a-contact-is-trusted-with.md) | What a contact of the radio is trusted with | accepted; amended 2026-11-05 (the defaults of 2.0.0) |
+| [0029](0029-what-a-contact-is-trusted-with.md) | What a contact of the radio is trusted with | accepted; amended 2026-11-05 (the defaults of 2.0.0); the default of `heard_nodes` superseded by 0032 (2026-11-11) |
 | [0030](0030-release-checked-by-ci-self-test-and-use.md) | A release checked by CI, the installer's self-test and the maintainer's use, not by a manual checklist | accepted; amended 2026-11-06 with 0022 (a candidate tagged once CI passed) |
 | [0031](0031-household-chat-problems-and-settings-on-the-generated-dashboard.md) | Household chat, problems and settings on the generated dashboard | accepted; amended 2026-11-11 (the refused line above the thread) |
+| [0032](0032-heard-nodes-kept-with-name-signal-and-time-by-default.md) | Heard nodes are kept with name, signal and time by default | accepted |
