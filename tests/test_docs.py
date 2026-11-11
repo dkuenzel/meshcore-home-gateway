@@ -137,6 +137,46 @@ def test_the_index_of_the_decisions_lists_every_record_and_who_amends_it() -> No
         assert "amended by 0031" in status, name
 
 
+# a dated amendment of an accepted record, and the record it is made by or with, if any
+AMENDMENT = re.compile(
+    r"^(?:\* )?(?:Amended on|Note of) (\d{4}-\d{2}-\d{2})(?: (?:by|with) \[ADR (\d{4})\])?",
+    re.MULTILINE,
+)
+
+
+def test_the_index_of_the_decisions_names_every_dated_amendment() -> None:
+    """ADR 0001: the index names each amendment of a record. Every line that starts with
+    `Amended on <date>` or `Note of <date>` has its date in the record's status, or the number
+    of the record it was made by or with (`amended by 0025`)."""
+    rows = INDEX_ROW.findall((DECISIONS / "README.md").read_text(encoding="utf-8"))
+    found, unnamed = 0, []
+    for _, name, _, status in rows:
+        for date, record in AMENDMENT.findall((DECISIONS / name).read_text(encoding="utf-8")):
+            found += 1
+            if date not in status and not (record and record in status):
+                unnamed.append(f"{name[:4]}: {date}")
+    assert found >= 42  # the pattern still finds them (42 on 2026-11-11)
+    assert unnamed == []
+
+
+def test_an_amendment_is_found_in_every_form_the_records_use() -> None:
+    text = (
+        "Amended on 2026-11-02 (review): a.\n"
+        "* Amended on 2026-11-03: b.\n"
+        "* Note of 2026-11-04 (sizes): c.\n"
+        "Amended on 2026-11-05 by [ADR 0030](0030-x.md): d.\n"
+        "* Amended on 2026-11-06 with [ADR 0031](0031-x.md): e.\n"
+        "Chosen on 2026-11-07, amended on 2026-11-08: neither.\n"
+    )
+    assert AMENDMENT.findall(text) == [
+        ("2026-11-02", ""),
+        ("2026-11-03", ""),
+        ("2026-11-04", ""),
+        ("2026-11-05", "0030"),
+        ("2026-11-06", "0031"),
+    ]
+
+
 def _load_index_tool() -> ModuleType:
     path = ROOT / "tools" / "platform_notes_index.py"
     spec = importlib.util.spec_from_file_location("platform_notes_index", path)
