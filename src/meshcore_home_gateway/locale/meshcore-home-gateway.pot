@@ -5828,7 +5828,7 @@ msgctxt "dashboard"
 msgid "room"
 msgstr ""
 
-#. why the gateway refused a command, after the command's word
+#. why the gateway refused a command, after the words command refused
 #. security text (docs/translations.md): a command needs the sender's current code; a sender without a code secret is refused while the gateway ignores a secret of a key that is no sender; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"

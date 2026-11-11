@@ -1758,7 +1758,7 @@ msgstr "Ein Befehl dieses Absenders endet mit dem 6-stelligen Code einer Authent
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "A command the gateway refused shows with its reason after the word refused, until the gateway accepts a command; its word is left out. The gateway's log also names a sender refused for too many wrong codes."
-msgstr "Ein Befehl, den das Gateway abgelehnt hat, erscheint mit seinem Grund nach dem Wort „abgelehnt“, bis das Gateway einen Befehl annimmt; sein Wort wird weggelassen. Das Protokoll des Gateways nennt außerdem einen Absender, der wegen zu vieler falscher Codes abgelehnt wird."
+msgstr "Ein Befehl, den das Gateway abgelehnt hat, erscheint mit seinem Grund nach dem Wort „abgelehnt“, bis das Gateway einen Befehl annimmt; das Befehlswort steht nicht dabei. Das Protokoll des Gateways nennt außerdem einen Absender, der wegen zu vieler falscher Codes abgelehnt wird."
 
 #. security text (docs/translations.md): who can read a chat, and that a name on a channel proves nothing
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -5830,7 +5830,7 @@ msgctxt "dashboard"
 msgid "room"
 msgstr "Raum"
 
-#. why the gateway refused a command, after the command's word
+#. why the gateway refused a command, after the words command refused
 #. security text (docs/translations.md): a command needs the sender's current code; a sender without a code secret is refused while the gateway ignores a secret of a key that is no sender; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
