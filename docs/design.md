@@ -645,9 +645,11 @@ output, exit codes and `run` never change with it.
   keeps an older one)" when it does), a logged copy that differs from the advert the radio took as
   a warning, and each advert the radio took that the gateway could not check at debug level
   ("contact …: its advert at <time> was not checked (not logged)" or "(no report from the
-  radio)"). A heard companion's differing copies and its advert without a log are logged at debug
-  level only, when its `NEW_ADVERT` comes ("node …"), and not again at the read that adds it. No
-  coordinate is logged.
+  radio)"), at info level when the position the radio's record holds turns *Position in adverts*
+  on with it ("…; the radio's record holds a position, so Position in adverts is on until an
+  advert without one is checked"). A heard companion's differing copies and its advert without a
+  log are logged at debug level only, when its `NEW_ADVERT` comes ("node …"), and not again at the
+  read that adds it. No coordinate is logged.
 
 ### 6.11 Telemetry
 

@@ -75,6 +75,7 @@ from meshcore_home_gateway.views import (
     PendingEntry,
     RadioReadings,
     TargetSetting,
+    advert_carries_position,
     config_document,
     contact_document,
     contact_event,
@@ -670,11 +671,24 @@ class Observer:
                 )
             ):
                 reason = "not logged" if pending is not None else "no report from the radio"
-                log.debug(
-                    "contact %s: its advert at %s was not checked (%s)",
+                # the record's position turns the warning on (ADR 0025): the journal says why
+                turned = advert_carries_position(tracked) and not (
+                    advert_carries_position(Tracked(previous, advert=held))
+                    if previous is not None
+                    else held is not None and held.carries
+                )
+                log.log(
+                    logging.INFO if turned else logging.DEBUG,
+                    "contact %s: its advert at %s was not checked (%s)%s",
                     key[:12],
                     iso(tracked.node.last_advert),
                     reason,
+                    (
+                        "; the radio's record holds a position, so Position in adverts is on "
+                        "until an advert without one is checked"
+                    )
+                    if turned
+                    else "",
                 )
             check = result.check
             if check is None or check == held or (held is not None and check.at < held.at):
