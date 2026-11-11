@@ -5411,14 +5411,14 @@ msgstr "Start innerhalb der nächsten Stunde"
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "keys and names"
-msgstr "Schlüssel und Namen"
+msgid "keys only"
+msgstr "nur Schlüssel"
 
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "keys only"
-msgstr "nur Schlüssel"
+msgid "keys, names, times and signal"
+msgstr "Schlüssel, Namen, Zeiten und Signal"
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"

@@ -25,6 +25,9 @@ format, the command line and Home Assistant discovery are public interfaces
   node has no name until its next advert, as before: until then a node named like a contact is
   not flagged, and an add names the contact with the first 12 digits of its key
   ([configuration.md](docs/configuration.md#contacts)).
+- The dashboard's *Settings* say all that `heard_nodes = "full"` keeps of the nodes heard nearby:
+  keys, names, times and signal (before: keys and names). Make the dashboard again after the
+  update.
 
 ## [2.1.1rc2] - 2026-11-12
 
