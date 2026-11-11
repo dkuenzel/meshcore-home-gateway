@@ -2237,6 +2237,56 @@ views:
               {%- endif %}
               {#- Translators: the help on writing. Return (↵) is the keyboard's key: the word the phone keyboards of your language show, with the sign ↵, and the same word as in the name beside the Send button (Return, then Send); Send and Write to {name} as their labels are translated. name is the chat's title; minutes, room, window and seconds are whole numbers #}
               <details><summary>{% if gone and own %}_("Why you cannot write here"){% else %}_("How to write"){% endif %}</summary><ul>{% if gone and own %}<li>_("The radio no longer has {name} as a contact, or someone hid the contact by deleting its device in Home Assistant. This page's field went with the device.")</li><li>_("To write again, add the contact again, or show hidden contacts again (Contacts).")</li>{% else %}<li>_("Type in the field “Write to {name}” at the bottom, tap Return (↵), then tap Send. Return only keeps the text; Send sends it.")</li><li>_("Wait until the field is empty before you write the next message. It empties when the gateway has taken yours, and your message shows in the chat.")</li><li>_("Everyone in this home who uses Home Assistant shares this field. What someone else leaves in it is what Send sends, and their text can replace yours while you type. Read the field before you tap Send.")</li><li>_("If the connection drops, the field can show an older text again. Read it before you tap Send.")</li><li>_("A text left in the field is cleared after {minutes} minutes. Reloading the page or a Home Assistant restart loses only what you were still typing. A restart of the gateway empties the field. The messages in the chat show what was really sent.")</li><li>{% if cut %}_("About {room} letters; a longer text is cut and ends in ...; letters with accents and emoji count double or more."){% else %}_("About {room} letters; a longer text is not sent and stays in the field; letters with accents and emoji count double or more."){% endif %}</li>{% if dedup >= 120 and dedup % 60 == 0 %}<li>_("The same text to the same chat within {window} minutes is not sent again, unless it was not delivered.")</li>{% elif dedup > 0 %}<li>_("The same text to the same chat within {seconds} seconds is not sent again, unless it was not delivered.")</li>{% elif dedup < 0 %}<li>_("The same text to the same chat within a few minutes is not sent again, unless it was not delivered.")</li>{% endif %}<li>_("A text that is only the word unknown or unavailable cannot be written here.")</li><li>_("What you leave in the field is kept in Home Assistant's history, also if you delete it before sending, unless your administrator turned that off.")</li>{% endif %}</ul></details>
+          # the refused line above the thread: the frontend caps the footer at a quarter of the
+          # screen, and on top of the field it pushed Send below a phone's screen (H-27); under
+          # the thread, the footer, which sticks to the screen's bottom, covered it (#143)
+          - type: markdown
+            text_only: true
+            show_empty: false
+            content: |-
+              {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {#- the reasons of mqtt-api.md, Delivery; one added later, and the radio's refusals, stay codes -#}
+              {%- macro why(v) -%}
+              {%- if v == 'no_acknowledgement' -%}_("no acknowledgement")
+              {%- elif v == 'unknown_contact' -%}_("not a contact on the radio")
+              {%- elif v == 'unknown_target' -%}_("no such target")
+              {%- elif v == 'ambiguous_target' -%}_("another contact has the same key prefix")
+              {%- elif v == 'not_a_companion' -%}_("not a companion")
+              {%- elif v == 'channel_not_configured' -%}_("channel not set up on the radio")
+              {%- elif v == 'too_long' -%}_("text too long")
+              {%- elif v == 'too_large' -%}_("request too large")
+              {%- elif v == 'invalid_utf8' -%}_("text not UTF-8")
+              {%- elif v == 'empty' -%}_("empty text")
+              {%- elif v == 'retained' -%}_("published with the retain flag")
+              {%- elif v == 'queue_full' -%}_("queue full")
+              {%- elif v == 'stopping' -%}_("the gateway was stopping")
+              {%- elif v == 'queue_ttl' -%}_("waited too long")
+              {%- elif v == 'no_radio' -%}_("no radio")
+              {%- elif v == 'airtime_budget' -%}_("airtime used up")
+              {%- elif v == 'exceeds_airtime_burst' -%}_("needs more airtime than one burst")
+              {%- elif v == 'internal_error' -%}_("internal error: see the log")
+              {%- else -%}<code>{{ m(v) }}</code>
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- set e = 'event.@gw@_delivery' -%}
+              {%- set step = state_attr(e, 'event_type') -%}{%- set code = state_attr(e, 'reason') -%}
+              {%- set at = states(e) | as_datetime(default=none) -%}
+              {#- now(): the line goes 10 minutes after the refusal, also when nothing else changes -#}
+              {%- set clock = now() -%}
+              {%- set chan = @chats.channel@ -%}{%- set key = '@chats.key@' -%}
+              {#- a refusal of this chat: its target is an alias of the chat's, or the person's key (D-15) -#}
+              {%- set ours = ('@chats.aliases@'.split(',') if '@chats.aliases@' else []) + ([key] if key else []) -%}
+              {%- set ns = namespace(later=false) -%}
+              {#- a message of this chat accepted after the refusal ends its line -#}
+              {%- for f in (state_attr('sensor.@gw@_message_history', 'messages') or []) + (state_attr('sensor.@gw@_pending_messages', 'messages') or []) if f is mapping and ((f.get('kind') == 'channel' and f.get('channel_index') == chan) if chan >= 0 else (f.get('kind') == 'contact' and f.get('contact_key') == key)) -%}
+              {%- set q = (f.get('queued_at') or '') | as_datetime(default=none) -%}
+              {%- if q is not none and at is not none and q > at -%}{%- set ns.later = true -%}{%- endif -%}
+              {%- endfor -%}
+              {%- if step in ['rejected', 'duplicate'] and state_attr(e, 'target') in ours and at is not none and clock - at < timedelta(minutes=10) and not ns.later -%}
+              {%- set reason = why(code) -%}
+              {#- Translators: reason says why the gateway refused the message, such as text too long. Return (↵) is the keyboard's key: the same word as in the page's help on writing and in the name beside the Send button (Return, then Send); Send as the button's label is translated -#}
+              <div><ha-alert alert-type="warning"><b>{% if step == 'duplicate' %}_("Not sent again: the same text went to this chat a moment ago."){% elif code == 'empty' %}_("Nothing was sent: the gateway had no text. Tap Return (↵) in the field (on a phone this also closes the keyboard), then Send."){% else %}_("Not sent: {reason}."){% endif %}</b></ha-alert></div>
+              {%- endif -%}
 # @else
           - type: markdown
             text_only: true
@@ -2419,56 +2469,6 @@ views:
               {#- Translators: security text (docs/translations.md): what a tick proves and what it does not; a confirmation that came too soon may be forged #}
               <details><summary>_("What ✓ and ✓✓ mean")</summary><ul><li>_("✓ sent: it left the radio. Channels never confirm, so one tick is all a channel message gets.")</li><li>_("✓✓ delivered: the person's radio confirmed it. It does not say the person read it.")</li><li>_("⚠ delivered? maybe forged: the confirmation came faster than the mesh path normally allows. Ask in another way whether it arrived.")</li><li>_("✗ not delivered and ✗ not sent: waited too long show in yellow, with the reason. Send it again or ask in another way.")</li><li>_("… waiting to send, and a text in italics: the message is on its way.")</li><li>_("Left: received. Right: sent from this home, by anyone or by an automation.")</li><li>_("A direct message may end in a short code such as #1a2b3c4d; it is hidden here and makes a faked confirmation harder.")</li><li>_("Long keys and links are shown in pieces here. Copied into Contacts, they still work; pasted elsewhere, they may not.")</li><li>_("Help says what each reason in brackets means and what to do.") <a href="./help">_("Help")</a></li></ul></details>
 # @if chats.write
-          # the refused line under the thread: the frontend caps the footer at a quarter of the
-          # screen, and on top of the field it pushed Send below a phone's screen (H-27)
-          - type: markdown
-            text_only: true
-            show_empty: false
-            content: |-
-              {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
-              {%- macro mt(x) -%}{%- set brk = '\u200b' -%}{{ m(x) | regex_replace('((?:&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f][\u0300-\u036f\u0483-\u0489]*){20})(?=&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f])', '\\1' ~ brk) }}{%- endmacro -%}
-              {#- the reasons of mqtt-api.md, Delivery; one added later, and the radio's refusals, stay codes -#}
-              {%- macro why(v) -%}
-              {%- if v == 'no_acknowledgement' -%}_("no acknowledgement")
-              {%- elif v == 'unknown_contact' -%}_("not a contact on the radio")
-              {%- elif v == 'unknown_target' -%}_("no such target")
-              {%- elif v == 'ambiguous_target' -%}_("another contact has the same key prefix")
-              {%- elif v == 'not_a_companion' -%}_("not a companion")
-              {%- elif v == 'channel_not_configured' -%}_("channel not set up on the radio")
-              {%- elif v == 'too_long' -%}_("text too long")
-              {%- elif v == 'too_large' -%}_("request too large")
-              {%- elif v == 'invalid_utf8' -%}_("text not UTF-8")
-              {%- elif v == 'empty' -%}_("empty text")
-              {%- elif v == 'retained' -%}_("published with the retain flag")
-              {%- elif v == 'queue_full' -%}_("queue full")
-              {%- elif v == 'stopping' -%}_("the gateway was stopping")
-              {%- elif v == 'queue_ttl' -%}_("waited too long")
-              {%- elif v == 'no_radio' -%}_("no radio")
-              {%- elif v == 'airtime_budget' -%}_("airtime used up")
-              {%- elif v == 'exceeds_airtime_burst' -%}_("needs more airtime than one burst")
-              {%- elif v == 'internal_error' -%}_("internal error: see the log")
-              {%- else -%}<code>{{ m(v) }}</code>
-              {%- endif -%}
-              {%- endmacro -%}
-              {%- set e = 'event.@gw@_delivery' -%}
-              {%- set step = state_attr(e, 'event_type') -%}{%- set code = state_attr(e, 'reason') -%}
-              {%- set at = states(e) | as_datetime(default=none) -%}
-              {#- now(): the line goes 10 minutes after the refusal, also when nothing else changes -#}
-              {%- set clock = now() -%}
-              {%- set chan = @chats.channel@ -%}{%- set key = '@chats.key@' -%}
-              {#- a refusal of this chat: its target is an alias of the chat's, or the person's key (D-15) -#}
-              {%- set ours = ('@chats.aliases@'.split(',') if '@chats.aliases@' else []) + ([key] if key else []) -%}
-              {%- set ns = namespace(later=false) -%}
-              {#- a message of this chat accepted after the refusal ends its line -#}
-              {%- for f in (state_attr('sensor.@gw@_message_history', 'messages') or []) + (state_attr('sensor.@gw@_pending_messages', 'messages') or []) if f is mapping and ((f.get('kind') == 'channel' and f.get('channel_index') == chan) if chan >= 0 else (f.get('kind') == 'contact' and f.get('contact_key') == key)) -%}
-              {%- set q = (f.get('queued_at') or '') | as_datetime(default=none) -%}
-              {%- if q is not none and at is not none and q > at -%}{%- set ns.later = true -%}{%- endif -%}
-              {%- endfor -%}
-              {%- if step in ['rejected', 'duplicate'] and state_attr(e, 'target') in ours and at is not none and clock - at < timedelta(minutes=10) and not ns.later -%}
-              {%- set reason = why(code) -%}
-              {#- Translators: reason says why the gateway refused the message, such as text too long. Return (↵) is the keyboard's key: the same word as in the page's help on writing and in the name beside the Send button (Return, then Send); Send as the button's label is translated -#}
-              <div><ha-alert alert-type="warning"><b>{% if step == 'duplicate' %}_("Not sent again: the same text went to this chat a moment ago."){% elif code == 'empty' %}_("Nothing was sent: the gateway had no text. Tap Return (↵) in the field (on a phone this also closes the keyboard), then Send."){% else %}_("Not sent: {reason}."){% endif %}</b>{% if state_attr(e, 'text') %}<br>{{ mt(state_attr(e, 'text')) }}{% endif %}</ha-alert></div>
-              {%- endif -%}
           - type: markdown
             text_only: true
             show_empty: false

@@ -424,16 +424,17 @@ def cards(loaded: dict[str, Any], needle: str) -> list[dict[str, Any]]:
 
 
 def refused_line(loaded: dict[str, Any], needle: str) -> dict[str, Any]:
-    """The refused line of the chat page that `needle` names (page(); §3.4): the card right under
+    """The refused line of the chat page that `needle` names (page(); §3.4): the card right above
     its thread, not in its footer, which holds the field and the Send tile only. The frontend caps
     the footer at a quarter of the screen, and a refused line on top of the field pushed the Send
-    tile below a phone's screen (H-27, docs/platform-notes.md)."""
+    tile below a phone's screen (H-27); under the thread, the footer, which sticks to the bottom
+    of the screen, covered it until the page was scrolled (#143, docs/platform-notes.md)."""
     view = page(loaded, needle)
     listed = [each for section in view.get("sections", []) for each in section.get("cards", [])]
     threads = [n for n, each in enumerate(listed) if "macro row(e)" in each.get("content", "")]
     assert len(threads) == 1, needle
-    assert threads[0] + 1 < len(listed), f"{needle}: nothing under the thread"
-    line = listed[threads[0] + 1]
+    assert threads[0] > 0, f"{needle}: nothing above the thread"
+    line = listed[threads[0] - 1]
     assert f"{{%- set e = 'event.{PREFIX}_delivery' -%}}" in line.get("content", ""), needle
     in_footer = [each["type"] for each in view["footer"]["card"]["cards"]]
     assert in_footer == ["entities", "tile"], f"{needle}: the footer holds {in_footer}"
@@ -932,11 +933,11 @@ async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(  # noqa: P
     """Contract item 9: each hostile name in turn as a contact's (device and tracker) name, a
     message's sender and recipient, a reason, the name of a contact event, a heard node (raw
     and labelled), the version and the contact link; each text as a message's, received, sent
-    and on its way, and as a refused one: every card shows it escaped on one line that is one
-    HTML element, no card has a blank line, a Jinja expression stays text, no image and no link
-    but the dashboard's own, one alert in the refused line, no control, direction or invisible
-    character, and a zero-width space only from mt(). The messages are set as the gateway of 2.1
-    announces them (documented())."""
+    and on its way, and as a refused one, which the refused line does not quote (#143): every
+    card shows it escaped on one line that is one HTML element, no card has a blank line, a Jinja
+    expression stays text, no image and no link but the dashboard's own, one alert in the refused
+    line, no control, direction or invisible character, and a zero-width space only from mt().
+    The messages are set as the gateway of 2.1 announces them (documented())."""
     config = speaking(language, monkeypatch)
     broker = Broker()
     devices = contacts_of(config, tmp_path, broker)
@@ -1015,8 +1016,8 @@ async def test_no_name_or_text_from_the_mesh_leaves_its_html_element(  # noqa: P
         for each in (alices, card(loaded, "macro entry(e)")):
             said = render(hass, each).replace("\u200b", "")
             assert shown(text) in said, (text, each["content"][:40])
-        said = outputs["the refused line"].replace("\u200b", "")
-        assert shown(text) in said, text
+        said = outputs["the refused line"]
+        assert "<br>" not in said, text  # the thread shows the text; the line says why (#143)
         assert said.count("<ha-alert") == 1
     keep(language, every)
     assert problems(caplog) == []
@@ -1227,7 +1228,7 @@ async def test_a_chat_pages_footer_shows_once_its_own_fields_exist(
     """For a household user: the footer of a target's chat, of Alice's (whose field is the target
     operator's, a field of the gateway) and of Bob's (his own device's field) hides while its
     entities are missing and shows once they exist, each on the device the guard pins. It holds
-    the field and the Send tile only: the refused line is under the thread (H-27)."""
+    the field and the Send tile only: the refused line is above the thread (H-27, #143)."""
     config = make_config()
     broker, mesh = Broker(), household(ALICE_NODE, Node(BOB, "Bob", COMPANION))
     contacts_of(config, tmp_path, broker).update(mesh)
@@ -1372,7 +1373,7 @@ async def test_the_guides_script_is_a_form_that_sends_for_a_household_user(
 # --- machine values as texts --------------------------------------------------------------------
 
 # each step of a delivery as a chat shows it: in the thread (the history's final states, the pending
-# messages' steps) or in the refused line under it
+# messages' steps) or in the refused line above it
 STEPS = {
     "queued": "… waiting to send",
     "sent": "… sent, waiting for confirmation (try 1 of 3)",

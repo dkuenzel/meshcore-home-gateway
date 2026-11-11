@@ -849,14 +849,12 @@ def rule_8(template: str, source: Any, loaded: Any, household: Household) -> lis
         listed = [
             card for section in view.get("sections") or [] for card in section.get("cards") or []
         ]
-        for card, before, after in zip(
-            listed, [None, *listed[:-1]], [*listed[1:], None], strict=True
-        ):
+        for card, after in zip(listed, [*listed[1:], None], strict=True):
             # a Markdown card holds its own help; the card after a tile, entities, map or
-            # history-graph card may hold its help (design D-10); the refused line, a line of
-            # the thread (D-17) until H-27, has the help of the thread above it (rule 18)
+            # history-graph card may hold its help (design D-10); the refused line, right above
+            # the thread since #143, has the help of the thread under it (rule 18)
             borrowed = card.get("type") != "markdown" and after is not None and _about(after)
-            borrowed |= is_refused_line(card) and before is not None and is_thread(before)
+            borrowed |= is_refused_line(card) and after is not None and is_thread(after)
             if card.get("type") == "heading" or _helped(card) or borrowed:
                 continue
             found.append(f"rule 8: {view['path']}: a {card.get('type')} card without help")
@@ -1160,9 +1158,10 @@ def rule_17(template: str, source: Any, loaded: Any, household: Household) -> li
 
 def rule_18(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
     """A chat page's footer: the draft's row and the Send tile, in this order. The refused line
-    is the card under the thread, not in the footer: the frontend caps the footer at a quarter of
-    the screen, and a refused line on top of the field pushed the Send tile below a phone's
-    screen (H-27, docs/platform-notes.md)."""
+    is the card right above the thread, not in the footer: the frontend caps the footer at a
+    quarter of the screen, and a refused line on top of the field pushed the Send tile below a
+    phone's screen (H-27); under the thread, the footer, which sticks to the bottom of the screen,
+    covered the line until the page was scrolled (#143, docs/platform-notes.md)."""
     found = []
     for view in loaded["views"]:
         if "footer" not in view:
@@ -1189,10 +1188,10 @@ def rule_18(template: str, source: Any, loaded: Any, household: Household) -> li
             card for section in view.get("sections") or [] for card in section.get("cards") or []
         ]
         threads = [n for n, card in enumerate(listed) if is_thread(card)]
-        under = listed[threads[0] + 1] if len(threads) == 1 and threads[0] + 1 < len(listed) else {}
-        if not is_refused_line(under):
-            found.append(f"rule 18: {view['path']}: the refused line is not under the thread")
-        elif not shown_by_content(under):
+        above = listed[threads[0] - 1] if len(threads) == 1 and threads[0] > 0 else {}
+        if not is_refused_line(above):
+            found.append(f"rule 18: {view['path']}: the refused line is not above the thread")
+        elif not shown_by_content(above):
             found.append(f"rule 18: {view['path']}: the refused line shows when empty")
     return found
 

@@ -1718,6 +1718,34 @@ def test_the_shipped_template_keeps_the_rules_of_2_1() -> None:
     assert rules.findings(shipped()) == []
 
 
+def test_the_refused_line_under_the_thread_breaks_rules_8_and_18() -> None:
+    """#143: under the thread, the footer, which sticks to the bottom of the screen, covered the
+    refused line until the page was scrolled. Moved back there on the made dashboard, the line is
+    not above the thread (rule 18), and it has no help of its own (rule 8)."""
+    template = shipped()
+    loaded = rules.load(rules.rendered(template))
+    [view] = [v for v in loaded["views"] if v["path"] == "chat-family"]
+    [section] = view["sections"]
+    listed = section["cards"]
+    [line] = [card for card in listed if rules.is_refused_line(card)]
+    listed.remove(line)
+    [thread] = [n for n, card in enumerate(listed) if rules.is_thread(card)]
+    listed.insert(thread + 1, line)
+    assert rules.rule_18(template, None, loaded, rules.HOUSEHOLD) == [
+        "rule 18: chat-family: the refused line is not above the thread"
+    ]
+    assert rules.rule_8(template, None, loaded, rules.HOUSEHOLD) == [
+        "rule 8: chat-family: a markdown card without help"
+    ]
+    # the thread first and the line last: no card is above the thread, the last one is not
+    listed.remove(line)
+    del listed[:thread]
+    listed.append(line)
+    assert rules.rule_18(template, None, loaded, rules.HOUSEHOLD) == [
+        "rule 18: chat-family: the refused line is not above the thread"
+    ]
+
+
 def test_the_views_are_three_tabs_and_pages_without_a_tab() -> None:
     """Overview, Chats and Contacts show their titles alone; Map, Gateway, Settings, Help and a
     page per chat open from links; no page has a fixed way back."""
@@ -2008,7 +2036,7 @@ BROKEN = [
     # rule 17: a guide section named, Home Assistant's menus in a household line
     (card('<div>_("See A second gateway in the guide.")</div>'), "rule 17: 'See A second gateway"),
     (card('<div>_("Open Settings › Devices & services.")</div>'), "rule 17: 'Open Settings"),
-    # rule 18: the refused line shows while empty, is not under the thread, or is in the
+    # rule 18: the refused line shows while empty, is not above the thread, or is in the
     # footer again, where it pushed the Send tile below a phone's screen (H-27)
     (
         [
@@ -2023,7 +2051,7 @@ BROKEN = [
     ),
     (
         ["@@", "{%- set e = 'event.@gw@_delivery' -%}", "{%- set e = 'event.@gw@_message' -%}"],
-        "rule 18: chat-family: the refused line is not under the thread",
+        "rule 18: chat-family: the refused line is not above the thread",
     ),
     (
         ["@@", f"        cards:\n{FIELD}", f"        cards:\n{IN_FOOTER}{FIELD}"],
