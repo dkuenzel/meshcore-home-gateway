@@ -1917,10 +1917,11 @@ views:
               {%- endif -%}
               {%- endmacro -%}
               {%- set c = 'event.@gw@_contact' -%}{%- set t = 'event.@gw@_telemetry' -%}{%- set s = 'event.@gw@_setting' -%}{%- set n = 'event.@gw@_node' -%}{%- set k = 'event.@gw@_command' -%}{%- set f = 'sensor.@gw@_refused_commands' -%}
-              {#- the newest refused command, from the gateway's refused_commands without its word (#141): it shows while it came after the newest accepted one, until then; both times on the gateway's clock -#}
+              {#- the newest refused command, from the gateway's refused_commands without its word (#141): it shows while it came after the newest accepted one, until then; both times on the gateway's clock, in whole seconds: of two in one second, the one Home Assistant got later -#}
               {%- set q = (state_attr(f, 'commands') or []) | first -%}
               {%- set at = q.get('at') | as_timestamp(default=none) if q is mapping else none -%}{%- set last = (state_attr(k, 'received_at') or states(k)) | as_timestamp(default=none) -%}
-              {%- set refused = at is not none and (last is none or not state_attr(k, 'event_type') or at > last) -%}
+              {%- set later = states[f] is not none and (states[f].last_updated | as_timestamp(default=0)) > (states(k) | as_timestamp(default=0)) -%}
+              {%- set refused = at is not none and (last is none or not state_attr(k, 'event_type') or at > last or (at == last and later)) -%}
               {%- if refused -%}
               {%- set sender = m(q.get('sender_name') or (q.get('sender_key') or q.get('sender_prefix') or '')[:8] or '?') -%}{%- set reason = why(q.get('reason')) -%}
               {%- else -%}

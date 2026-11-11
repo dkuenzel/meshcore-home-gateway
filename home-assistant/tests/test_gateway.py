@@ -318,16 +318,20 @@ async def test_latest_of_each_kind_shows_a_refused_command_with_its_reason_in_wo
     kept: list[Refusal] = []
 
     async def refuse(
-        reason: str, key: str | None = BOB, name: str | None = "Bob", behind_s: float = 0
+        reason: str,
+        key: str | None = BOB,
+        name: str | None = "Bob",
+        behind_s: float = 0,
+        step_s: float = 1,
     ) -> str:
-        freezer.tick(timedelta(seconds=1))
+        freezer.tick(timedelta(seconds=step_s))
         kept.insert(0, Refusal(time.time() - behind_s, reason, BOB[:12], key, name))
         await fire(hass, topics.refused_commands, refused_document(kept[:REFUSALS_KEPT]))
         return row(render(hass, latest), "Command")
 
-    async def accept(behind_s: float = 0) -> str:
+    async def accept(behind_s: float = 0, step_s: float = 1) -> str:
         """`behind_s`: the gateway's clock behind Home Assistant's."""
-        freezer.tick(timedelta(seconds=1))
+        freezer.tick(timedelta(seconds=step_s))
         command = {"event_type": "arm", "args": "now", "sender_key": BOB, "sender_name": "Bob"}
         at = iso(time.time() - behind_s)
         await fire(hass, topics.command, command | {"sent_at": at, "received_at": at})
@@ -370,6 +374,14 @@ async def test_latest_of_each_kind_shows_a_refused_command_with_its_reason_in_wo
         "Bob: command refused: an old command again · "
     )
     assert (await accept(60)).startswith("Bob: arm · ")
+    # a refusal and an accepted command within one second, the times both documents carry: the
+    # one Home Assistant got later counts
+    freezer.move_to("2027-01-15T08:30:00+00:00")
+    refused_now = "Bob: command refused: wrong code · "
+    assert (await refuse("code_invalid", step_s=0.1)).startswith(refused_now)  # .1
+    assert (await accept(step_s=0.3)).startswith("Bob: arm · ")  # .4
+    assert (await refuse("code_invalid", step_s=0.3)).startswith(refused_now)  # .7
+    assert (await accept(step_s=0.2)).startswith("Bob: arm · ")  # .9
     sensor = f"sensor.meshcore_home_gateway_{config.mqtt.node_id}_refused_commands"
     for forged in (["x", 1], "x", {"at": iso(time.time())}):  # no refusal, and no error
         hass.states.async_set(sensor, "unknown", {"commands": forged})
