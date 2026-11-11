@@ -175,7 +175,8 @@ their way, a draft and its *Send* for each chat and the configuration
 * **The template** is `src/meshcore_home_gateway/dashboard.yaml`, package data like the catalogs,
   filled in as text, without a YAML parser (ADR 0005): `@gw@`, `@node@`, `@version@`,
   `@major@` and `@minor@` (its first two numbers), `@guide@` (the address of the guide of this
-  version), `["@trackers@"]` (the map's trackers), `["@chats@"]` (the chat pages, JSON objects
+  version), `@decimal@` (the decimal mark of the dashboard's language, which each card's `num()`
+  writes in place of a number's point), `["@trackers@"]` (the map's trackers), `["@chats@"]` (the chat pages, JSON objects
   that Jinja reads) and `["@models@"]` (each model of a contact's device with its node type).
   2.0 also filled in how the contacts' entity IDs begin; the cards of 2.1 find the contacts by
   their devices, and the lists' items carry the IDs. Since 2.1, comment lines repeat lines for each item

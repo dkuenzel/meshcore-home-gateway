@@ -770,6 +770,7 @@ views:
           - type: markdown
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro num(v, digits=none) -%}{%- set f = v | float if v | is_number else none -%}{%- set f = f | round(digits) if f is not none and digits is not none else f -%}{%- if f is none -%}{{ m(v) }}{%- elif f % 1 == 0 -%}{{ m(f | int | string) }}{%- else -%}{{ m(f | string | replace('.', '@decimal@')) }}{%- endif -%}{%- endmacro -%}
               {%- macro mon(v) -%}
               {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
               {%- if v == 1 -%}_("Jan")
@@ -878,8 +879,8 @@ views:
               {%- if not ns.rows %}
               <div>_("No contact has a device in Home Assistant yet.")</div>
               {%- else %}
-              {#- Translators: the columns of the contacts table; volts is a battery's voltage, such as 3.9 #}
-              <table><tr><th>_("Name")</th><th>_("Heard")</th><th>_("Battery")</th><th>_("Asking")</th></tr>{%- for r in ns.rows | sort(attribute='heard', reverse=true) -%}{%- set volts = m('%.1f' | format(r.battery) if r.battery is not none else '') -%}<tr><td>{% if r.path %}<a href="./{{ m(r.path) }}">{{ m(r.name) }}</a>{% else %}{{ m(r.name) }}{% endif %}<br><small>{{ node(models.get(r.model, r.model)) }}</small></td><td>{{ when(r.heard) }}</td><td>{% if volts %}_("{volts} V"){% else %}–{% endif %}</td><td>{{ telemetry(r.word) }}</td></tr>{%- endfor -%}</table>
+              {#- Translators: the columns of the contacts table; volts is a battery's voltage, such as 3.9, written with this language's decimal mark #}
+              <table><tr><th>_("Name")</th><th>_("Heard")</th><th>_("Battery")</th><th>_("Asking")</th></tr>{%- for r in ns.rows | sort(attribute='heard', reverse=true) -%}{%- set volts = num(r.battery, 1) -%}<tr><td>{% if r.path %}<a href="./{{ m(r.path) }}">{{ m(r.name) }}</a>{% else %}{{ m(r.name) }}{% endif %}<br><small>{{ node(models.get(r.model, r.model)) }}</small></td><td>{{ when(r.heard) }}</td><td>{% if volts %}_("{volts} V"){% else %}–{% endif %}</td><td>{{ telemetry(r.word) }}</td></tr>{%- endfor -%}</table>
               {%- endif %}
               {%- endif %}
               <details><summary>_("What the words mean")</summary><ul><li><b>_("Heard")</b>: _("When the gateway last heard the device: a message, an advert, or an answer to asking.")</li><li><b>_("Battery")</b>: _("The device's battery at its last answer, while its answers are current.")</li><li><b>_("Asking")</b>: _("Whether the gateway asks the device for its position and battery, and how it answers:")</li><li><b>_("not asked yet")</b>: _("The gateway has not asked yet, or not for over a day.")</li><li><b>_("answering")</b>: _("The answers are current and carry a position.")</li><li><b>_("answering, no position")</b>: _("The answers are current, without a position: GPS off, no fix, or location not allowed in the app.")</li><li><b>_("no answer lately")</b>: _("It answered today, not lately: out of range or switched off.")</li><li><b>_("no answer for a day")</b>: _("Asked, but no answer for a day: it does not allow this home, does not have it as a contact, or is out of range.")</li><li><b>_("not reachable now")</b>: _("Not asked: the radio has no way to it now. A message or an advert from it brings it back.")</li><li><b>_("not asked: look-alike")</b>: _("Another node's key starts the same, so an answer could not be told apart.")</li><li><b>_("not asked (switch off)")</b>: _("The switch is off for this person.")</li><li><b>_("off for everyone")</b>: _("Your administrator turned asking off in this home's settings.")</li><li><b>_("person")</b>, <b>_("repeater")</b>, <b>_("room")</b>, <b>_("sensor")</b>: _("What the contact is: a person's radio, a radio that passes messages on, a room that keeps messages for a group, or a sensor that reports readings.")</li><li>_("A name with a link opens the chat with that person.")</li></ul></details>
@@ -888,6 +889,7 @@ views:
           - type: markdown
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro num(v, digits=none) -%}{%- set f = v | float if v | is_number else none -%}{%- set f = f | round(digits) if f is not none and digits is not none else f -%}{%- if f is none -%}{{ m(v) }}{%- elif f % 1 == 0 -%}{{ m(f | int | string) }}{%- else -%}{{ m(f | string | replace('.', '@decimal@')) }}{%- endif -%}{%- endmacro -%}
               {%- macro mon(v) -%}
               {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
               {%- if v == 1 -%}_("Jan")
@@ -952,8 +954,8 @@ views:
               {%- set unit = (state_attr(e, 'unit_of_measurement') or '') if value != '–' else '' -%}
               {%- if state_attr(e, 'device_class') == 'timestamp' -%}{%- set c.heard = states(e) if states(e) not in ['unknown', 'unavailable'] else '' -%}
               {%- elif 'answering' in (state_attr(e, 'options') or []) -%}{%- set c.word = states(e) -%}
-              {%- elif e is match('sensor\\.\\w+_ch\\d+_\\w+$') -%}{%- set c.readings = c.readings + 1 -%}{%- set c.values = c.values + [(label ~ ' ' ~ value ~ ' ' ~ unit) | trim] -%}
-              {%- elif e is match('sensor\\.\\w+_battery(_\\d+)?$') and state_attr(e, 'device_class') == 'voltage' -%}{%- set volts = '%.1f' | format(value | float) if value | is_number else value -%}{%- set c.values = c.values + [(label ~ ' ' ~ volts ~ ' ' ~ unit) | trim] -%}
+              {%- elif e is match('sensor\\.\\w+_ch\\d+_\\w+$') -%}{%- set c.readings = c.readings + 1 -%}{%- set c.values = c.values + [(label ~ ' ' ~ (num(value) if value | is_number else value) ~ ' ' ~ unit) | trim] -%}
+              {%- elif e is match('sensor\\.\\w+_battery(_\\d+)?$') and state_attr(e, 'device_class') == 'voltage' -%}{%- set volts = num(value, 1) if value | is_number else value -%}{%- set c.values = c.values + [(label ~ ' ' ~ volts ~ ' ' ~ unit) | trim] -%}
               {%- endif -%}
               {%- endfor -%}
               {%- if c.readings -%}{%- set ns.rows = ns.rows + [dict(heard=c.heard, name=owner, read=c.values | join(' · '), word=c.word)] -%}{%- endif -%}
@@ -1572,6 +1574,7 @@ views:
           - type: markdown
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro num(v, digits=none) -%}{%- set f = v | float if v | is_number else none -%}{%- set f = f | round(digits) if f is not none and digits is not none else f -%}{%- if f is none -%}{{ m(v) }}{%- elif f % 1 == 0 -%}{{ m(f | int | string) }}{%- else -%}{{ m(f | string | replace('.', '@decimal@')) }}{%- endif -%}{%- endmacro -%}
               {%- macro profile(v) -%}
               {#- Translators: the state of the radio's settings as the gateway keeps them -#}
               {%- if v == 'ok' -%}_("as wanted")
@@ -1616,13 +1619,13 @@ views:
               {%- set history = state_attr(e, 'history') -%}{%- set file = state_attr(e, 'state_file') -%}{%- set kept = state_attr(e, 'exclusions') -%}
               {%- set errors = state_attr(e, 'errors_1h') | int(0) -%}{%- set dropped = state_attr(e, 'events_dropped_1h') | int(0) -%}
               {%- set lag = state_attr(e, 'loop_lag_max_s') -%}{%- set disk = state_attr(e, 'disk_free_mb') -%}
-              {%- set slow = m('%.1f' | format(lag) if lag is number else '') -%}{%- set free = m(disk | int if disk is number else '') -%}
+              {%- set slow = num(lag if lag is number else none, 1) -%}{%- set free = m(disk | int if disk is number else '') -%}
               {%- set offset = states('sensor.@gw@_radio_clock_offset') | float(0) -%}
               {%- set mins = (offset | abs / 60) | int -%}{%- set hours = (mins / 60) | int -%}{%- set days = (hours / 24) | int -%}{%- set d = span(mins) -%}
               {%- set status = states('sensor.@gw@_profile') -%}
               {%- set asking = states('sensor.@gw@_telemetry_status') -%}{%- set reason = state_attr('sensor.@gw@_telemetry_status', 'reason') -%}{%- set why = paused(reason) -%}
               {%- set left = states('sensor.@gw@_airtime_available') | float(none) -%}{%- set budget = state_attr('sensor.@gw@_airtime_available', 'budget_s_per_hour') | float(none) -%}
-              {%- set spare = m('%.0f' | format(left) if left is not none else '') -%}{%- set hour = m('%.0f' | format(budget) if budget is not none else '') -%}
+              {%- set spare = num(left, 0) -%}{%- set hour = num(budget, 0) -%}
               {#- the messages on their way, and those of them queued over a minute ago, as the status line counts them (HC 13) -#}
               {%- set p = 'sensor.@gw@_pending_messages' -%}
               {%- set ns = namespace(waiting=0, look=[]) -%}
@@ -1657,7 +1660,7 @@ views:
               {#- Translators: n is a whole number, 2 or more; named are the parts, separated by commas #}
               <div>_("{n} parts need a look: {named}.")</div>
               {%- endif %}
-              {#- Translators: the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36 #}
+              {#- Translators: the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36 #}
               <table><tr><th>_("Part")</th><th>_("State")</th></tr><tr><td>_("Radio link")</td><td>{% if link == 'on' and is_state('binary_sensor.@gw@_radio_link_contested', 'on') %}_("taken over in the last hour"){% elif link == 'on' %}_("connected"){% elif link == 'off' %}_("disconnected"){% elif link == 'unavailable' %}_("gateway offline"){% else %}_("no value yet"){% endif %}</td></tr><tr><td>_("Message history")</td><td>{% if history == 'ok' %}_("working"){% elif history == 'off' %}_("off"){% elif history == 'broken' %}_("broken"){% elif history is none %}_("no value yet"){% else %}<code>{{ m(history) }}</code>{% endif %}</td></tr><tr><td>_("State file")</td><td>{% if file == 'ok' %}_("working"){% elif file is none %}_("no value yet"){% else %}_("cannot be written"){% endif %}</td></tr><tr><td>_("List of people not to ask")</td><td>{% if kept == 'ok' %}_("working"){% elif kept == 'unreadable' %}_("unreadable"){% elif kept is none %}_("no value yet"){% else %}_("not saved"){% endif %}</td></tr><tr><td>_("Program errors, last hour")</td><td>{{ m(errors | string) }}</td></tr><tr><td>_("Slowest response, last hour")</td><td>{% if slow %}_("{slow} s"){% else %}_("no value yet"){% endif %}</td></tr><tr><td>_("Free disk")</td><td>{% if free %}_("{free} MB"){% else %}_("no value yet"){% endif %}</td></tr><tr><td>_("Events dropped, last hour")</td><td>{{ m(dropped | string) }}</td></tr><tr><td>_("Radio clock")</td><td>{% if states('sensor.@gw@_radio_clock_offset') in ['unknown', 'unavailable'] %}_("no value yet"){% elif offset | abs < 300 %}_("on time"){% elif offset > 0 %}_("{d} ahead"){% else %}_("{d} behind"){% endif %}</td></tr><tr><td>_("Radio settings")</td><td>{{ profile(status) }}</td></tr><tr><td>_("Asking for position and battery")</td><td>{% if asking == 'on' %}_("on"){% elif asking == 'off' %}_("off"){% elif asking == 'paused' %}_("paused: {why}"){% elif asking == 'unsupported' %}_("not supported by the radio"){% else %}_("no value yet"){% endif %}</td></tr><tr><td>_("Messages on their way")</td><td>{% if states[p] is none %}–{% else %}_("{total} ({waiting} waiting over a minute)"){% endif %}</td></tr><tr><td>_("Airtime left this hour")</td><td>{% if spare and hour %}_("{spare} of {hour} s"){% else %}_("no value yet"){% endif %}</td></tr></table>
               {%- endif %}
               <details><summary>_("What each part means and what to do")</summary><ul><li><b>_("Radio link")</b>: _("The gateway's connection to its radio. Disconnected: check the radio's power and cable. Taken over: see the red card on Overview.")</li><li><b>_("Message history")</b>: _("Off: your administrator turned it off. Broken: chats show no new messages until the gateway restarts.")</li><li><b>_("State file")</b>: _("Cannot be written: the disk is full or read-only.")</li><li><b>_("List of people not to ask")</b>: _("Unreadable: asking is paused until the file is fixed or deleted. Not saved: a restart would forget the latest change.")</li><li><b>_("Program errors, last hour")</b>: _("Errors the gateway caught; it runs on, and its log has the details.")</li><li><b>_("Slowest response, last hour")</b>: _("1 s or more: the computer gives the gateway too little time, such as during a backup.")</li><li><b>_("Free disk")</b>: _("Below 100 MB: free some space.")</li><li><b>_("Events dropped, last hour")</b>: _("Events lost while the broker was away; no fault of the gateway.")</li><li><b>_("Radio clock")</b>: _("Far off: check the computer's clock first.")</li><li><b>_("Radio settings")</b>: _("Whether the radio has the settings this home needs; Radio settings below shows each one.")</li><li><b>_("Asking for position and battery")</b>: _("Paused: the reason follows; it starts again by itself, or your administrator acts.")</li><li><b>_("Messages on their way")</b>: _("Messages the gateway took and has not delivered yet. Waiting over a minute: the radio or the airtime holds them up.")</li><li><b>_("Airtime left this hour")</b>: _("What the gateway may still send this hour; messages wait when it is used up.")</li><li><b>_("no value yet")</b>: _("The gateway has not reported it since Home Assistant started.")</li><li>_("Tell your administrator the time and what this table says.")</li></ul></details>
@@ -1668,17 +1671,18 @@ views:
           - type: markdown
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro num(v, digits=none) -%}{%- set f = v | float if v | is_number else none -%}{%- set f = f | round(digits) if f is not none and digits is not none else f -%}{%- if f is none -%}{{ m(v) }}{%- elif f % 1 == 0 -%}{{ m(f | int | string) }}{%- else -%}{{ m(f | string | replace('.', '@decimal@')) }}{%- endif -%}{%- endmacro -%}
               {%- set radio = 'binary_sensor.@gw@_radio' -%}
               {%- set cfg = state_attr('sensor.@gw@_configuration', 'radio') -%}
               {%- set transport = cfg.get('transport') if cfg is mapping else none -%}
-              {%- set mhz = m(state_attr(radio, 'frequency_mhz')) -%}{%- set khz = m(state_attr(radio, 'bandwidth_khz')) -%}{%- set dbm = m(state_attr(radio, 'tx_power_dbm')) -%}{%- set cr = m(state_attr(radio, 'coding_rate')) -%}
+              {%- set mhz = num(state_attr(radio, 'frequency_mhz')) -%}{%- set khz = num(state_attr(radio, 'bandwidth_khz')) -%}{%- set dbm = num(state_attr(radio, 'tx_power_dbm')) -%}{%- set cr = num(state_attr(radio, 'coding_rate')) -%}
               {%- if states[radio] is none -%}
               <div>_("The gateway is not found: see the first line of Overview.")</div>
               {#- offline, Home Assistant drops the attributes: every value would read as never reported -#}
               {%- elif is_state(radio, 'unavailable') -%}
               <div>_("The gateway is offline: this shows again when it is back.")</div>
               {%- else -%}
-              {#- Translators: the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22 -#}
+              {#- Translators: the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, written with this language's decimal mark, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22 -#}
               <table><tr><td>_("Name")</td><td>{{ m(state_attr(radio, 'radio_name') or '–') }}</td></tr><tr><td>_("Model")</td><td>{{ m(state_attr(radio, 'model') or '–') }}</td></tr><tr><td>_("Firmware")</td><td>{{ m(state_attr(radio, 'firmware') or '–') }}</td></tr><tr><td>_("Frequency")</td><td>{% if mhz %}_("{mhz} MHz"){% else %}–{% endif %}</td></tr><tr><td>_("Bandwidth")</td><td>{% if khz %}_("{khz} kHz"){% else %}–{% endif %}</td></tr><tr><td>_("Spreading factor")</td><td>{{ m(state_attr(radio, 'spreading_factor') or '–') }}</td></tr><tr><td>_("Coding rate")</td><td>{% if cr %}_("4/{cr}"){% else %}–{% endif %}</td></tr><tr><td>_("Transmit power")</td><td>{% if dbm %}_("{dbm} dBm"){% else %}–{% endif %}</td></tr><tr><td>_("Key")</td><td>{{ m((state_attr(radio, 'public_key') or '')[:8] or '–') }}</td></tr><tr><td>_("Connected by")</td><td>{% if transport == 'serial' %}_("USB"){% elif transport == 'tcp' %}_("network"){% else %}–{% endif %}</td></tr></table>
               {%- endif %}
               <details><summary>_("What these values mean")</summary><ul><li>_("Name, model and firmware: this home's radio, as it reports itself.")</li><li>_("Frequency, bandwidth, spreading factor and coding rate: every radio that should hear this one needs the same.")</li><li>_("Key: the first digits of the radio's public key; the MeshCore app shows them too.")</li><li>_("Connected by: how the gateway reaches the radio, with a cable (USB) or over the network.")</li></ul></details>
@@ -1718,6 +1722,7 @@ views:
           - type: markdown
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro num(v, digits=none) -%}{%- set f = v | float if v | is_number else none -%}{%- set f = f | round(digits) if f is not none and digits is not none else f -%}{%- if f is none -%}{{ m(v) }}{%- elif f % 1 == 0 -%}{{ m(f | int | string) }}{%- else -%}{{ m(f | string | replace('.', '@decimal@')) }}{%- endif -%}{%- endmacro -%}
               {%- macro profile(v) -%}
               {#- Translators: the state of the radio's settings as the gateway keeps them -#}
               {%- if v == 'ok' -%}_("as wanted")
@@ -1766,7 +1771,7 @@ views:
               {%- if v is none -%}–
               {%- elif v is boolean and v -%}_("yes")
               {%- elif v is boolean -%}_("no")
-              {%- elif v is number -%}{{ m(v | string) }}
+              {%- elif v is number -%}{{ num(v) }}
               {%- elif v is string -%}{{ m(v) }}
               {%- elif v is sequence and v | count == 0 -%}_("none")
               {%- elif v is sequence -%}<code>{{ m(v | join(', ')) }}</code>
@@ -2058,12 +2063,13 @@ views:
             show_empty: false
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro num(v, digits=none) -%}{%- set f = v | float if v | is_number else none -%}{%- set f = f | round(digits) if f is not none and digits is not none else f -%}{%- if f is none -%}{{ m(v) }}{%- elif f % 1 == 0 -%}{{ m(f | int | string) }}{%- else -%}{{ m(f | string | replace('.', '@decimal@')) }}{%- endif -%}{%- endmacro -%}
               {%- set c = 'sensor.@gw@_configuration' -%}
               {%- set r = state_attr(c, 'radio') -%}{%- set air = state_attr(c, 'airtime') -%}{%- set k = state_attr(c, 'commands') -%}
               {%- if r is mapping and air is mapping and k is mapping -%}
               {%- set manage = (r.get('profile') or {}).get('manage') if (r.get('profile') or {}) is mapping else none -%}
-              {%- set budget = m(air.get('budget_s_per_hour')) -%}{%- set burst = m(air.get('burst_s')) -%}{%- set senders = k.get('senders') | int(0) -%}
-              {#- Translators: the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0 #}
+              {%- set budget = num(air.get('budget_s_per_hour')) -%}{%- set burst = num(air.get('burst_s')) -%}{%- set senders = k.get('senders') | int(0) -%}
+              {#- Translators: the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark #}
               <table><tr><th>_("Setting")</th><th>_("In this home")</th><th>_("What it means")</th></tr><tr><td>_("Connected by")</td><td>{% if r.get('transport') == 'tcp' %}_("network"){% else %}_("USB"){% endif %}</td><td>_("How the gateway reaches its radio.") <code>[radio]</code> <code>transport</code></td></tr><tr><td>_("Radio settings managed")</td><td>{% if manage == 'observe' %}_("only watched"){% elif manage == 'always' %}_("managed on any firmware"){% elif manage == 'auto' %}_("managed on tested firmware, only watched on other firmware"){% else %}<code>{{ m(manage) }}</code>{% endif %}</td><td>_("Whether the gateway keeps the radio's settings as this home needs them.") <code>[radio.profile]</code> <code>manage</code></td></tr><tr><td>_("Clock set by the gateway")</td><td>{% if r.get('set_clock') == false %}_("off"){% else %}_("on"){% endif %}</td><td>_("The gateway sets the radio's clock from the computer's.") <code>[radio]</code> <code>set_clock</code></td></tr><tr><td>_("Airtime budget")</td><td>_("{budget} s an hour, bursts of {burst} s")</td><td>_("The law allows a radio only a share of each hour; messages wait when it is used up.") <code>airtime</code></td></tr><tr><td>_("Command senders")</td><td>{{ m(senders | string) }}</td><td>_("Contacts that may send commands to this home's automations.") <code>[commands]</code> <code>senders</code></td></tr><tr><td>_("Command codes")</td><td>{% if k.get('codes') == true %}_("on"){% else %}_("off"){% endif %}</td><td>_("On: the senders your administrator gave a code secret end each command with a code that changes every 30 seconds. While the gateway ignores a secret in the file, the other senders cannot command.") <code>[commands]</code> <code>codes_file</code></td></tr></table>
               {%- if r.get('transport') == 'tcp' and r.get('tcp_unauthenticated') == true %}
               {#- Translators: security text (docs/translations.md): the radio's network link has no password, so whoever reaches its port controls the radio and can read its key #}
@@ -2556,6 +2562,7 @@ views:
             text_only: true
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro num(v, digits=none) -%}{%- set f = v | float if v | is_number else none -%}{%- set f = f | round(digits) if f is not none and digits is not none else f -%}{%- if f is none -%}{{ m(v) }}{%- elif f % 1 == 0 -%}{{ m(f | int | string) }}{%- else -%}{{ m(f | string | replace('.', '@decimal@')) }}{%- endif -%}{%- endmacro -%}
               {%- macro place(v) -%}
               {%- if v == 'home' -%}_("at home")
               {%- elif v == 'not_home' -%}_("away")
@@ -2611,13 +2618,13 @@ views:
               {%- set zone = m(where) -%}
               {#- a battery's voltage while it is current, as 3.9 -#}
               {%- set v = (states(ns.battery) | float(none)) if ns.battery is not none else none -%}
-              {%- set volts = m('%.1f' | format(v) if v is not none else '') -%}
+              {%- set volts = num(v, 1) -%}
               {%- set prefix = m(t.found.get('prefix') if t.found is not none else '') -%}{%- set suffix = m(t.found.get('suffix') if t.found is not none else '') -%}
-              {%- set short = m(key[:8]) -%}{%- set hops = m(states(ns.hops) if ns.hops is not none else '') -%}{%- set snr = m(states(ns.snr) if ns.snr is not none else '') -%}
+              {%- set short = m(key[:8]) -%}{%- set hops = num(states(ns.hops) if ns.hops is not none else '') -%}{%- set snr = num(states(ns.snr) if ns.snr is not none else '') -%}
               {%- set measured = ns.hops is not none and ns.snr is not none and states(ns.hops) not in ['unknown', 'unavailable'] and states(ns.snr) not in ['unknown', 'unavailable'] -%}
               {%- set word = states(ns.state) if ns.state is not none else '' -%}
               {%- if ns.device is not none %}
-              {#- Translators: volts is a battery's voltage, such as 3.9 #}
+              {#- Translators: volts is a battery's voltage, such as 3.9, written with this language's decimal mark #}
               <table role="presentation" width="100%"><tr><td>_("Where")</td><td>{% if where in ['home', 'not_home', 'unavailable', 'unknown'] %}{{ place(where) }}{% else %}_("at {zone}"){% endif %}</td></tr><tr><td>_("Battery")</td><td>{% if volts %}_("{volts} V"){% else %}–{% endif %}</td></tr><tr><td>_("Ask for position and battery")</td><td>{{ asking(states(ns.asking) if ns.asking is not none else '') }}{% if word not in ['', 'unknown', 'unavailable'] %} · {{ telemetry(word) }}{% endif %}</td></tr></table>
               <div><a href="./contacts">_("Change on Contacts")</a></div>
               {%- endif %}
@@ -2638,7 +2645,7 @@ views:
               {#- Translators: room is a whole number #}
               <div>_("About {room} letters per message.")</div>
               {%- endif %}
-              {#- Translators: name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25 #}
+              {#- Translators: name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark #}
               <details><summary>{% if ns.device is not none %}_("About {name}'s entry"){% else %}_("About this chat"){% endif %}</summary><ul>{% if ns.device is not none %}<li><b>_("at home")</b>, <b>_("away")</b>: _("Where the device was at its last answer; a place's name when it was in another zone of Home Assistant.")</li><li><b>_("position not current")</b>: _("A position counts for an hour after the last answer.")</li><li><b>_("no position yet")</b>: _("GPS off, location not allowed in the app, out of range, or asking is off (Contacts).")</li><li>_("Ask for position and battery: on means the gateway asks this device for both now and then. Change it on Contacts. The words after on or off say how the device answers:")</li><li><b>_("not asked yet")</b>: _("The gateway has not asked yet, or not for over a day.")</li><li><b>_("answering")</b>: _("The answers are current and carry a position.")</li><li><b>_("answering, no position")</b>: _("The answers are current, without a position: GPS off, no fix, or location not allowed in the app.")</li><li><b>_("no answer lately")</b>: _("It answered today, not lately: out of range or switched off.")</li><li><b>_("no answer for a day")</b>: _("Asked, but no answer for a day: it does not allow this home, does not have it as a contact, or is out of range.")</li><li><b>_("not reachable now")</b>: _("Not asked: the radio has no way to it now. A message or an advert from it brings it back.")</li><li><b>_("not asked: look-alike")</b>: _("Another node's key starts the same, so an answer could not be told apart.")</li><li><b>_("not asked (switch off)")</b>: _("The switch is off for this person.")</li><li><b>_("off for everyone")</b>: _("Your administrator turned asking off in this home's settings.")</li><li>_("Its key starts with {short}.")</li>{% if measured %}<li>_("At its last message it was {hops} hops away, at a signal of {snr} dB.")</li>{% endif %}<li>_("The name comes from {name}'s own device and can change.")</li>{% endif %}{% if '@chats.target@' %}<li>_("Text before or after messages: the gateway adds it to every message sent here, and the chat shows it.")</li><li>_("Sent before other messages: an alert goes out before the messages that wait.")</li>{% elif ns.device is none %}<li>_("Where {name} is, the battery and asking show here while {name} is a contact of this radio.")</li>{% endif %}</ul></details>
 # @if chats.write
     footer:

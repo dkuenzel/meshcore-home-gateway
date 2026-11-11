@@ -1708,7 +1708,7 @@ msgctxt "dashboard"
 msgid "1 s or more: the computer gives the gateway too little time, such as during a backup."
 msgstr ""
 
-#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
+#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, written with this language's decimal mark, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
@@ -1840,7 +1840,7 @@ msgctxt "dashboard"
 msgid "A person's device tells everyone in range where it is."
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "A position counts for an hour after the last answer."
@@ -1890,13 +1890,13 @@ msgctxt "dashboard"
 msgid "A text that is only the word unknown or unavailable cannot be written here."
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "About this chat"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
@@ -1974,13 +1974,13 @@ msgctxt "dashboard"
 msgid "Adding or removing did not work; the reason in brackets says why."
 msgstr ""
 
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Airtime budget"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Airtime left this hour"
@@ -2035,7 +2035,7 @@ msgctxt "dashboard"
 msgid "Another contact's key starts the same, so the radio could not tell them apart. Compare the whole key with the node's own screen."
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Another node's key starts the same, so an answer could not be told apart."
@@ -2054,7 +2054,7 @@ msgid "Apr"
 msgstr ""
 
 #. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
-#. volts is a battery's voltage, such as 3.9
+#. volts is a battery's voltage, such as 3.9, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Ask for position and battery"
@@ -2066,7 +2066,7 @@ msgctxt "dashboard"
 msgid "Ask for position and battery on Contacts turns it on or off for each person."
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Ask for position and battery: on means the gateway asks this device for both now and then. Change it on Contacts. The words after on or off say how the device answers:"
@@ -2085,19 +2085,19 @@ msgctxt "dashboard"
 msgid "Ask your administrator to update the gateway to {version}."
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Asked, but no answer for a day: it does not allow this home, does not have it as a contact, or is out of range."
 msgstr ""
 
-#. the columns of the contacts table; volts is a battery's voltage, such as 3.9
+#. the columns of the contacts table; volts is a battery's voltage, such as 3.9, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Asking"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Asking for position and battery"
@@ -2143,7 +2143,7 @@ msgctxt "dashboard"
 msgid "Asking for position and battery: the words"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
@@ -2178,14 +2178,14 @@ msgctxt "dashboard"
 msgid "Background noise: lower is quieter; compare it with the last days."
 msgstr ""
 
-#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
+#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, written with this language's decimal mark, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Bandwidth"
 msgstr ""
 
-#. the columns of the contacts table; volts is a battery's voltage, such as 3.9
-#. volts is a battery's voltage, such as 3.9
+#. the columns of the contacts table; volts is a battery's voltage, such as 3.9, written with this language's decimal mark
+#. volts is a battery's voltage, such as 3.9, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Battery"
@@ -2261,13 +2261,13 @@ msgctxt "dashboard"
 msgid "Chats: {chats}."
 msgstr ""
 
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Clock set by the gateway"
 msgstr ""
 
-#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
+#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, written with this language's decimal mark, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Coding rate"
@@ -2279,13 +2279,13 @@ msgctxt "dashboard"
 msgid "Command"
 msgstr ""
 
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Command codes"
 msgstr ""
 
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Command senders"
@@ -2296,8 +2296,8 @@ msgctxt "dashboard"
 msgid "Commands: a few contacts your administrator chose may send words that start this home's automations."
 msgstr ""
 
-#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, written with this language's decimal mark, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Connected by"
@@ -2382,7 +2382,7 @@ msgctxt "dashboard"
 msgid "Contacts managed by the gateway"
 msgstr ""
 
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Contacts that may send commands to this home's automations."
@@ -2456,7 +2456,7 @@ msgctxt "dashboard"
 msgid "Errors the gateway caught; it runs on, and its log has the details."
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Events dropped, last hour"
@@ -2529,7 +2529,7 @@ msgctxt "dashboard"
 msgid "Feb"
 msgstr ""
 
-#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
+#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, written with this language's decimal mark, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Firmware"
@@ -2616,7 +2616,7 @@ msgctxt "dashboard"
 msgid "For your administrator: this dashboard needs Home Assistant 2026.10 or later."
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Free disk"
@@ -2627,7 +2627,7 @@ msgctxt "dashboard"
 msgid "Free some space on the gateway's disk."
 msgstr ""
 
-#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
+#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, written with this language's decimal mark, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Frequency"
@@ -2638,7 +2638,7 @@ msgctxt "dashboard"
 msgid "Frequency, bandwidth, spreading factor and coding rate: every radio that should hear this one needs the same."
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "GPS off, location not allowed in the app, out of range, or asking is off (Contacts)."
@@ -2686,7 +2686,7 @@ msgctxt "dashboard"
 msgid "Green: all fine."
 msgstr ""
 
-#. the columns of the contacts table; volts is a battery's voltage, such as 3.9
+#. the columns of the contacts table; volts is a battery's voltage, such as 3.9, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Heard"
@@ -2767,7 +2767,7 @@ msgctxt "dashboard"
 msgid "How many messages may wait, for how long, and how often a direct message is tried."
 msgstr ""
 
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "How the gateway reaches its radio."
@@ -2842,13 +2842,13 @@ msgstr ""
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #. the settings of the contacts in Home Assistant; devices is a whole number
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "In this home"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "It answered today, not lately: out of range or switched off."
@@ -2904,7 +2904,7 @@ msgctxt "dashboard"
 msgid "It works now, but a restart would forget the latest change."
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
@@ -2933,7 +2933,7 @@ msgctxt "dashboard"
 msgid "Keep"
 msgstr ""
 
-#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
+#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, written with this language's decimal mark, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Key"
@@ -2987,7 +2987,7 @@ msgctxt "dashboard"
 msgid "Letters"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "List of people not to ask"
@@ -3026,13 +3026,13 @@ msgctxt "dashboard"
 msgid "Mesh"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Message history"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Messages on their way"
@@ -3074,7 +3074,7 @@ msgctxt "dashboard"
 msgid "Mode: {mode}. State: {state}."
 msgstr ""
 
-#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
+#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, written with this language's decimal mark, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Model"
@@ -3085,8 +3085,8 @@ msgctxt "dashboard"
 msgid "More in the guide"
 msgstr ""
 
-#. the columns of the contacts table; volts is a battery's voltage, such as 3.9
-#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
+#. the columns of the contacts table; volts is a battery's voltage, such as 3.9, written with this language's decimal mark
+#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, written with this language's decimal mark, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Name"
@@ -3211,7 +3211,7 @@ msgctxt "dashboard"
 msgid "Nodes you can add: {n}."
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Not asked: the radio has no way to it now. A message or an advert from it brings it back."
@@ -3370,7 +3370,7 @@ msgctxt "dashboard"
 msgid "On: the gateway asks that person's device now and then for its position and battery."
 msgstr ""
 
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "On: the senders your administrator gave a code secret end each command with a code that changes every 30 seconds. While the gateway ignores a secret in the file, the other senders cannot command."
@@ -3450,7 +3450,7 @@ msgctxt "dashboard"
 msgid "Overview"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Part"
@@ -3510,7 +3510,7 @@ msgctxt "dashboard"
 msgid "Privacy"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Program errors, last hour"
@@ -3538,7 +3538,7 @@ msgctxt "dashboard"
 msgid "Radio battery: a radio on USB power shows its charging voltage."
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Radio clock"
@@ -3561,7 +3561,7 @@ msgctxt "dashboard"
 msgid "Radio firmware"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Radio link"
@@ -3578,14 +3578,14 @@ msgctxt "dashboard"
 msgid "Radio name"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #. the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Radio settings"
 msgstr ""
 
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Radio settings managed"
@@ -3684,7 +3684,7 @@ msgctxt "dashboard"
 msgid "Sent before other messages."
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Sent before other messages: an alert goes out before the messages that wait."
@@ -3722,7 +3722,7 @@ msgstr ""
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #. the settings of the contacts in Home Assistant; devices is a whole number
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Setting"
@@ -3745,7 +3745,7 @@ msgctxt "dashboard"
 msgid "Show again brings back all hidden contacts."
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Slowest response, last hour"
@@ -3781,19 +3781,19 @@ msgctxt "dashboard"
 msgid "Someone turned Ask for position and battery off or on for this person."
 msgstr ""
 
-#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
+#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, written with this language's decimal mark, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Spreading factor"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "State"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "State file"
@@ -3876,7 +3876,7 @@ msgctxt "dashboard"
 msgid "Text before or after messages"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Text before or after messages: the gateway adds it to every message sent here, and the chat shows it."
@@ -3899,13 +3899,13 @@ msgctxt "dashboard"
 msgid "That person's device tells everyone nearby where it is; Overview says what to do."
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The answers are current and carry a position."
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The answers are current, without a position: GPS off, no fix, or location not allowed in the app."
@@ -4031,7 +4031,7 @@ msgctxt "dashboard"
 msgid "The gateway had no connection to its radio."
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The gateway has not asked yet, or not for over a day."
@@ -4146,7 +4146,7 @@ msgctxt "dashboard"
 msgid "The gateway set it at the last connect."
 msgstr ""
 
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The gateway sets the radio's clock from the computer's."
@@ -4194,7 +4194,7 @@ msgctxt "dashboard"
 msgid "The last 50 messages are kept here, fewer when they are long."
 msgstr ""
 
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The law allows a radio only a share of each hour; messages wait when it is used up."
@@ -4243,7 +4243,7 @@ msgctxt "dashboard"
 msgid "The messages stay readable here; your administrator can fix the field."
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
@@ -4409,7 +4409,7 @@ msgctxt "dashboard"
 msgid "The start of every contact's entity IDs."
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The switch is off for this person."
@@ -4547,7 +4547,7 @@ msgctxt "dashboard"
 msgid "Too many requests came at once. Try again in a minute."
 msgstr ""
 
-#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
+#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, written with this language's decimal mark, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Transmit power"
@@ -4565,8 +4565,8 @@ msgctxt "dashboard"
 msgid "Type in the field “Write to {name}” at the bottom, tap Return (↵), then tap Send. Return only keeps the text; Send sends it."
 msgstr ""
 
-#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, written with this language's decimal mark, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "USB"
@@ -4643,7 +4643,7 @@ msgstr ""
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #. the settings of the contacts in Home Assistant; devices is a whole number
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "What it means"
@@ -4768,7 +4768,7 @@ msgctxt "dashboard"
 msgid "When the gateway last heard the device: a message, an advert, or an answer to asking."
 msgstr ""
 
-#. volts is a battery's voltage, such as 3.9
+#. volts is a battery's voltage, such as 3.9, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Where"
@@ -4789,7 +4789,7 @@ msgctxt "dashboard"
 msgid "Where readings come from"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Where the device was at its last answer; a place's name when it was in another zone of Home Assistant."
@@ -4800,7 +4800,7 @@ msgctxt "dashboard"
 msgid "Where the household's devices were in the last 24 hours."
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
@@ -4817,7 +4817,7 @@ msgctxt "dashboard"
 msgid "Whether the gateway asks the device for its position and battery, and how it answers:"
 msgstr ""
 
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Whether the gateway keeps the radio's settings as this home needs them."
@@ -5044,7 +5044,7 @@ msgctxt "dashboard"
 msgid "Your administrator runs:"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Your administrator turned asking off in this home's settings."
@@ -5127,13 +5127,13 @@ msgctxt "dashboard"
 msgid "another contact has the same key prefix"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "answering"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "answering, no position"
@@ -5168,21 +5168,21 @@ msgctxt "dashboard"
 msgid "asking for position and battery is paused"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "at home"
 msgstr ""
 
 #. since is a time, such as 10:31 or yesterday 10:31
-#. volts is a battery's voltage, such as 3.9
+#. volts is a battery's voltage, such as 3.9, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
 msgid "at {zone}"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "away"
@@ -5193,7 +5193,7 @@ msgctxt "dashboard"
 msgid "broadcasts its position to everyone in range"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "broken"
@@ -5211,7 +5211,7 @@ msgctxt "dashboard"
 msgid "cannot be stored"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "cannot be written"
@@ -5263,7 +5263,7 @@ msgctxt "dashboard"
 msgid "code used already"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "connected"
@@ -5306,7 +5306,7 @@ msgctxt "dashboard"
 msgid "differs: only watched"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "disconnected"
@@ -5338,7 +5338,7 @@ msgctxt "dashboard"
 msgid "firmware not tested"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "gateway offline"
@@ -5425,13 +5425,13 @@ msgctxt "dashboard"
 msgid "managed"
 msgstr ""
 
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "managed on any firmware"
 msgstr ""
 
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "managed on tested firmware, only watched on other firmware"
@@ -5454,8 +5454,8 @@ msgctxt "dashboard"
 msgid "needs more airtime than one burst"
 msgstr ""
 
-#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, written with this language's decimal mark, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "network"
@@ -5488,13 +5488,13 @@ msgctxt "dashboard"
 msgid "no acknowledgement"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "no answer for a day"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "no answer lately"
@@ -5521,7 +5521,7 @@ msgctxt "dashboard"
 msgid "no longer asked for position and battery"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "no position yet"
@@ -5537,7 +5537,7 @@ msgctxt "dashboard"
 msgid "no such target"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "no value yet"
@@ -5571,20 +5571,20 @@ msgctxt "dashboard"
 msgid "not a contact on the radio"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "not asked (switch off)"
 msgstr ""
 
 #. what asking this person's device for its position and battery gives (the device's telemetry state): on a chat page after on or off, on Contacts in the column Asking
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "not asked yet"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "not asked: look-alike"
@@ -5596,7 +5596,7 @@ msgctxt "dashboard"
 msgid "not kept"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "not reachable now"
@@ -5607,7 +5607,7 @@ msgctxt "dashboard"
 msgid "not reported"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "not saved"
@@ -5632,7 +5632,7 @@ msgctxt "dashboard"
 msgid "not supported"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "not supported by the radio"
@@ -5643,17 +5643,17 @@ msgctxt "dashboard"
 msgid "not taken by the radio"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #. the settings of the contacts in Home Assistant; devices is a whole number
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "off"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "off for everyone"
@@ -5671,18 +5671,18 @@ msgctxt "dashboard"
 msgid "off: your administrator manages contacts outside Home Assistant"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #. the settings of the contacts in Home Assistant; devices is a whole number
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #. whether the gateway asks this person's device for its position and battery
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "on"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "on time"
@@ -5707,7 +5707,7 @@ msgid "only the chats' channels"
 msgstr ""
 
 #. how the gateway keeps the radio's settings: managed, it keeps them as this home needs them; only watched, it reports them and changes nothing
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "only watched"
@@ -5718,7 +5718,7 @@ msgctxt "dashboard"
 msgid "outcome unknown: the next table read tells"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
@@ -5743,7 +5743,7 @@ msgctxt "dashboard"
 msgid "persons and sensors"
 msgstr ""
 
-#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25
+#. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "position not current"
@@ -5885,7 +5885,7 @@ msgctxt "dashboard"
 msgid "stopped answering"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "taken over in the last hour"
@@ -5990,7 +5990,7 @@ msgctxt "dashboard"
 msgid "turned off in the firmware"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "unreadable"
@@ -6026,7 +6026,7 @@ msgctxt "dashboard"
 msgid "without accents (ä becomes ae)"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "working"
@@ -6055,7 +6055,7 @@ msgctxt "dashboard"
 msgid "yesterday {time}"
 msgstr ""
 
-#. the settings of the radio; budget and burst are seconds, such as 36.0 and 10.0
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
@@ -6083,28 +6083,28 @@ msgctxt "dashboard"
 msgid "{day} {month} {time}"
 msgstr ""
 
-#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
+#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, written with this language's decimal mark, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
 msgid "{dbm} dBm"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
 msgid "{d} ahead"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
 msgid "{d} behind"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
@@ -6118,14 +6118,14 @@ msgctxt "dashboard"
 msgid "{hours} h"
 msgstr ""
 
-#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
+#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, written with this language's decimal mark, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
 msgid "{khz} kHz"
 msgstr ""
 
-#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
+#. the facts of the gateway's radio: mhz and khz are numbers such as 869.618 and 62.5, written with this language's decimal mark, cr the coding rate's second number, such as 8 in 4/8, dbm the transmit power, such as 22
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
@@ -6230,29 +6230,29 @@ msgctxt "dashboard"
 msgid "{sender}: {word}, refused: {reason}"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
 msgid "{slow} s"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
 msgid "{spare} of {hour} s"
 msgstr ""
 
-#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
+#. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
 msgid "{total} ({waiting} waiting over a minute)"
 msgstr ""
 
-#. the columns of the contacts table; volts is a battery's voltage, such as 3.9
-#. volts is a battery's voltage, such as 3.9
+#. the columns of the contacts table; volts is a battery's voltage, such as 3.9, written with this language's decimal mark
+#. volts is a battery's voltage, such as 3.9, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"

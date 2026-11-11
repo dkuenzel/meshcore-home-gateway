@@ -33,7 +33,7 @@ from meshcore_home_gateway.outbox import Delivery
 from meshcore_home_gateway.protocol.codes import NodeType
 from meshcore_home_gateway.state import ContactDeviceRecords, JsonStateFile
 from tests import dashboard_rules as rules
-from tests.i18n_helpers import compiled, pseudo, speaking
+from tests.i18n_helpers import PSEUDO_MARK, compiled, pseudo, speaking
 from tests.test_contact_devices import (
     ALICE,
     BOB,
@@ -58,6 +58,15 @@ MACRO = (
     r"\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064"
     r"\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}"
     r"{%- endmacro -%}"
+)
+# what every card that prints a number defines after m(): the number in the dashboard's language,
+# its decimal mark in place of the point, a whole one without ".0" (#145), rounded to `digits`
+# places when given; anything else as m() prints it (rule 22)
+NUM = (
+    "{%- macro num(v, digits=none) -%}{%- set f = v | float if v | is_number else none -%}"
+    "{%- set f = f | round(digits) if f is not none and digits is not none else f -%}"
+    "{%- if f is none -%}{{ m(v) }}{%- elif f % 1 == 0 -%}{{ m(f | int | string) }}"
+    "{%- else -%}{{ m(f | string | replace('.', '@decimal@')) }}{%- endif -%}{%- endmacro -%}"
 )
 Speaker = Callable[[str, Mapping[str, str]], str]
 
@@ -86,9 +95,16 @@ def config(node_id: str = "radio1", more: str = "") -> Config:
     )
 
 
-def render(template: str, text: Speaker = ENGLISH, trackers: list[str] | None = None) -> str:
+def render(
+    template: str, text: Speaker = ENGLISH, trackers: list[str] | None = None, decimal: str = "."
+) -> str:
     return dashboard.render(
-        template, node_id="radio-1", version="1.2.3", trackers=trackers or [], text=text
+        template,
+        node_id="radio-1",
+        version="1.2.3",
+        trackers=trackers or [],
+        text=text,
+        decimal=decimal,
     )
 
 
@@ -197,6 +213,7 @@ def test_the_pseudo_language_passes_the_guard(
     assert "‹For your administrator: Home Assistant has no entity of node radio1. " in text
     english, _ = dashboard.dashboard(config(), tmp_path)
     assert "‹" not in english
+    text = text.replace(f"replace('.', '{PSEUDO_MARK}')", "replace('.', '.')")  # num()
     assert re.sub(r"[‹›]", "", text) == re.sub(r"[‹›]", "", english)  # menus: Settings › …
 
 
@@ -208,6 +225,55 @@ def test_no_translation_makes_a_marker_or_a_placeholder() -> None:
     texts = {"gw": "gw", "Mesh": "_", "Overview": '@gw@ _("x")'}
     out = render(template, translated(texts))
     assert out == 'content: |-\n  @gw@ _("x") Overview\n'
+
+
+def test_the_decimal_mark_goes_where_num_writes_a_point() -> None:
+    """@decimal@ becomes the dashboard's decimal mark, the point of English unless the caller
+    gives the language's (i18n.DECIMAL_MARKS, #145)."""
+    template = "content: |-\n  {{ v | string | replace('.', '@decimal@') }}\n"
+    assert render(template) == "content: |-\n  {{ v | string | replace('.', '.') }}\n"
+    german = render(template, decimal=",")
+    assert german == "content: |-\n  {{ v | string | replace('.', ',') }}\n"
+    for mark in (*i18n.DECIMAL_MARKS.values(), PSEUDO_MARK):
+        assert f"replace('.', '{mark}')" in render(shipped(), decimal=mark)
+
+
+@pytest.mark.parametrize(
+    "mark", ["'", '"', "\\", "@", "<", "{", "a", "5", " ", "\u00a0", "\u200e", "", ".,"]
+)
+def test_a_decimal_mark_that_is_no_punctuation_or_breaks_the_template_is_refused(
+    mark: str,
+) -> None:
+    """The mark stands inside a quoted Jinja string: one punctuation character, no quote,
+    backslash or what a card would read as code (unsafe())."""
+    with pytest.raises(TemplateError, match="decimal mark"):
+        render("content: |-\n  {{ '@decimal@' }}\n", decimal=mark)
+
+
+@pytest.mark.real_catalogs
+@pytest.mark.parametrize("language", ["en", "de"])
+def test_the_dashboard_writes_numbers_with_its_languages_decimal_mark(
+    language: str, tmp_path: Path
+) -> None:
+    """Each card's num() puts the language's decimal mark in place of the point: German writes
+    0,4 (#145); the mark comes from locale data, not from a translator."""
+    text, _ = dashboard.dashboard(
+        config(more=f'[homeassistant]\nlanguage = "{language}"\n'), tmp_path
+    )
+    mark = i18n.DECIMAL_MARKS[language]
+    defined = text.count("{%- macro num(v, digits=none) -%}")
+    assert defined >= 6  # the cards that print a number, and a chat's About on each chat page
+    assert text.count(f"replace('.', '{mark}')") == defined
+    assert "@decimal@" not in text
+
+
+def test_a_language_the_tests_offer_writes_its_own_decimal_mark(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    speaking(monkeypatch, pseudo())
+    text, _ = dashboard.dashboard(config(more='[homeassistant]\nlanguage = "xx"\n'), tmp_path)
+    assert f"replace('.', '{PSEUDO_MARK}')" in text
+    assert "replace('.', '.')" not in text
 
 
 @pytest.mark.real_catalogs
@@ -693,7 +759,7 @@ _BLOCK = re.compile(r"^(\s*(?:- )?)[\w-]+: \|-?$")
 _TAG = re.compile(r"\{\{.*?\}\}|\{%.*?%\}|\{#.*?#\}")
 _PRINT = re.compile(r"\{\{\s*(.*?)\s*\}\}")
 _SET = re.compile(r"\{%-?\s*set (\w+) = (.*?)\s*-?%\}")
-_MACRO_START = re.compile(r"\{%-?\s*macro (\w+)\((\w+)\)\s*-?%\}")
+_MACRO_START = re.compile(r"\{%-?\s*macro (\w+)\((\w+)(?:, \w+=\w+)*\)\s*-?%\}")
 _ESCAPE = re.compile(r"\|\s*(?:e|escape|forceescape)\b")
 _INTEGER = re.compile(
     r".*\|\s*(?:int|count)(?:\(\s*-?\d*\s*\))?|\[?\s*(\w+)\s*//\s*\d+(?:\s*,\s*\d+\s*\]\s*\|\s*max)?"
@@ -709,6 +775,7 @@ _PLACEHOLDERS = {
     "@chats@",
     "@models@",
     "@guide@",
+    "@decimal@",
 }
 _JINJA_NOTE = re.compile(r"\{#-?\s*Translators:.*-?#\}")
 _CLASS = re.compile(r"\{#- problem: \w+ -#\}")  # a problem card's class (rule 9)
@@ -933,6 +1000,12 @@ def _card_findings(block: Block) -> list[str]:  # noqa: PLR0912
     return found
 
 
+def _lines(template: str) -> Iterator[tuple[int, str]]:
+    """Every line of the cards' contents, by number, without indentation."""
+    for block in blocks(template.split("\n")):
+        yield from block.lines
+
+
 def test_the_shipped_template_keeps_its_rules() -> None:
     template = shipped()
     assert rule_findings(template) == []
@@ -942,7 +1015,19 @@ def test_the_shipped_template_keeps_its_rules() -> None:
         for _, t in block.lines
         for name in re.findall(r"macro (\w+)\(", t)
     }
-    assert {"m", "mt", "when", "mark", "why", "problem", "place", "telemetry", "what"} <= names
+    assert {
+        "m",
+        "mt",
+        "num",
+        "when",
+        "mark",
+        "why",
+        "problem",
+        "place",
+        "telemetry",
+        "what",
+    } <= names
+    assert {line for _, line in _lines(template) if line.startswith("{%- macro num(")} == {NUM}
     assert template.count(MACRO) == 42
     assert len(list(dashboard.MARKER.finditer(template))) > 70
 
@@ -2089,6 +2174,30 @@ BROKEN = [
         ],
         "rule 20: chat-family has a back_path",
     ),
+    # rule 22: two forms of num(), num() without its macro, a number formatted with '%.', a
+    # number with a fraction through m(): a value of Home Assistant, and one whose key names a
+    # unit
+    (
+        card(
+            MACRO, NUM.replace("f % 1 == 0", "f == f | int"), "<div>{{ num(states('s.x')) }}</div>"
+        ),
+        "rule 22: 2 forms of num()",
+    ),
+    (card(MACRO, "<div>{{ num(states('sensor.x')) }}</div>"), "num() without its macro"),
+    (
+        card(MACRO, "<div>{{ m('%.1f' | format(states('sensor.x') | float(0))) }}</div>"),
+        "a number formatted with '%.'",
+    ),
+    (
+        card(
+            MACRO, "{%- set v = state_attr('sensor.x', 'lag') -%}", "<div>{{ m(v | string) }}</div>"
+        ),
+        "m(v | string) of a number",
+    ),
+    (
+        card(MACRO, "<div>{{ m(state_attr('binary_sensor.@gw@_radio', 'frequency_mhz')) }}</div>"),
+        "frequency_mhz through m(), not num()",
+    ),
 ]
 
 
@@ -2120,6 +2229,13 @@ def test_each_rule_finds_its_break(change: list[str], finding: str) -> None:
         card('<div>_("Help")</div>', HELPED),
         card('<table role="presentation" width="100%"><tr><td>_("Help")</td></tr></table>', HELPED),
         card("{#- problem: taken_over -#}", '_("Help")', HELPED),
+        card(
+            MACRO,
+            NUM,
+            "{%- set n = states('sensor.x') | int(0) -%}",
+            "<div>{{ m(n | string) }} {{ num(states('sensor.y'), 1) }}</div>",
+            HELPED,
+        ),
         [  # a tile's help in the text-only card after it (design D-10)
             "          - type: tile",
             "            entity: sensor.@gw@_nodes",
@@ -2130,7 +2246,8 @@ def test_each_rule_finds_its_break(change: list[str], finding: str) -> None:
 def test_what_a_rule_allows_adds_no_finding(change: list[str]) -> None:
     """A link to the guide's anchor of this version, the menus in a line for the administrator,
     a card with its help, a table of presentation, a problem card of a class that the status
-    line tests before its problems, such as a takeover (rule 9)."""
+    line tests before its problems, such as a takeover (rule 9), a whole number through m() and
+    a number through num() (rule 22)."""
     assert added(into_help(*change)) == []
 
 

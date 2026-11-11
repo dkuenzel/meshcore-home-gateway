@@ -7,7 +7,9 @@ The template is YAML as it stands, every branch of its conditionals included:
 
 * `@gw@` (the gateway's part of its entity IDs), `@node@`, `@version@`, `@major@` and `@minor@`
   (its first two numbers), `@guide@` (the address of the guide, docs/home-assistant.md, of this
-  version), `["@trackers@"]` (the map's trackers, a JSON list), `["@chats@"]` (the chat pages,
+  version), `@decimal@` (the decimal mark of the dashboard's language, i18n.DECIMAL_MARKS, which
+  each card's num() writes in place of the point), `["@trackers@"]` (the map's trackers, a JSON
+  list), `["@chats@"]` (the chat pages,
   a list of JSON objects, which Jinja reads) and `["@models@"]` (each model of a contact's
   device as the gateway names it in this language, with its node type: pairs for Jinja's
   dict()) are filled in. No placeholder gives the contacts' entity IDs: the cards find the
@@ -110,6 +112,8 @@ _SLUG: Final = re.compile(r"[a-z0-9_]+")  # as the gateway gives them: a part of
 _NAME: Final = re.compile(r"[A-Za-z_]\w*")  # a field's name: a Jinja variable
 # stands for a Jinja variable while a text is checked: private use characters, in no text
 _STAND_IN: Final = chr(0xE000) + "{}" + chr(0xE001)
+# a decimal mark stands in a quoted Jinja string: no quote and no backslash
+_QUOTING: Final = frozenset("'\"\\")
 
 Item = Mapping[str, str]
 
@@ -414,11 +418,13 @@ def render(
     switches: Sequence[Item] = (),
     removes: Sequence[Item] = (),
     models: Sequence[tuple[str, str]] = (),
+    decimal: str = ".",
 ) -> str:
     """The template filled in; `text(msgid, values)` gives a text in the dashboard's language,
     filled with the values; `chats`, `switches`, `removes`: the items of the lists, each checked
     against its pattern; `models`: the models of the contacts' devices with their types
-    (models())."""
+    (models()); `decimal`: the language's decimal mark (decimal_mark())."""
+    decimal_mark(decimal)
     lists = {"chats": list(chats), "switches": list(switches), "removes": list(removes)}
     for name, items in lists.items():
         for each in items:
@@ -445,6 +451,7 @@ def render(
             .replace("@major@", str(int(numbers.group(1))))
             .replace("@minor@", str(int(numbers.group(2))))
             .replace("@guide@", DOCUMENTATION_URL.replace("/blob/main/", f"/blob/v{version}/"))
+            .replace("@decimal@", decimal)
         )
         # before any text goes in: no translation can trip it
         if '_("' in MARKER.sub("", line) or _PLACEHOLDER.search(line):
@@ -464,6 +471,20 @@ def render(
         else:
             out.append(_with_texts(line, fixed, text))
     return "\n".join(_shown_by_condition(out))
+
+
+def decimal_mark(mark: str) -> str:
+    """The mark, if a card may write it in place of a number's point: one punctuation character
+    (Unicode Po), no quote or backslash, which would end the Jinja string it stands in, and
+    nothing unsafe() finds; else TemplateError."""
+    if (
+        len(mark) != 1
+        or unicodedata.category(mark) != "Po"
+        or mark in _QUOTING
+        or unsafe(mark) is not None
+    ):
+        raise TemplateError(f"the decimal mark {mark!r} is not allowed")
+    return mark
 
 
 _HIDES_ITSELF: Final = re.compile(r"^( *)show_empty: false$")
@@ -561,6 +582,7 @@ def build(config: Config, state_dir: Path) -> Built:
         switches=switches(records, prefix),
         removes=removes(records, prefix),
         models=models(translator),
+        decimal=i18n.DECIMAL_MARKS[config.homeassistant.language],
     )
     return Built(yaml, len(listed), pages, _written_at(path), left_out(records, prefix))
 

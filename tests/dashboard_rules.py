@@ -596,7 +596,7 @@ def macros(card: Card) -> dict[str, tuple[str, list[str]]]:
     found: dict[str, tuple[str, list[str]]] = {}
     current = ""
     for line in card.lines:
-        if match := re.search(r"\{%-?\s*macro (\w+)\((\w+)\)\s*-?%\}", line):
+        if match := re.search(r"\{%-?\s*macro (\w+)\((\w+)(?:, \w+=\w+)*\)\s*-?%\}", line):
             current = match.group(1)
             found[current] = (match.group(2), [])
         if current:
@@ -997,6 +997,47 @@ def rule_13(template: str, source: Any, loaded: Any, household: Household) -> li
     return found
 
 
+# rule 22: a value whose key names a unit is a number, which may have a fraction
+UNIT_KEY = re.compile(
+    r"\bm\((?:state_attr\([^()]*, |\w+\.get\()'(\w+_(?:s|mb|v|db|dbm|mhz|khz|percent|hour))'\)"
+)
+_PERCENT_FORMAT = re.compile(r"""['"]%[-+ #0]*\d*\.""")
+_WHOLE = re.compile(r"\|\s*(?:int|count)(?:\([^()]*\))?$")
+
+
+def rule_22(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
+    """Numbers in the dashboard's language (#145): a card prints a number that may have a
+    fraction through num(), which it defines and which reads the same in every card; no number
+    is formatted with '%.', and m() prints a number only as a whole one (set from | int or
+    | count)."""
+    found = []
+    written = {
+        line for card in cards(template) for line in card.lines if line.startswith("{%- macro num(")
+    }
+    if len(written) > 1:
+        found.append(f"rule 22: {len(written)} forms of num()")
+    for card in cards(template):
+        body = "\n".join(card.lines)
+        if re.search(r"\bnum\(", body.replace("macro num(", "")) and "macro num(" not in body:
+            found.append(f"rule 22: {card.first}: num() without its macro")
+        if _PERCENT_FORMAT.search(body):
+            found.append(f"rule 22: {card.first}: a number formatted with '%.'")
+        whole = {
+            name
+            for name, value in re.findall(r"set (\w+) = (.*?)\s*-?%\}", body)
+            if _WHOLE.search(value)
+        }
+        found += [
+            f"rule 22: {card.first}: m({name} | string) of a number"
+            for name in re.findall(r"\bm\((\w+) \| string\)", body)
+            if name not in whole
+        ]
+        found += [
+            f"rule 22: {card.first}: {key} through m(), not num()" for key in UNIT_KEY.findall(body)
+        ]
+    return found
+
+
 def rule_15(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
     """Conditions without `enabled`, numeric bounds no strings: the harness models neither."""
     found = []
@@ -1309,6 +1350,7 @@ RULES: list[Rule] = [
     rule_19,
     rule_20,
     rule_21,
+    rule_22,
 ]
 
 
