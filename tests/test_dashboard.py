@@ -1846,6 +1846,8 @@ FIELD = (
     '          - type: entities\n            entities:\n              - entity: "@chats.write@"\n'
 )
 IN_FOOTER = "          - type: markdown\n            content: x\n"
+# the first two links of the row under Overview's status line
+MAP_LINK, GATEWAY_LINK = '<a href="./map">_("Map")</a>', '<a href="./gateway">_("Gateway")</a>'
 BROKEN = [
     # rule 2: a mapping over a closed list
     (
@@ -2002,6 +2004,19 @@ BROKEN = [
     (card("{%- macro problem(v) -%}", "{%- endmacro -%}"), "rule 9: 2 status cards"),
     # rule 11: a GitHub alert
     (card("> [!NOTE]", '> _("Help")'), "rule 11: "),
+    # rule 12: the row under Overview's status line without the map, with the map last, twice
+    (
+        ["@@", f"{MAP_LINK} · {GATEWAY_LINK}", GATEWAY_LINK],
+        "rule 12: the links under overview's status line are ['gateway', 'settings', 'help']",
+    ),
+    (
+        ["@@", f"{MAP_LINK} · {GATEWAY_LINK}", GATEWAY_LINK.replace("</a>", f"</a> · {MAP_LINK}")],
+        "rule 12: the links under overview's status line are ['gateway', 'map', 'settings',",
+    ),
+    (
+        ["@@", f"<div>{MAP_LINK} · ", f"<div>{MAP_LINK}</div>\n              <div>{MAP_LINK} · "],
+        "rule 12: 2 rows of links under overview's status line",
+    ),
     # rule 13: a message's text through m(), a card without mt(), two forms of m()
     (
         card(

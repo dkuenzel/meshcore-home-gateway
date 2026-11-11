@@ -40,6 +40,9 @@ THREAD = "macro row(e)"
 REFUSED = f"'event.{GW}_delivery'"
 ALICE, BOB = "a1" * 32, "b2" * 32
 TABS = ("overview", "messages", "contacts")
+# rule 12: the row of links under Overview's status line, to the pages without a tab
+LINK_ROW = '<div><a href="./'
+ROW_PAGES = ("map", "gateway", "settings", "help")
 TAB_LETTERS = 22  # the three titles together, or the tab bar scrolls at 360 px
 # the name of the tile beside a chat's Send button: 122 px at 360 px, which 17 letters of
 # "Return, then Send" fill to 111 px; a longer name is cut (docs/testing.md, the browser check)
@@ -931,7 +934,8 @@ def rule_11(template: str, source: Any, loaded: Any, household: Household) -> li
 
 
 def rule_12(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
-    """Three tabs with their titles alone; the pages without a tab one tap away."""
+    """Three tabs with their titles alone; the pages without a tab one tap away: from the row
+    of links under Overview's status line, and from the badges of a heading of Contacts."""
     found = []
     views = loaded["views"]
     tabs = [view for view in views if not view.get("subview")]
@@ -943,16 +947,14 @@ def rule_12(template: str, source: Any, loaded: Any, household: Household) -> li
         if "icon" in view or "show_icon_and_title" in view
     ]
     by_path = {view["path"]: view for view in views}
-    outside = " ".join(
-        line
-        for text in texts(by_path.get("overview", {}))
-        for line in re.sub(r"<details>.*?</details>", "", text).split("\n")
-    )
-    for target in ("map", "gateway", "settings", "help"):
-        if f'href="./{target}"' not in outside and f"./{target}" not in _navigations(
-            by_path.get("overview", {})
-        ):
-            found.append(f"rule 12: no link to {target} on overview")
+    # the pages without a tab one tap from the top of Overview, the map first: its other links
+    # come below everything on a phone, and the map seemed gone (owner feedback on 2.1.0)
+    status = [text for text in texts(by_path.get("overview", {})) if "macro problem(" in text]
+    rows = [line for text in status for line in text.split("\n") if line.startswith(LINK_ROW)]
+    if len(status) != 1 or len(rows) != 1:
+        found.append(f"rule 12: {len(rows)} rows of links under overview's status line")
+    elif (targets := re.findall(r'<a href="\./([^"]*)">', rows[0])) != list(ROW_PAGES):
+        found.append(f"rule 12: the links under overview's status line are {targets}")
     badges = [
         badge.get("tap_action", {}).get("navigation_path")
         for card, _ in nodes(by_path.get("contacts", {}))
@@ -965,14 +967,6 @@ def rule_12(template: str, source: Any, loaded: Any, household: Household) -> li
         if f"./{target}" not in badges
     ]
     return found
-
-
-def _navigations(view: Any) -> list[str]:
-    return [
-        str(n["navigation_path"])
-        for n, _ in nodes(view)
-        if isinstance(n, dict) and "navigation_path" in n
-    ]
 
 
 def rule_13(template: str, source: Any, loaded: Any, household: Household) -> list[str]:

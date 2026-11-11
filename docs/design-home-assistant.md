@@ -147,8 +147,10 @@ their way, a draft and its *Send* for each chat and the configuration
   with each contact's *Remove*, which asks first, the nodes heard nearby). The other pages have
   no tab (`subview: true`): a page for each chat, *Map* (the contacts' trackers with 24 hours of
   traces), *Gateway* (health, the radio, its settings, the latest event of each kind),
-  *Settings* (the configuration document, read only) and *Help*. All are sections views, which
-  reflow on a phone, so there is one variant; cards show by conditions on states and on
+  *Settings* (the configuration document, read only) and *Help*. A row of links under
+  *Overview*'s status line opens *Map*, *Gateway*, *Settings* and *Help*, the map first: its
+  other links, under *Where everyone is*, come below everything on a phone, and with them the map
+  seemed gone (2.1.1). All are sections views, which reflow on a phone, so there is one variant; cards show by conditions on states and on
   templates, which the frontend evaluates since Home Assistant 2026.10.
 * **Writing:** 2.0 offered the guide's script *Mesh message* (`script.mesh_message`) as a form
   in a tile, with a hint while the script was missing. Since 2.1 each chat page ends in the

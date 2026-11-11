@@ -177,12 +177,14 @@ async def test_the_status_line_says_how_the_gateway_is(  # noqa: PLR0915 - situa
     assert (await situation("radio disconnected", "error", "Radio disconnected.")).endswith(tell)
     await fire(hass, topics.state, health())
     await situation("all fine", "success", "All fine.")
-    gateway_, settings, help_ = (said(config, text) for text in ("Gateway", "Settings", "Help"))
+    map_, gateway_, settings, help_ = (
+        said(config, text) for text in ("Map", "Gateway", "Settings", "Help")
+    )
     lines = render(hass, status).split("\n")
     assert len(lines) == 3
-    assert lines[1] == (  # the way to the pages without a tab, outside the fold
-        f'<div><a href="./gateway">{gateway_}</a> · <a href="./settings">{settings}</a> · '
-        f'<a href="./help">{help_}</a></div>'
+    assert lines[1] == (  # the way to the pages without a tab, outside the fold, the map first
+        f'<div><a href="./map">{map_}</a> · <a href="./gateway">{gateway_}</a> · '
+        f'<a href="./settings">{settings}</a> · <a href="./help">{help_}</a></div>'
     )
     assert lines[2].startswith("<details><summary>")
     # the queue sensor counts the messages behind the one being sent: never the status (M22)

@@ -214,9 +214,10 @@ its rule; the shipped template breaks none of them.
    `{#- problem: <class> -#}`.
 10. The counts in the tests follow the template.
 11. No GitHub alert (`> [!`): a coloured box is a `<div><ha-alert>` line.
-12. The tabs are `overview`, `messages` and `contacts`, without icons. *Overview* links to
-    *Map*, *Gateway*, *Settings* and *Help* outside every `<details>`, and a heading of
-    *Contacts* has buttons to *Gateway*, *Settings* and *Help*.
+12. The tabs are `overview`, `messages` and `contacts`, without icons. *Overview*'s status line
+    has one row of links under it, outside every `<details>`: *Map*, *Gateway*, *Settings* and
+    *Help*, in this order; and a heading of *Contacts* has buttons to *Gateway*, *Settings* and
+    *Help*.
 13. A card that prints a message's text prints it through `mt()`; `m()` and `mt()` read the same
     in every card.
 14. The three tabs' titles have at most 22 letters together in every language shipped, or the

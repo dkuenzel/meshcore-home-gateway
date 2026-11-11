@@ -22,6 +22,10 @@ format, the command line and Home Assistant discovery are public interfaces
   position the radio still remembers for that device, from an older advert or written by another
   app. The gateway's log says so at info level when such an advert turns *Position in adverts*
   on. Make the dashboard again after the update.
+- The dashboard's *Overview* links to *Map* in the row under its first line, first, before
+  *Gateway*, *Settings* and *Help*. Since the map lost its tab in 2.1.0, its links stood only
+  under *Where everyone is*, below everything on a phone, and the map seemed gone. Make the
+  dashboard again after the update.
 
 ## [2.1.0] - 2026-11-09
 

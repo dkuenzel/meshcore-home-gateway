@@ -77,7 +77,7 @@ views:
               {#- Translators: notes is a whole number, 2 or more: the cards in blue below, for information -#}
               <div><ha-alert alert-type="success"><b>_("All fine.")</b><br>_("Radio connected, nothing waiting.") {% if notes == 1 %}_("One note below."){% elif notes > 1 %}_("{notes} notes below."){% endif %}</ha-alert></div>
               {%- endif %}
-              <div><a href="./gateway">_("Gateway")</a> · <a href="./settings">_("Settings")</a> · <a href="./help">_("Help")</a></div>
+              <div><a href="./map">_("Map")</a> · <a href="./gateway">_("Gateway")</a> · <a href="./settings">_("Settings")</a> · <a href="./help">_("Help")</a></div>
               {#- Translators: Needs a look is the start of the first line in yellow, and Help the page of that name: say both as translated there #}
               <details><summary>_("What the colours mean")</summary><ul><li>_("Red: act now; nothing gets through, or someone else controls the radio.")</li><li>_("Yellow: something is missing or looks odd; the card below says what to do.")</li><li>_("Blue: for your information, or no value yet.")</li><li>_("Green: all fine.")</li><li>_("The words after Needs a look are explained in Help.")</li></ul></details>
           - type: markdown

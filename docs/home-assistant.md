@@ -701,8 +701,8 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   act now (the gateway not found or offline, the radio disconnected or taken over by another
   program), blue for no report yet or messages that have waited over a minute, yellow when
   something needs a look, naming the first problem, and green for *All fine*. Below it, the links
-  to *Gateway*, *Settings* and *Help*, then a card for each problem while it exists, each with
-  what to do: another program took the radio's link (red), a fault in the gateway, a node
+  to *Map*, *Gateway*, *Settings* and *Help*, then a card for each problem while it exists, each
+  with what to do: another program took the radio's link (red), a fault in the gateway, a node
   nearby that imitates a contact (named after that contact), a contact with remote access to the
   radio, a position broadcast to everyone, the radio's settings changed or not set, asking for
   position and battery paused, the radio's clock far off, a full contact table, and a gateway of
