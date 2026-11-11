@@ -3336,8 +3336,8 @@ msgstr "Unterwegs: {text}"
 #. names are the names of contacts, or the first digits of their keys
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "On that device, in the MeshCore app, turn off sharing the location in adverts."
-msgstr "Schalte auf diesem Gerät in der MeshCore-App das Teilen des Standorts in Adverts (Ankündigungen) aus."
+msgid "On that device, check in the MeshCore app that sharing the location in adverts is off, then send an advert near this home's radio."
+msgstr "Prüfe auf diesem Gerät in der MeshCore-App, dass das Teilen des Standorts in Adverts (Ankündigungen) aus ist, und sende dann in der Nähe des Funkgeräts dieses Zuhauses ein Advert."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -3910,6 +3910,11 @@ msgstr "Die Antworten sind aktuell, aber ohne Position: GPS aus, keine Ortung od
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "The card goes once the gateway has read an advert without a position."
+msgstr "Die Meldung verschwindet, sobald das Gateway ein Advert ohne Position gelesen hat."
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "The change works now, but the gateway could not store it. Tell your administrator."
 msgstr "Die Änderung wirkt jetzt, aber das Gateway konnte sie nicht speichern. Sag den Admins Bescheid."
 
@@ -4099,6 +4104,11 @@ msgctxt "dashboard"
 msgid "The gateway reaches its radio over the network, and the radio serves one program at a time. A program that held the link could control the radio and read its key, which decrypts direct messages."
 msgstr "Das Gateway erreicht sein Funkgerät über das Netzwerk, und das Funkgerät bedient immer nur ein Programm. Ein Programm, das die Verbindung hielt, konnte das Funkgerät steuern und seinen Schlüssel lesen, der Direktnachrichten entschlüsselt."
 
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway reads each advert. Until it has read a device's newest advert, for example one sent while the gateway was stopped for an update or a restart, it goes by the position this home's radio still remembers for that device: from an older advert, or written by another app. The radio keeps that position after sharing is switched off."
+msgstr "Das Gateway liest jedes Advert. Bis es das neueste Advert eines Geräts gelesen hat, zum Beispiel eines, das gesendet wurde, während das Gateway für ein Update oder einen Neustart angehalten war, richtet es sich nach der Position, die das Funkgerät dieses Zuhauses für dieses Gerät noch gespeichert hat: aus einem älteren Advert oder von einer anderen App geschrieben. Das Funkgerät behält diese Position, auch nachdem das Teilen ausgeschaltet wurde."
+
 #. first is a problem in lower case, such as a fault in the gateway; the sentence names it, more counts the others
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -4167,8 +4177,8 @@ msgstr "Die eigene Aufzeichnung des Gateways, zusätzlich zu dem, was Home Assis
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "The household's map does not need it: the gateway asks for positions privately (Ask for position and battery). The card goes when that device's next advert carries no position."
-msgstr "Die Karte des Haushalts braucht das nicht: Das Gateway fragt Positionen privat ab („Position und Batterie abfragen“). Die Meldung verschwindet, wenn das nächste Advert dieses Geräts keine Position enthält."
+msgid "The household's map does not need it: the gateway asks for positions privately (Ask for position and battery)."
+msgstr "Die Karte des Haushalts braucht das nicht: Das Gateway fragt Positionen privat ab („Position und Batterie abfragen“)."
 
 #. the settings of the contacts in Home Assistant; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -4563,6 +4573,11 @@ msgstr "USB"
 msgctxt "dashboard"
 msgid "Unreadable: asking is paused until the file is fixed or deleted. Not saved: a restart would forget the latest change."
 msgstr "Unlesbar: Die Abfrage ist pausiert, bis die Datei repariert oder gelöscht ist. Nicht gespeichert: Ein Neustart würde die letzte Änderung vergessen."
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Until the gateway has read the device's newest advert, it goes by the position this home's radio still remembers for it."
+msgstr "Bis das Gateway das neueste Advert des Geräts gelesen hat, richtet es sich nach der Position, die das Funkgerät dieses Zuhauses für das Gerät noch gespeichert hat."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"

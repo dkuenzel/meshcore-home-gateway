@@ -3334,7 +3334,7 @@ msgstr ""
 #. names are the names of contacts, or the first digits of their keys
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "On that device, in the MeshCore app, turn off sharing the location in adverts."
+msgid "On that device, check in the MeshCore app that sharing the location in adverts is off, then send an advert near this home's radio."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -3908,6 +3908,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "The card goes once the gateway has read an advert without a position."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "The change works now, but the gateway could not store it. Tell your administrator."
 msgstr ""
 
@@ -4097,6 +4102,11 @@ msgctxt "dashboard"
 msgid "The gateway reaches its radio over the network, and the radio serves one program at a time. A program that held the link could control the radio and read its key, which decrypts direct messages."
 msgstr ""
 
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway reads each advert. Until it has read a device's newest advert, for example one sent while the gateway was stopped for an update or a restart, it goes by the position this home's radio still remembers for that device: from an older advert, or written by another app. The radio keeps that position after sharing is switched off."
+msgstr ""
+
 #. first is a problem in lower case, such as a fault in the gateway; the sentence names it, more counts the others
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -4165,7 +4175,7 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "The household's map does not need it: the gateway asks for positions privately (Ask for position and battery). The card goes when that device's next advert carries no position."
+msgid "The household's map does not need it: the gateway asks for positions privately (Ask for position and battery)."
 msgstr ""
 
 #. the settings of the contacts in Home Assistant; devices is a whole number
@@ -4560,6 +4570,11 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Unreadable: asking is paused until the file is fixed or deleted. Not saved: a restart would forget the latest change."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Until the gateway has read the device's newest advert, it goes by the position this home's radio still remembers for it."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml

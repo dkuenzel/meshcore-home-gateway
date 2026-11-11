@@ -83,7 +83,7 @@ QUOTES: dict[str, tuple[str, ...]] = {
     "Gateway: Health": ("Gateway",),
     (
         "The household's map does not need it: the gateway asks for positions privately (Ask for "
-        "position and battery). The card goes when that device's next advert carries no position."
+        "position and battery)."
     ): ("Ask for position and battery",),
     "Gateway: Radio settings": ("Gateway",),
     (

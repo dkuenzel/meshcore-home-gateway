@@ -363,6 +363,56 @@ async def test_each_problem_card_shows_while_its_problem_exists(  # noqa: PLR091
     assert problems(caplog) == []
 
 
+# the advert-position card: what to do, and what the gateway goes by (owner feedback on 2.1.0)
+CHECK_SHARING = (
+    "On that device, check in the MeshCore app that sharing the location in adverts is off, then "
+    "send an advert near this home's radio."
+)
+NOT_NEEDED = (
+    "The household's map does not need it: the gateway asks for positions privately (Ask for "
+    "position and battery)."
+)
+GOES_BY = (
+    "The gateway reads each advert. Until it has read a device's newest advert, for example one "
+    "sent while the gateway was stopped for an update or a restart, it goes by the position this "
+    "home's radio still remembers for that device: from an older advert, or written by another "
+    "app. The radio keeps that position after sharing is switched off."
+)
+GOES = "The card goes once the gateway has read an advert without a position."
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+async def test_the_advert_position_card_says_what_the_gateway_goes_by(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    language: str,
+) -> None:
+    """The warning stays certain, as ADR 0025 errs to warn. What to do covers a device that
+    still shares and one whose newest advert the gateway has not read (an advert made while it
+    was stopped, the owner's case after an update): check the setting, then send an advert near
+    the radio. What this means says what the gateway goes by until then, and when the card goes."""
+    config = speaking(language, monkeypatch)
+    loaded, topics = await household_of(
+        hass, hass_ws_client, config, tmp_path, ALICE_NODE, Node(BOB, "Bob", COMPANION)
+    )
+    advert = problem_cards(loaded)["advert_position"]
+    await fire(
+        hass, topics.contacts, index(advert_carries_position=[BOB], advert_carries_position_total=1)
+    )
+    lines = render(hass, advert).split("\n")
+    verdict = said(config, "{names} broadcast their position to everyone in range.", names="Bob")
+    assert first(lines[0]) == ("warning", verdict, said(config, CHECK_SHARING))
+    paragraphs = "".join(f"<p>{said(config, text)}</p>" for text in (NOT_NEEDED, GOES_BY, GOES))
+    summary = said(config, "What this means")
+    assert lines[1:] == [f"<details><summary>{summary}</summary>{paragraphs}</details>"]
+    assert problems(caplog) == []
+
+
 async def test_the_clock_card_says_the_gateway_leaves_the_clock_while_set_clock_is_off(
     hass: HomeAssistant,
     mqtt: Any,

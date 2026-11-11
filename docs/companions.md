@@ -173,6 +173,29 @@ it, or after a restart of the gateway between hearing and adding it) and has not
 So press *Advert* once on each companion within range of the gateway's radio, or send a flood
 advert from its app, after the update whatever its sensor shows, and after switching sharing off.
 
+The check survives a restart: the state file keeps it. So the warning after a restart or an
+update, for a companion that no longer shares, comes from an advert the gateway could not check
+(one made while it was stopped, or one whose push or log was lost) while the radio's record still
+holds an old position. That position need not be from an advert the gateway saw: an older advert
+of the companion, a position another app wrote into the radio's record, or one that came with an
+imported contact. When such an advert turns the sensor on, the gateway logs it at info level
+("contact a1b2c3d4e5f6: its advert at <time> was not checked (no report from the radio); the
+radio's record holds a position, so Position in adverts is on until an advert without one is
+checked"), and at debug level when it changes nothing. The dashboard's card on *Overview* says
+what to do: check in the MeshCore app that sharing the location in adverts is off, then send an
+advert near this home's radio; the sensor goes off once the gateway has checked an advert without
+a position. A companion that cannot advert near the radio: remove its contact and add it again
+from the gateway ([home-assistant.md](home-assistant.md#adding-and-removing-contacts)), whose add
+writes no position into the record (`protocol/codec.py`, `new_contact`), so the sensor stays off
+until an advert carries one. A protected contact (a target or a command sender) cannot be removed.
+
+Before a companion's first check (none stored: after the update to 1.1.0a3, after the state file
+was lost, or for a contact another app added with a position), the record's position is also its
+document's position, with `position_source` `advert`
+([mqtt-api.md](mqtt-api.md#contacts-contacts-and-contactskey)). A position from adverts does not
+expire by time: it stays on the map and in *Where everyone is* until a checked advert carries
+none.
+
 ## Sensors
 
 A node with MeshCore's sensor firmware (a temperature probe in the shed, a water level in the

@@ -2764,6 +2764,18 @@ HELP_TOPICS = (
 )
 
 
+def test_help_says_what_the_gateway_goes_by_for_a_position_broadcast_to_everyone() -> None:
+    """The second place that states the warning as certain (owner feedback on 2.1.0): Help's
+    words for Overview's first line say, as the card does, that the gateway goes by the position
+    the radio remembers until it has read the device's newest advert."""
+    said = " ".join(rules.texts(view_of("help")))
+    assert (
+        "<li><b>a position broadcast to everyone</b>: A person's device tells everyone in range "
+        "where it is. Until the gateway has read the device's newest advert, it goes by the "
+        "position this home's radio still remembers for it.</li>"
+    ) in said
+
+
 def test_help_names_every_page_and_every_control() -> None:
     """DR-14 (rule 8): Help names every view and every name and button label of the dashboard:
     Chats, Contacts, Map, Gateway, Settings, Write to …, Return, then Send, and those of stage 5;

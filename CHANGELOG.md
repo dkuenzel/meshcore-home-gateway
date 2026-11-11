@@ -15,6 +15,13 @@ format, the command line and Home Assistant discovery are public interfaces
   page was scrolled. While it shows, the thread starts lower. The line no longer repeats the
   text: the field keeps it, and a text sent twice is in the thread (#143). Make the dashboard
   again after the update.
+- The dashboard's card of a position broadcast to everyone says what to do also when the device
+  no longer shares: check in the MeshCore app that sharing the location in adverts is off, then
+  send an advert near this home's radio. Its fold and *Help* say why the card can come after an
+  update or a restart: until the gateway has read a device's newest advert, it goes by the
+  position the radio still remembers for that device, from an older advert or written by another
+  app. The gateway's log says so at info level when such an advert turns *Position in adverts*
+  on. Make the dashboard again after the update.
 
 ## [2.1.0] - 2026-11-09
 
