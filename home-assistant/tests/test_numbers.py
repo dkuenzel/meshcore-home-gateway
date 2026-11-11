@@ -108,9 +108,10 @@ async def test_numbers_follow_the_dashboards_language(  # noqa: PLR0915 - card b
     assert f"<td>{written('2.5')}</td><td>10</td>" in shown
     assert "<td>Radio 2.0</td><td>Gateway</td>" in shown
 
-    # Settings: the airtime budget with a fraction, the burst a whole number
+    # Settings: the airtime budget and the burst with a fraction (a whole number: the duty
+    # cycle's 10 above)
     settings = shown_settings(config)
-    settings["airtime"] = {"budget_s_per_hour": 7.2, "burst_s": 10.0}
+    settings["airtime"] = {"budget_s_per_hour": 7.2, "burst_s": 2.5}
     await fire(
         hass,
         topics.config,
@@ -119,7 +120,12 @@ async def test_numbers_follow_the_dashboards_language(  # noqa: PLR0915 - card b
     )
     shown = render(hass, card(cards(loaded, "settings"), "set air = state_attr(c, 'airtime')"))
     assert (
-        said(config, "{budget} s an hour, bursts of {burst} s", budget=written("7.2"), burst="10")
+        said(
+            config,
+            "{budget} s an hour, bursts of {burst} s",
+            budget=written("7.2"),
+            burst=written("2.5"),
+        )
         in shown
     )
 
