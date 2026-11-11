@@ -342,11 +342,11 @@ views:
               {%- endif -%}
               {%- endif -%}
               {%- endmacro -%}
-              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87): cut while the setting is on now; the history carries no flag, so a message sent before a change of it shows the other way until it leaves the history; a gateway that does not say, being offline, as before (PC 16) -#}
-              {%- set nonce = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set nonce = not (nonce is mapping and nonce.get('confirm_nonce') == false) -%}
+              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87), whose entries say since 2.2 whether it added one (nonce, #142): cut where an entry says true, whatever the setting is now, never where it says false; an entry of 2.1 says nothing (null): cut it while the setting is on now or the gateway, being offline, does not say, as before (PC 16) -#}
+              {%- set coded = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set coded = not (coded is mapping and coded.get('confirm_nonce') == false) -%}
               {%- macro line(e) -%}
               {%- set raw = e.get('text') or '' -%}
-              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if nonce and e.get('direction') == 'out' and e.get('kind') == 'contact' else raw -%}
+              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if e.get('direction') == 'out' and e.get('kind') == 'contact' and (e.get('nonce') == true or (e.get('nonce') is none and coded)) else raw -%}
               {%- set text = mt(raw[:60] ~ ('…' if raw | length > 60 else '')) -%}{%- set sender = m(e.get('name') or '?') -%}
               {%- if e.get('direction') == 'in' and e.get('kind') == 'channel' -%}
               {#- Translators: a channel message in one line: the sender's name, as the sender typed it, then the text -#}
@@ -524,11 +524,11 @@ views:
               {%- else -%}{{ m(v) }}
               {%- endif -%}
               {%- endmacro -%}
-              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87): cut while the setting is on now; the history carries no flag, so a message sent before a change of it shows the other way until it leaves the history; a gateway that does not say, being offline, as before (PC 16) -#}
-              {%- set nonce = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set nonce = not (nonce is mapping and nonce.get('confirm_nonce') == false) -%}
+              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87), whose entries say since 2.2 whether it added one (nonce, #142): cut where an entry says true, whatever the setting is now, never where it says false; an entry of 2.1 says nothing (null): cut it while the setting is on now or the gateway, being offline, does not say, as before (PC 16) -#}
+              {%- set coded = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set coded = not (coded is mapping and coded.get('confirm_nonce') == false) -%}
               {%- macro line(e) -%}
               {%- set raw = e.get('text') or '' -%}
-              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if nonce and e.get('direction') == 'out' and e.get('kind') == 'contact' else raw -%}
+              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if e.get('direction') == 'out' and e.get('kind') == 'contact' and (e.get('nonce') == true or (e.get('nonce') is none and coded)) else raw -%}
               {%- set text = mt(raw[:60] ~ ('…' if raw | length > 60 else '')) -%}{%- set sender = m(e.get('name') or '?') -%}
               {%- if e.get('direction') == 'in' and e.get('kind') == 'channel' -%}
               {#- Translators: a channel message in one line: the sender's name, as the sender typed it, then the text -#}
@@ -676,11 +676,11 @@ views:
               {%- else -%}{{ m(e.get('name') or '?') }}
               {%- endif -%}
               {%- endmacro -%}
-              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87): cut while the setting is on now; the history carries no flag, so a message sent before a change of it shows the other way until it leaves the history; a gateway that does not say, being offline, as before (PC 16) -#}
-              {%- set nonce = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set nonce = not (nonce is mapping and nonce.get('confirm_nonce') == false) -%}
+              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87), whose entries say since 2.2 whether it added one (nonce, #142): cut where an entry says true, whatever the setting is now, never where it says false; an entry of 2.1 says nothing (null): cut it while the setting is on now or the gateway, being offline, does not say, as before (PC 16) -#}
+              {%- set coded = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set coded = not (coded is mapping and coded.get('confirm_nonce') == false) -%}
               {%- macro entry(e) -%}
               {%- set raw = (e.get('text') or '') | string -%}
-              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if nonce and e.get('direction') == 'out' and e.get('kind') == 'contact' else raw -%}
+              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if e.get('direction') == 'out' and e.get('kind') == 'contact' and (e.get('nonce') == true or (e.get('nonce') is none and coded)) else raw -%}
               {%- set trouble = e.get('direction') != 'in' and (e.get('state') in ['failed', 'expired'] or e.get('suspect') == true) -%}
               {%- set state = 'suspect' if e.get('state') == 'confirmed' and e.get('suspect') == true else (e.get('state') or e.get('step') or '') -%}
               {%- set attempt = e.get('attempt') | int(0) -%}{%- set attempts = e.get('max_attempts') | int(0) -%}{%- set later = when(e.get('at')) -%}
@@ -2424,11 +2424,11 @@ views:
               {%- else -%}<code>{{ m(v) }}</code>
               {%- endif -%}
               {%- endmacro -%}
-              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87): cut while the setting is on now; the history carries no flag, so a message sent before a change of it shows the other way until it leaves the history; a gateway that does not say, being offline, as before (PC 16) -#}
-              {%- set nonce = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set nonce = not (nonce is mapping and nonce.get('confirm_nonce') == false) -%}
+              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87), whose entries say since 2.2 whether it added one (nonce, #142): cut where an entry says true, whatever the setting is now, never where it says false; an entry of 2.1 says nothing (null): cut it while the setting is on now or the gateway, being offline, does not say, as before (PC 16) -#}
+              {%- set coded = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set coded = not (coded is mapping and coded.get('confirm_nonce') == false) -%}
               {%- macro row(e) -%}
               {%- set raw = (e.get('text') or '') | string -%}
-              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if nonce and e.get('direction') == 'out' and e.get('kind') == 'contact' else raw -%}
+              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if e.get('direction') == 'out' and e.get('kind') == 'contact' and (e.get('nonce') == true or (e.get('nonce') is none and coded)) else raw -%}
               {%- set trouble = e.get('direction') != 'in' and (e.get('state') in ['failed', 'expired'] or e.get('suspect') == true) -%}
               {%- set state = 'suspect' if e.get('state') == 'confirmed' and e.get('suspect') == true else (e.get('state') or e.get('step') or '') -%}
               {%- set attempt = e.get('attempt') | int(0) -%}{%- set attempts = e.get('max_attempts') | int(0) -%}{%- set later = when(e.get('at')) -%}

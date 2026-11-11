@@ -727,13 +727,15 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   a message not delivered, not sent or maybe forged in yellow, with the reason in words; one on
   its way in italics. The newest six stay open, fewer when they are long, the older ones in a
   fold. The delivery code that `[messages] confirm_nonce` adds to every direct message is
-  hidden: the gateway publishes it only in the final delivery event and the history (#87), so
-  the cards cut ` #` and 8 hex digits from the history's sent direct messages while
-  *Configuration* says the setting is on; with it off, a text of the household's that ends that
-  way shows whole. The cards follow the setting of now, the gateway that of the time a message
-  was sent: after a change, the messages sent before it, also one kept on its way across the
-  restart that changed it, show the other way until they leave the history. While the gateway
-  is offline, Home Assistant drops *Configuration*'s attributes and the cards cut it as before.
+  hidden: the gateway publishes it only in the final delivery event and the history (#87), and
+  since 2.2 each sent message of the history says whether the gateway added it (`nonce`, #142).
+  The cards cut ` #` and 8 hex digits where it did, whatever the setting is now, and nowhere
+  else: a text of the household's that ends that way shows whole, also one sent while the
+  setting was off and still in the history after it was switched on. A message sent by 2.1 does
+  not say; for it the cards follow the setting of now, as 2.1 did: they cut while
+  *Configuration* says the setting is on, or while the gateway is offline and Home Assistant has
+  dropped *Configuration*'s attributes, so such a message can show the other way until it leaves
+  the history.
   The thread's help links to *Help*, which explains each reason. The line that says why a
   message was refused stands above the thread, where the field does not cover it; it does not
   repeat the text, which stays in the field, and a text sent twice is in the thread. Under the

@@ -38,6 +38,12 @@ format, the command line and Home Assistant discovery are public interfaces
   event, so the next message of any kind, a channel message too, hid it. It now reads *Refused
   commands*, and the line names the sender and the reason, no longer the command's word, such as
   "Bob: command refused: wrong code" (#141). Make the dashboard again after the update.
+- The dashboard's chats cut the delivery code of `[messages] confirm_nonce` from a sent direct
+  message only where the history says the gateway added one (#142). They went by the setting of
+  now: after it was switched on, a household's own text sent before that ends in ` #` and 8 hex
+  digits showed without them, and after it was switched off, the messages sent before showed
+  their code, until they left the history. A message 2.1 sent still goes by the setting of now.
+  Make the dashboard again after the update.
 
 ## [2.1.1rc2] - 2026-11-12
 

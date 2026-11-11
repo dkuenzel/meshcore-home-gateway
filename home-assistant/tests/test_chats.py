@@ -105,6 +105,7 @@ def received(seconds: float, text: str = "Hi", **more: Any) -> dict[str, Any]:
         "queued_at": None,
         "suspect": None,
         "reason": None,
+        "nonce": None,
     }
     return entry | more
 
@@ -115,7 +116,8 @@ def to_alice(**more: Any) -> dict[str, Any]:
 
 
 def final(seconds: float, text: str = "Gate open", **more: Any) -> dict[str, Any]:
-    """A message sent from this home, final `seconds` ago, accepted a second before."""
+    """A message sent from this home, final `seconds` ago, accepted a second before; sent
+    without confirm_nonce's code unless `nonce=True` (#142)."""
     entry = received(seconds, text) | {
         "direction": "out",
         "name": "alerts",
@@ -125,6 +127,7 @@ def final(seconds: float, text: str = "Gate open", **more: Any) -> dict[str, Any
         "id": f"m{seconds:g}",
         "queued_at": ago(seconds + 1),
         "suspect": False,
+        "nonce": False,
     }
     return entry | more
 
@@ -294,10 +297,15 @@ async def test_a_message_not_delivered_not_sent_or_maybe_forged_is_yellow_with_t
         hass,
         HISTORY,
         [
-            final(10, "Lights" + CODE, **to_alice(state="confirmed", suspect=True)),
-            final(20, "Dinner" + CODE, **to_alice(state="failed", reason="no_acknowledgement")),
-            final(30, "Late" + CODE, **to_alice(state="expired", reason="queue_ttl")),
-            final(40, "Odd" + CODE, **to_alice(state="failed", reason="error_7")),
+            final(10, "Lights" + CODE, **to_alice(state="confirmed", suspect=True, nonce=True)),
+            final(
+                20,
+                "Dinner" + CODE,
+                **to_alice(state="failed", reason="no_acknowledgement"),
+                nonce=True,
+            ),
+            final(30, "Late" + CODE, **to_alice(state="expired", reason="queue_ttl", nonce=True)),
+            final(40, "Odd" + CODE, **to_alice(state="failed", reason="error_7", nonce=True)),
             received(60, "Ends in #1a2b3c4d", **to_alice()),  # hers: as received
         ],
     )
@@ -324,7 +332,7 @@ async def test_a_message_not_delivered_not_sent_or_maybe_forged_is_yellow_with_t
     assert problems(caplog) == []
 
 
-async def test_the_delivery_code_is_cut_only_where_and_while_the_gateway_adds_one(
+async def test_the_delivery_code_is_cut_where_the_history_says_the_gateway_added_it(
     hass: HomeAssistant,
     mqtt: Any,
     hass_ws_client: Any,
@@ -332,14 +340,16 @@ async def test_the_delivery_code_is_cut_only_where_and_while_the_gateway_adds_on
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """#87: the gateway adds the code of `[messages] confirm_nonce` only to what the history and
-    the final delivery event carry; `pending`, `queued` and `sent` show the text without it. So
-    the cards cut ' #' and 8 hex digits only from a sent direct message of the history, and only
-    while the configuration says confirm_nonce is on. With it off, a household's own text that
-    ends like a code shows whole, in a chat, Latest messages, Latest chats and All chats; on its
-    way, also with it on. Without the setting (the gateway offline: Home Assistant drops the
-    configuration's attributes) the cards cut it as before. The refused line quotes no text
-    (#143)."""
+    """#142: the gateway adds the code of `[messages] confirm_nonce` only to what the history and
+    the final delivery event carry (#87), and since 2.2 each sent entry of the history says with
+    `nonce` whether it did. So the cards cut ' #' and 8 hex digits from a sent direct message
+    where it says true, whatever the setting is now; never where it says false, so that a
+    household's own text that ends like a code shows whole; and only where it is null, a row of
+    2.1, by the setting as before: while the configuration says confirm_nonce is on or does not
+    say (the gateway offline: Home Assistant drops the configuration's attributes). A mixed
+    history in a chat and Latest messages, each of its rows as the newest in Latest chats and
+    All chats; one on its way has no code and shows whole, also with the setting on. The
+    refused line quotes no text (#143)."""
     config = make_config()
     loaded = await chats_of(hass, hass_ws_client, tmp_path, config)
     alice = thread(loaded, "alice")
@@ -347,24 +357,39 @@ async def test_the_delivery_code_is_cut_only_where_and_while_the_gateway_adds_on
     latest = card(cards(loaded, "overview"), "./messages")  # Latest chats
     chats = card(loaded, "Who reads what")  # All chats
     own = "Gate code ends #0a1b2c3d"  # the household's own words, as typed
-    for nonce, sent, shown in (
-        ({"confirm_nonce": False}, own, own),
-        ({"confirm_nonce": True}, own + CODE, own),
-        ({"truncate": True}, own + CODE, own),  # a section without the setting
-        (None, own + CODE, own),  # no section: the gateway offline
+    for setting, on in (
+        ({"confirm_nonce": True}, True),
+        ({"confirm_nonce": False}, False),
+        ({"truncate": True}, True),  # a section without the setting
+        (None, True),  # no section: the gateway offline
     ):
-        hass.states.async_set(CONFIGURATION, ago(0), {} if nonce is None else {"messages": nonce})
-        documented(hass, HISTORY, [final(60, sent, **to_alice(state="confirmed"))])
+        hass.states.async_set(
+            CONFIGURATION, ago(0), {} if setting is None else {"messages": setting}
+        )
+        mixed = [  # oldest first, as a thread shows them; each with what the cards show
+            (final(30, own + CODE, **to_alice(state="confirmed", nonce=True)), own),
+            (final(20, own, **to_alice(state="confirmed", nonce=False)), own),
+            # sent by 2.1 with the code: the setting of now decides, as in 2.1
+            (
+                final(10, own + CODE, **to_alice(state="confirmed", nonce=None)),
+                own if on else own + CODE,
+            ),
+        ]
+        documented(hass, HISTORY, [entry for entry, _ in mixed])
         documented(hass, PENDING, [])
-        assert texts(render(hass, alice)) == [shown], nonce
-        assert texts(render(hass, everything)) == [shown], nonce
-        for found in (latest, chats):
-            assert f"Sent: {shown}</small>" in render(hass, found), (nonce, found["content"][:40])
+        shown = [text for _, text in mixed]
+        assert texts(render(hass, alice)) == shown, setting
+        assert texts(render(hass, everything)) == shown, setting
+        for entry, text in mixed:
+            documented(hass, HISTORY, [entry])
+            for found in (latest, chats):
+                said = render(hass, found)
+                assert f"Sent: {text}</small>" in said, (setting, entry["nonce"], said[:200])
         documented(hass, PENDING, [on_its_way(5, own, **to_alice(target=None))])
-        assert texts(render(hass, alice))[-1] == own, nonce
-        assert texts(render(hass, everything))[-1] == own, nonce
+        assert texts(render(hass, alice))[-1] == own, setting
+        assert texts(render(hass, everything))[-1] == own, setting
         for found in (latest, chats):
-            assert f"On its way: {own}</small>" in render(hass, found), nonce
+            assert f"On its way: {own}</small>" in render(hass, found), setting
     refused = refused_line(loaded, "alice")
     event = DeliveryEvent("r1", "operator", DeliveryState.DUPLICATE, text=own)
     await fire(hass, topics_of(config).delivery, delivery_payload(event))
@@ -806,7 +831,7 @@ async def test_all_chats_and_latest_chats_show_each_chats_newest_message(
         hass,
         HISTORY,
         [
-            final(60, "Reply" + CODE, **to_alice(state="confirmed")),
+            final(60, "Reply" + CODE, **to_alice(state="confirmed", nonce=True)),
             received(300, "Hello", **to_alice()),
             received(1200, "Old news", channel_index=2, target="my-target"),
             received(1300, "Stranger", channel_index=5, target=None),
@@ -910,9 +935,14 @@ async def test_latest_messages_show_each_message_once_as_its_chat_does(
         hass,
         HISTORY,
         [
-            final(10, "Lights" + CODE, **to_alice(state="confirmed", suspect=True)),
-            final(20, "Dinner" + CODE, **to_alice(state="failed", reason="no_acknowledgement")),
-            final(30, "Stuck" + CODE, **to_alice(state="expired", reason="no_radio")),
+            final(10, "Lights" + CODE, **to_alice(state="confirmed", suspect=True, nonce=True)),
+            final(
+                20,
+                "Dinner" + CODE,
+                **to_alice(state="failed", reason="no_acknowledgement"),
+                nonce=True,
+            ),
+            final(30, "Stuck" + CODE, **to_alice(state="expired", reason="no_radio", nonce=True)),
             received(60, "Ends in #1a2b3c4d", **to_alice()),
         ],
     )
@@ -921,7 +951,7 @@ async def test_latest_messages_show_each_message_once_as_its_chat_does(
     assert texts(output) == ["Ends in #1a2b3c4d", "Stuck", "Dinner", "Lights", "Soon"]
     assert CODE not in "".join(cell for _, cell in rows(output) if "Ends in" not in cell)
     assert "✗ not sent: waited too long (no radio)" in rows(output)[1][1]
-    done = final(10, "Done" + CODE, **to_alice(state="confirmed"), id="d1")
+    done = final(10, "Done" + CODE, **to_alice(state="confirmed", nonce=True), id="d1")
     documented(hass, HISTORY, [done])
     documented(
         hass,
