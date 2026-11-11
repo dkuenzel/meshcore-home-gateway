@@ -248,8 +248,9 @@ class Observer:
         """The channels whose received messages are published (`[messages] publish_channels`,
         `ignore_channels`). Those of the others that the history holds, which an earlier version
         kept of every channel, leave the `history` document, and the newest of the rest take
-        their place; they stay in the history until they are `messages_days` old (#103). The
-        gateway's own messages to a channel stay, as while it runs."""
+        their place (#103); with `publish_channels = "targets"` the start deleted them before
+        (`forget_unpublished_channels`, #136), with "all" they stay until they are `messages_days`
+        old. The gateway's own messages to a channel stay, as while it runs."""
 
         def shown(entry: HistoryEntry) -> bool:
             channel, own = entry.kind == "channel", entry.direction == "out"
