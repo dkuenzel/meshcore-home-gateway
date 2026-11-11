@@ -1004,8 +1004,8 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   texts on such channels reach the bus, the history and Home Assistant's recorder; `"targets"`,
   the default since 2.0.0, keeps only the channels the household chose.
 * Every radio in range is a heard node with its key, type, its owner's chosen name, when it was
-  heard and its signal on the bus, in the history and in Home Assistant's recorder
-  (`[contacts] heard_nodes = "full"`, the default since 2.2,
+  heard and its signal on the bus, in the history and in Home Assistant's recorder and its
+  `core.restore_state` (`[contacts] heard_nodes = "full"`, the default since 2.2,
   [ADR 0032](decisions/0032-heard-nodes-kept-with-name-signal-and-time-by-default.md));
   `"keys"`, the default of 2.0 and 2.1, and `"off"` keep less. The
   opt-in `rx` diagnostics publish every packet as received, other people's positions in their

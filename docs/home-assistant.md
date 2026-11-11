@@ -1301,8 +1301,10 @@ heard* and the select *Add heard node*. By default (`[contacts] heard_nodes = "f
 the *New node* event carries the name its owner chose, when it was heard and its signal, which
 the recorder keeps, and *Add heard node* offers the nodes by name; `"keys"` shows their keys and
 types only, `"off"` keeps nothing but the look-alikes' keys
-([configuration.md](configuration.md#contacts)). What the gateway keeps, of whom and for how
-long, and the pattern that keeps the *New node* events out of the recorder, are in
+([configuration.md](configuration.md#contacts)). The recorder leaves the options of *Add heard
+node* out, but `.storage/core.restore_state` keeps the last of them with the names, as it keeps
+the last *New node* event, and no recorder exclusion reaches it. What the gateway keeps, of whom
+and for how long, and the pattern that keeps the *New node* events out of the recorder, are in
 [privacy.md](privacy.md#other-people).
 
 Message texts, sender keys and sender names are attributes of the event entities, so Home

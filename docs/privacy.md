@@ -44,7 +44,7 @@ prints holds what the history holds: treat both as the history itself.
 
 | What | Where | How long | Off |
 | --- | --- | --- | --- |
-| Nodes heard but not added: key, type, the name its owner chose, when each was first and last heard, how, hops, SNR and RSSI (`[contacts] heard_nodes = "full"`, the default since 2.2); the history also keeps the time its last advert carried; never a position | `nodes` (retained, the last 50), `node` events, Home Assistant's *New node* (its attributes), *Add heard node* (its options name the nodes), *Nodes heard* (a count) and *Look-alike node heard* (keys), the history | 7 days after the last time heard, in memory and in the history; Home Assistant's recorder keeps the *New node* events (below) | `"keys"` publishes and keeps the key and type only, and in the history besides them when each was first and last heard, how, and the time its last advert carried; `"off"` keeps nothing but the keys of look-alikes of contacts and protected keys, and of heard nodes whose name a contact, the gateway or another heard node has (`name_taken`) ([configuration](configuration.md#contacts)) |
+| Nodes heard but not added: key, type, the name its owner chose, when each was first and last heard, how, hops, SNR and RSSI (`[contacts] heard_nodes = "full"`, the default since 2.2); the history also keeps the time its last advert carried; never a position | `nodes` (retained, the last 50), `node` events, Home Assistant's *New node* (its attributes), *Add heard node* (its options name the nodes), *Nodes heard* (a count) and *Look-alike node heard* (keys), the history | 7 days after the last time heard, in memory and in the history; Home Assistant's recorder keeps the *New node* events, and `.storage/core.restore_state` the last of them and the last options of *Add heard node*, up to 20 labels with names, also in Home Assistant's backups (below) | `"keys"` publishes and keeps the key and type only, and in the history besides them when each was first and last heard, how, and the time its last advert carried; `"off"` keeps nothing but the keys of look-alikes of contacts and protected keys, and of heard nodes whose name a contact, the gateway or another heard node has (`name_taken`) ([configuration](configuration.md#contacts)) |
 | Messages on the channels that are a target: text and the name the sender claims; with `[messages] publish_channels = "all"` on every channel | `received` events, `history` (retained) and Home Assistant's *Message history*, the history | 30 days | a channel that is not a target is dropped (`[messages] publish_channels = "targets"`, the default); `ignore_channels` leaves out single ones ([configuration](configuration.md#messages)) |
 | Other people's companions among the radio's contacts | as the household's | as the household's | none of them is asked until included (`[telemetry] ask = "household"`, the default); with `"all"` exclude them ([telemetry](configuration.md#telemetry)) |
 | Every packet the radio receives: raw bytes with other people's ciphertext and the positions in their adverts, and the signal | `rx` events; Home Assistant's *Last packet RSSI* and *Last packet SNR* (disabled by default) | not kept by the gateway | off unless `[diagnostics] publish_rx_log = true`: a diagnostic, it shows the packets as received, positions included |
@@ -62,11 +62,13 @@ often and how near a radio is
 To keep less, set `heard_nodes = "keys"` or `"off"` and restart: the rows the history holds lose
 name and signal at the start with `"keys"`, and go with the next hourly purge with `"off"`.
 Home Assistant's recorder keeps each *New node* event with its attributes, the name, hops, SNR,
-RSSI and when, and the last one also in `.storage/core.restore_state`; it does not record the
-options of *Add heard node* ([platform notes](platform-notes.md#home-assistant-mqtt)). An
-administrator who wants the heard nodes out of Home Assistant's history, while the gateway still
-keeps them, adds this pattern to the recorder's exclusions
-([Home Assistant](home-assistant.md#privacy)); the `*` stands for any `node_id`:
+RSSI and when, and the last one also in `.storage/core.restore_state`. It does not record the
+options of *Add heard node*, but it keeps the last of them, the labels of up to 20 heard nodes
+with their names, in `.storage/core.restore_state` too, and so in its backups
+([platform notes](platform-notes.md#home-assistant-mqtt)). An administrator who wants the heard
+nodes out of Home Assistant's history, while the gateway still keeps them, adds this pattern to
+the recorder's exclusions ([Home Assistant](home-assistant.md#privacy)); the `*` stands for any
+`node_id`:
 
 ```yaml
 recorder:
@@ -74,6 +76,9 @@ recorder:
     entity_globs:
       - event.meshcore_home_gateway_*_node
 ```
+
+The exclusion does not reach `core.restore_state`: only `heard_nodes = "keys"` or `"off"` keeps
+the names out of Home Assistant.
 
 The gateway sends nothing it learns on the mesh back to the mesh. As the managed profile keeps
 it, its radio puts no position into its adverts and answers no one's telemetry requests

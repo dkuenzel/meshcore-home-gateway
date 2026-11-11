@@ -65,7 +65,10 @@ range hears anyway.
 * Bad, because strangers' names, signal and times are kept and published by default: on the
   broker in `nodes` and the `node` events, in the history, and unless the administrator leaves
   them out in Home Assistant's recorder, which keeps the *New node* event's attributes
-  ([privacy.md](../privacy.md#other-people)).
+  ([privacy.md](../privacy.md#other-people)). Home Assistant also keeps the last *New node*
+  event and the last options of *Add heard node*, up to 20 names, in
+  `.storage/core.restore_state` and its backups, which no recorder exclusion reaches: only
+  `keys` or `off` keeps the names out of it.
 * Bad, because a household that chose nothing now keeps more of the people around it than with
   2.0 and 2.1; the changelog says how to keep less.
 
@@ -76,17 +79,21 @@ advert claims, its signal comes from the radio's packet log, which is not authen
 grants anything, a name is compared only to flag a node that may pass for another (SEC-007). B3
 the broker: `nodes` and the `node` events carry the names and signal to every client the ACL lets
 read them. B4 Home Assistant and B5 its users: the *New node* event and *Add heard node* show
-them to every user, and the recorder keeps the events. B6 the container: the history and its
-backups hold them for 7 days. See the [threat model](../threat-model.md).
+them to every user, the recorder keeps the events, and `.storage/core.restore_state` the last
+event and the last options of *Add heard node*, also in Home Assistant's backups. B6 the
+container: the history holds them for 7 days after the last time heard, its backups for as long
+as they are kept. See the [threat model](../threat-model.md).
 
 ### Confirmation
 
 `tests/test_config.py` (the default and the levels), `tests/test_observer.py` (what the default
 publishes and keeps, a taken name flagged after a restart, a node kept under `keys` named again by
-its next advert), `tests/test_manage_entities.py` (the options name the nodes),
-`tests/test_installer.py` (a new installation follows the default), the snapshot of the public
-interfaces (the changed default), and the contract test of the dashboard's *Settings* for each
-level (`home-assistant/tests/test_gateway.py`).
+its next advert), `tests/test_contact_manager.py` (an add after a restart takes the name with the
+default and the key's digits with `keys`), `tests/test_manage_entities.py` (the options name the
+nodes), `tests/test_installer.py` (a new installation follows the default), the snapshot of the
+public interfaces (the changed default), the contract test of the dashboard's *Settings* for each
+level (`home-assistant/tests/test_gateway.py`), and the contract test that Home Assistant keeps
+the options of *Add heard node* as restore data (`home-assistant/tests/test_manage_contacts.py`).
 
 ## Pros and Cons of the Options
 

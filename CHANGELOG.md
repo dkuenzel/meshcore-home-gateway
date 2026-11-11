@@ -14,7 +14,8 @@ format, the command line and Home Assistant discovery are public interfaces
   people's radios, the gateway publishes and keeps the name its owner chose, when each was first
   and last heard, how, and its hops, SNR and RSSI, never a position: in `nodes`, the `node`
   events, the history, the options of *Add heard node* and the attributes of the *New node*
-  event, which Home Assistant's recorder keeps
+  event. Home Assistant's recorder keeps the events, and `.storage/core.restore_state`, beyond
+  the reach of a recorder exclusion, the last event and the last options, up to 20 names
   ([ADR 0032](docs/decisions/0032-heard-nodes-kept-with-name-signal-and-time-by-default.md),
   [privacy.md](docs/privacy.md#other-people)). Names are in every advert in the clear; when and
   how strongly a node was heard show how often and how near it is. Since 2.0.0 the default was

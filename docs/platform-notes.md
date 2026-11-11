@@ -149,6 +149,7 @@ One line per fact, by section.
 * A `command_template` with Jinja's `tojson` writes every character outside ASCII as a `\u` escape, an emoji as two (12 bytes), and `<`, `>`, `&` and `'` as escapes too.
 * Event attributes, message texts and sender keys included, are recorded, and the last event of each event entity is kept as restore data in `.storage/core.restore_state`.
 * A select's `options` are not recorded.
+* An MQTT select is a RestoreEntity: its whole state, `options` included, is kept in `.storage/core.restore_state`.
 * The MQTT notify entity publishes only the `message` of `notify.send_message`, with the entity's QoS and without retain; `title` is dropped.
 * From 2026.10.0, `mqtt.publish` and `mqtt.dump` need an administrator when a user starts them; `notify.send_message` does not.
 * A device discovery topic may have a node ID level, `<prefix>/device/<node_id>/<object_id>/config`, and works like one without; one subscription with `+` for the object ID sees all devices below that node ID, and does not match the one-level topic.
@@ -1382,9 +1383,22 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   lines 29-31 at 2026.11.0 (`_entity_component_unrecorded_attributes`). *Here:*
   [privacy.md](privacy.md#other-people): the options of *Add heard node* name the nodes heard
   (`[contacts] heard_nodes = "full"`, the default), and its state is always unknown, so the
-  recorder keeps neither; the exclusion there is for the *New node* event. *Check:*
+  recorder keeps neither; the exclusion there is for the *New node* event. The options still
+  reach `.storage/core.restore_state` (next fact). *Check:*
   `src 2026.10.2 components/select/__init__.py | sed -n 97,99p` and
   `src 2026.11.0 components/select/entity.py | sed -n 29,31p`.
+* **An MQTT select is a RestoreEntity: its whole state, `options` included, is kept in
+  `.storage/core.restore_state`.** Home Assistant writes the state of every registered
+  RestoreEntity with all its attributes there every 15 minutes and at its stop, whatever the
+  recorder leaves out; it is in Home Assistant's backups. *Verified:* 2026.10.2 and 2026.11.0,
+  `test_the_options_with_the_heard_nodes_names_are_kept_as_restore_data`
+  (home-assistant/tests/test_manage_contacts.py); source `components/mqtt/select.py` line 84
+  (`class MqttSelect(MqttEntity, SelectEntity, RestoreEntity)`) and `helpers/restore_state.py`
+  line 30 (`STATE_DUMP_INTERVAL`), lines 74-80 at 2026.10.2 and 80-87 at 2026.11.0
+  (`StoredState.as_dict`: the whole state). *Here:* [privacy.md](privacy.md#other-people): with
+  `heard_nodes = "full"` the last options of *Add heard node*, the labels of up to 20 heard
+  nodes, keep their names there; no recorder exclusion removes them, `"keys"` or `"off"` does.
+  *Check:* `make ha-test`.
 * **The MQTT notify entity publishes only the `message` of `notify.send_message`, with the entity's
   QoS and without retain; `title` is dropped.** Stated in
   [home-assistant.md, How discovery behaves](home-assistant.md#how-discovery-behaves); verified
