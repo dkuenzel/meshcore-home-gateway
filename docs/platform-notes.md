@@ -207,6 +207,7 @@ One line per fact, by section.
 * The Markdown card's sanitiser escapes `<wbr>`, which js-xss's default allow list lacks; the soft hyphen (U+00AD) and the zero-width space (U+200B) pass as text.
 * A view without `icon` shows its title alone in the tab bar; one with `icon` shows the icon alone, the title only as its tooltip, unless `show_icon_and_title: true`; a subview gets no tab.
 * A section of a sections view hides while all its cards are hidden; since frontend `20261028.4` (Home Assistant 2026.11) while all its cards, badges and sections are.
+* On Home Assistant 2026.10 the first load of a YAML dashboard whose file was written again while Home Assistant ran can report `this._layoutElement.setConfig is not a function`; the page still shows its cards. Frontend `20261028.4` (2026.11) does not.
 
 **[openHAB Homie binding](#openhab-homie-binding)**
 
@@ -1964,6 +1965,53 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   *Verified:* `src/panels/lovelace/sections/hui-section.ts` lines 292-296 at `20260930.4` and
   379-384 at `20261028.4`. *Here:* a list whose rows all hide shows no empty frame, and
   `Viewer.shown` in the contract tests walks the same rule. *Check:* `make ha-test`.
+* **On Home Assistant 2026.10 the first load of a YAML dashboard whose file was written again
+  while Home Assistant ran can report `this._layoutElement.setConfig is not a function`; the
+  page still shows its cards. Frontend `20261028.4` (2026.11) does not.** Core keeps the
+  dashboard it last read. At the next `lovelace/config` after the file changed, it reads the file
+  again and fires `lovelace_updated`, also to the page whose call it answers. Frontend
+  `20260930.4` ignores that event only when the page already has a configuration, so a first load
+  fetches the configuration a second time. When the second one reaches `hui-view` after it created
+  the sections view, whose code loads on demand, and before that code has loaded, `hui-view` calls
+  `setConfig` on an element that has no such method yet: an uncaught `TypeError`. The second
+  configuration, the same as the first, is then not applied. A large dashboard makes the second
+  configuration come later, and so makes the error likelier. `20261028.4` ignores the next update
+  event at every fetch of a YAML dashboard and forgets that 2 s later; its `hui-view` is unchanged.
+  *Verified:* frontends `20260930.4` (Home Assistant 2026.10.2) and `20261028.4` (2026.11.0), in
+  the bundle:
+  - `hui-view`'s `_setConfig`, `this._layoutElement&&this._layoutElementType===e.type?this._layoutElement.setConfig(e):…`
+    (`frontend_latest/90012.9945d8238ffa5a3a.js` line 1, column 27994, where the `TypeError` is
+    raised; `86920.c8c3826e90a8961b.js` line 2, column 35397). It is called from
+    `_initializeConfig`, which `willUpdate` calls again for a new `lovelace` whose view differs.
+  - The sections view loaded on demand (`sections:()=>i.e(25456)`, `sections:()=>i.e(92947)`).
+  - `ha-panel-lovelace`'s `_fetchConfig`:
+    `this.lovelace&&"yaml"===this.lovelace.mode&&(this._ignoreNextUpdateEvent=!0)`
+    (`5496.c0eba59802d17a07.js` line 1, column 5900) against
+    `"yaml"===a&&(this._ignoreNextUpdateEvent=!0)` (`16459.a3ed9d288958fd74.js` line 1,
+    column 5480).
+  - Core `components/lovelace/dashboard.py` at 2026.10.2: lines 234-265 (a changed file read
+    again counts as updated once a copy was read) and 88-90 (the event); the same code at
+    2026.11.0, lines 232-263 and 86-88.
+
+  In Chromium against both versions, 10 loads per case, each in a new browser at 360x800:
+  - With the file unchanged, no load reported the error on either version, also with the sections
+    view's code held back 800 ms. This covered Home Assistant's own minimal dashboard (one
+    sections view with one Markdown card), three variants of it (a second view first, the view as
+    a subview, with a footer) and the generated dashboard's chat page.
+  - With the file's time set to now before each load, 2026.10.2 reported it on 1 and 0 of 10 loads
+    of the minimal dashboard (without and with the code held back), 2 and 5 of 10 of the minimal
+    dashboard with an unvisited second view that makes it as large as the generated one, and 7
+    and 9 of 10 of the chat page. 2026.11.0 reported it on none.
+  - The browser check's step 6 right after its step 4 reported it on its first page on 2026.10.2
+    in two of two runs, and not on 2026.11.0.
+
+  *Here:* step 4 of the dashboard's [browser check](testing.md#the-dashboard-in-a-browser)
+  writes the dashboard again while Home Assistant runs, so step 6 allows exactly this message
+  (`--allow-error`). A household that makes the dashboard again sees no change on the page;
+  the message appears only in the browser's console. *Check:* `grep -o
+  '.\{45\}(this\._ignoreNextUpdateEvent=!0)' hass_frontend/frontend_latest/*.js` in the
+  `home-assistant-frontend` wheel shows `this.lovelace&&"yaml"===this.lovelace.mode&&` before
+  it in `20260930.4` and `"yaml"===a&&` in `20261028.4`.
 
 ## openHAB Homie binding
 

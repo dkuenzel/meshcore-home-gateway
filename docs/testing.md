@@ -222,8 +222,15 @@ Then, for each Home Assistant version to check (before a release, each series th
 
    ```sh
    .venv-browser/bin/python tools/browser_check.py --url http://127.0.0.1:8123 \
-     --user household --dashboard mesh-radio1 --out build/browser overview messages contacts map
+     --user household --dashboard mesh-radio1 --out build/browser \
+     --allow-error 'this\._layoutElement\.setConfig is not a function' \
+     overview messages contacts map
    ```
+
+   On Home Assistant 2026.10 the first page after step 4 can report `this._layoutElement.setConfig
+   is not a function`. The frontend raises it after the dashboard's file was written again
+   ([platform notes](platform-notes.md#home-assistant-dashboards)), and the check allows exactly
+   that message.
 
 7. Stop the runner with Ctrl-C. For the pages that show messages on their way, start it again with
    `--stuck` and a new work folder.
