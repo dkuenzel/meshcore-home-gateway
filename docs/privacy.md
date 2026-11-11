@@ -10,11 +10,11 @@ Data protection law usually exempts what a household keeps for itself (in the EU
 GDPR); the exemption does not cover what leaves the household, and the Court of Justice held that
 a home camera filming public space falls outside it (Ryneš, C-212/13): recording every radio that
 passes the house is closer to that than to a phone's contacts, which is why `[contacts]
-heard_nodes` can keep less of strangers than its default does. This is not legal advice. Do not post dashboards,
-screenshots or copies of the history that show other people's names, keys or messages, and keep
-backups private and encrypted ([state and backup](deployment.md#4-operations)). The archive of
-`meshcore-home-gateway backup` holds all of the state, and what `history export` prints holds what
-the history holds: treat both as the history itself.
+heard_nodes` can keep less of strangers than its default does. This is not legal advice. Do not
+post dashboards, screenshots or copies of the history that show other people's names, keys or
+messages, and keep backups private and encrypted ([state and backup](deployment.md#4-operations)).
+The archive of `meshcore-home-gateway backup` holds all of the state, and what `history export`
+prints holds what the history holds: treat both as the history itself.
 
 ## Where
 
@@ -55,9 +55,10 @@ A look-alike, a node with the first 6 bytes of a contact's key, is kept even wit
 heard node whose name is taken: someone may pass for a member of the household
 ([mqtt-api.md](mqtt-api.md#nodes-heard-nodes)).
 
-By default the gateway keeps of the radios around the house what the household sees of them: a
-name is in every advert in the clear, and when and how strongly a radio was heard tells how often
-and how near it is ([ADR 0032](decisions/0032-heard-nodes-kept-with-name-signal-and-time-by-default.md)).
+By default the gateway keeps the names of the radios around the house, and when and how strongly
+each was heard: a name is in every advert in the clear, and the times and the signal tell how
+often and how near a radio is
+([ADR 0032](decisions/0032-heard-nodes-kept-with-name-signal-and-time-by-default.md)).
 To keep less, set `heard_nodes = "keys"` or `"off"` and restart: the rows the history holds lose
 name and signal at the start with `"keys"`, and go with the next hourly purge with `"off"`.
 Home Assistant's recorder keeps each *New node* event with its attributes, the name, hops, SNR,

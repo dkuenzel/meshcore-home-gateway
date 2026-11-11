@@ -563,9 +563,8 @@ The nodes are other people's radios ([What the gateway keeps](privacy.md)). By d
 kept while `"keys"` was set has an empty `name` and no signal until its next advert. With
 `"keys"` each entry has its key, prefix, type, `look_alike` and `name_taken` only: `name`,
 `first_heard_at`, `heard_at`, `heard_via`, `hops`, `snr_db` and `rssi_dbm` are `null`. With
-`"off"`, `total` is 0 and
-`nodes` empty; `look_alike` and `look_alike_total` still name the look-alikes, and `name_taken`
-and `name_taken_total` the heard nodes whose name is taken
+`"off"`, `total` is 0 and `nodes` empty; `look_alike` and `look_alike_total` still name the
+look-alikes, and `name_taken` and `name_taken_total` the heard nodes whose name is taken
 ([configuration](configuration.md#contacts)).
 
 ## History: `history`
