@@ -147,7 +147,9 @@ AMENDMENT = re.compile(
 def test_the_index_of_the_decisions_names_every_dated_amendment() -> None:
     """ADR 0001: the index names each amendment of a record. Every line that starts with
     `Amended on <date>` or `Note of <date>` has its date in the record's status, or the number
-    of the record it was made by or with (`amended by 0025`)."""
+    of the record it was made by or with (`amended by 0025`). Two amendments of one date count
+    as named once the date is: the rows name such a pair by its date alone (0009, 2026-11-04)
+    or in one parenthesis for both (0005, 2026-11-03), so the test cannot count them."""
     rows = INDEX_ROW.findall((DECISIONS / "README.md").read_text(encoding="utf-8"))
     found, unnamed = 0, []
     for _, name, _, status in rows:
