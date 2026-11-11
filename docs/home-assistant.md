@@ -39,6 +39,7 @@ pins, the release check against a real installation ([testing.md](testing.md#rel
 
 | Gateway | Contract tests | Release check |
 | --- | --- | --- |
+| 2.1.1rc1 | 2026.10.2, and 2026.11.0 from its own environment | the browser check on 2026.10.2 and 2026.11.0; the maintainer's use before 2.1.1 |
 | 2.1.0, the program of 2.1.0rc1 | 2026.10.2, and 2026.11.0 from its own environment | the browser check of 2.1.0rc1 on 2026.10.2 and 2026.11.0; the maintainer's use follows 2.1.0, as they decided |
 | 2.1.0rc1 | 2026.10.2, and 2026.11.0 from its own environment | the browser check on 2026.10.2 and 2026.11.0; the maintainer's use follows 2.1.0, as they decided |
 | 2.0.0, the program of 2.0.0rc3 | 2026.10.2 | 2026.11.0 |

@@ -8,6 +8,23 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [2.1.1rc1] - 2026-11-11
+
+The release candidate of 2.1.1: the fixes from the maintainer's first use of 2.1.0, and #134,
+#143, #144 and #145. It has had no release check yet: 2.1.1 ships this program after the
+maintainer has used this candidate.
+
+For the administrator: make the dashboard again after the update; nothing else changes. With
+`[homie] enabled`, a node ID with `_` now gets a warning at every start (#134).
+
+Known limits of the dashboard: on a 360x800 phone, the newest message of a full chat stands
+behind the field until the page is scrolled (#149). After an update or a restart, the card of a
+position broadcast to everyone can show until the companion's next advert while the home radio
+still remembers an old position ([companions.md](docs/companions.md#positions-in-adverts)).
+
+CI, the Home Assistant contract tests on 2026.10.2 and 2026.11.0 and the browser check of the
+dashboard on both checked it.
+
 ### Fixed
 
 - On a chat's page of the dashboard, the line that says why *Send* was refused stands above the
