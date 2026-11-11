@@ -77,6 +77,7 @@ class RetainedTopics:
                 topics.pending,
                 topics.settings,
                 topics.config,
+                topics.refused_commands,
             }
         )
         self._contact_prefix = topics.contacts + "/"

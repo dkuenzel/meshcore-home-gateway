@@ -124,6 +124,7 @@ class Bridge:
             channels = ", ".join(map(str, sorted(target_channels(self.config)))) or "none"
             log.info("channel messages published only from the channels of targets: %s", channels)
         observe(self._configuration, None)  # the broker's connect publishes it
+        observe(self.observer.refused, self._ledger.refused)  # as the last run left them
         await self._bus.start()
         self.outbox.restore()
         self._notify("READY=1")

@@ -25,6 +25,7 @@ from typing import Any, Protocol
 
 from meshcore_home_gateway.core import adverts, lpp
 from meshcore_home_gateway.core.budget import RateLimit
+from meshcore_home_gateway.core.commands import Refusal
 from meshcore_home_gateway.core.contacts import Contact, HeardNodes
 from meshcore_home_gateway.core.mesh import (
     COMPANION,
@@ -87,6 +88,7 @@ from meshcore_home_gateway.views import (
     name_taken_nodes,
     nodes_document,
     pending_document,
+    refused_document,
     restated,
     setting_value,
     settings_document,
@@ -487,6 +489,12 @@ class Observer:
         their steps, and so after the history entry of one that became final."""
         self._on_their_way = entries
         self._publish(self._topics.pending, pending_document(entries))
+
+    def refused(self, refusals: Sequence[Refusal]) -> None:
+        """The `refused_commands` document, the latest refused commands, the newest first
+        (#141): at the start and after each refusal; the broker's connects publish it with every
+        document."""
+        self._publish(self._topics.refused_commands, refused_document(refusals))
 
     def configuration(
         self, targets: Sequence[TargetSetting], settings: Mapping[str, Mapping[str, Any]]

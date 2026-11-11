@@ -76,6 +76,7 @@ def test_the_gateways_retained_topics_are_covered() -> None:
         TOPICS.pending,
         TOPICS.config,
         TOPICS.settings,
+        TOPICS.refused_commands,
         TOPICS.contact("not-a-key"),
     ):
         assert retained.covers(topic), topic
@@ -100,6 +101,7 @@ def test_the_gateways_retained_topics_are_covered() -> None:
         "meshcore/radio1/history",
         "meshcore/radio1/nodes",
         "meshcore/radio1/pending",
+        "meshcore/radio1/refused_commands",
         "meshcore/radio1/settings",
         "meshcore/radio1/state",
         "meshcore/radio1/stats",

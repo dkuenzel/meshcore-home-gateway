@@ -32,6 +32,7 @@ and no closed lists of values: this page stays normative.
 | `nodes` | gateway → | yes | JSON: nodes heard but not added |
 | `history` | gateway → | yes | JSON: the latest messages in and out |
 | `pending` | gateway → | yes | JSON: the messages on their way, accepted and not final yet |
+| `refused_commands` | gateway → | yes | JSON: the latest commands the gateway refused, without their words ([refused commands](#refused-commands-refused_commands)) |
 | `settings` | gateway → | yes | JSON: the managed radio profile at the last connect |
 | `config` | gateway → | yes | JSON: the settings of the configuration in effect, by an allowlist ([configuration](#configuration-config)) |
 | `contact` | gateway → | no | JSON, `event_type` = `added`, `removed`, `hidden`, `shown`, `excluded`, `included`, `refused`, `failed` or `position_in_advert` |
@@ -248,8 +249,9 @@ in `commands.senders`, newer than the last accepted command of that sender and w
  "sent_at": "2026-10-18T09:00:00+00:00", "received_at": "2026-10-18T09:00:02+00:00"}
 ```
 
-Treat `args` as untrusted input. Rejected attempts appear only on `received`, with
-`command.accepted` false and one of these reasons:
+Treat `args` as untrusted input. Rejected attempts never reach `command`: they appear on
+`received`, with `command.accepted` false and one of these reasons, and the latest of them,
+without their words, in [`refused_commands`](#refused-commands-refused_commands):
 
 | `command.reason` | Meaning |
 | --- | --- |
@@ -281,6 +283,41 @@ command, and with `all` also `rejected: <reason>` for the reasons from `state_un
 the table above, never for those of a sender it did not identify
 ([configuration.md](configuration.md#commands)). An answer is a message to the sender's key: it
 has `delivery` events with the key as `target`, as one to `contacts/<key>/send`.
+
+## Refused commands: `refused_commands`
+
+Since 2.2, the latest five commands the gateway refused, the newest first (#141): each refusal
+that `received` publishes, also of a sender the gateway could not identify. A refusal that the
+rate of received messages leaves out ([received messages](#received-messages-received)) is
+neither published nor kept. The document never has the command's word, its arguments or its
+code: only the household's automations need to know the words, as in
+[`config`](#configuration-config). The gateway keeps the refusals in its state file, so they
+survive a restart; it writes the file at least once a minute and at the stop, so a crash can
+lose the newest. The document goes out at the start, at every connect to the broker and after each
+refusal; a message that is no command and an accepted command leave it as it is. It is published
+also without command words, then with what an earlier run refused, or none.
+
+```json
+{"total": 2, "truncated": false,
+ "commands": [{"at": "2026-10-18T09:00:32+00:00", "sender_key": null,
+               "sender_prefix": "c3d4e5f6a7b8", "sender_name": null,
+               "reason": "sender_unknown"},
+              {"at": "2026-10-18T09:00:02+00:00", "sender_key": "a1b2…",
+               "sender_prefix": "a1b2c3d4e5f6", "sender_name": "Alice",
+               "reason": "code_invalid"}]}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `at` | the gateway's clock when it took the message from the radio, as `received_at` of its `received` event |
+| `sender_key`, `sender_prefix`, `sender_name` | as in its `received` event: the full key and name of the one contact with the prefix, else `null`; with `[messages] clean_received` the name without control and direction characters ([configuration.md](configuration.md#messages)) |
+| `reason` | why, one of the reasons of [`command`](#commands-command); expect new ones |
+
+`total` counts the refusals kept (at most five); the whole document stays within 15 KiB, which
+five refusals never reach, and `truncated` is `true` when the oldest were left out. A gateway
+before 2.2 neither publishes nor clears it: after a downgrade, an empty retained message clears
+it, such as `mosquitto_pub -r -n -t meshcore/radio1/refused_commands`
+([deployment.md](deployment.md#update-reconfigure-remove)).
 
 ## State: `state`
 

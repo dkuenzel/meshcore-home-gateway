@@ -34,7 +34,7 @@ from homeassistant.util import slugify
 from meshcore_home_gateway import __version__
 from meshcore_home_gateway.config import Config, parse_config
 from meshcore_home_gateway.config_view import shown_settings, target_settings
-from meshcore_home_gateway.core.commands import Command
+from meshcore_home_gateway.core.commands import REFUSALS_KEPT, Command, Refusal
 from meshcore_home_gateway.core.contacts import Contact
 from meshcore_home_gateway.core.model import (
     DeliveryEvent,
@@ -63,6 +63,7 @@ from meshcore_home_gateway.views import (
     encode,
     history_document,
     pending_document,
+    refused_document,
     settings_document,
 )
 
@@ -587,6 +588,57 @@ async def test_the_message_history_comes_back_after_a_restart_of_home_assistant(
     history = hass.states.get(f"sensor.{PREFIX}_message_history")
     assert (history.state, history.attributes["total"]) == ("2027-01-15T08:00:00+00:00", 1)
     assert hass.states.get(f"sensor.{PREFIX}_queue").state == "unavailable"
+    assert problems(caplog) == []
+
+
+# --- the refused commands ------------------------------------------------------------------------
+
+
+async def test_the_refused_commands_show_the_newest_and_outlive_the_gateway(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """#141: the `refused_commands` document as a timestamp sensor: unknown while none was
+    refused, with its keys readable; then the newest refusal's time, the refusals as attributes,
+    the largest the gateway keeps recorded whole. Its own availability keeps them while the
+    gateway is offline, and after a restart of Home Assistant meanwhile."""
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "online", retain=True)
+    sensor = f"sensor.{PREFIX}_refused_commands"
+    await fire(hass, TOPICS.refused_commands, refused_document([]), retain=True)
+    empty = hass.states.get(sensor)
+    assert empty.state == "unknown"
+    assert [empty.attributes[k] for k in ("total", "truncated", "commands")] == [0, False, []]
+    assert empty.attributes["friendly_name"].endswith("Refused commands")
+
+    refusals = [  # the newest first; names of control characters: 6 bytes each in JSON
+        Refusal(1_800_000_060.0 - n, "code_invalid", SENDER[:12], SENDER, "\x02" * 31)
+        for n in range(REFUSALS_KEPT)
+    ]
+    document = refused_document(refusals)
+    await fire(hass, TOPICS.refused_commands, document)
+    refused = hass.states.get(sensor)
+    assert (refused.state, refused.attributes["device_class"]) == (
+        "2027-01-15T08:01:00+00:00",
+        "timestamp",
+    )
+    assert refused.attributes["commands"] == document["commands"]
+
+    await fire(hass, TOPICS.availability, "offline")  # the last will, or a clean stop
+    assert hass.states.get(f"sensor.{PREFIX}_queue").state == "unavailable"
+    kept = hass.states.get(sensor)
+    assert (kept.state, kept.attributes["commands"]) == (refused.state, document["commands"])
+    assert problems(caplog) == []
+
+
+async def test_the_refused_commands_come_back_after_a_restart_of_home_assistant(
+    hass: HomeAssistant, mqtt: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "offline", retain=True)
+    refusal = Refusal(1_800_000_000.0, "sender_unknown", "c3" * 6)
+    await fire(hass, TOPICS.refused_commands, refused_document([refusal]), retain=True)
+    refused = hass.states.get(f"sensor.{PREFIX}_refused_commands")
+    assert (refused.state, refused.attributes["total"]) == ("2027-01-15T08:00:00+00:00", 1)
     assert problems(caplog) == []
 
 

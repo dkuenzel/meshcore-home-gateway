@@ -1,11 +1,13 @@
 """The providers' documents (views.py, ADR 0015): shapes, keys always present, sizes bounded."""
 
+import dataclasses
 import json
 from typing import Any
 
 import pytest
 
 from meshcore_home_gateway.core import lpp
+from meshcore_home_gateway.core.commands import REFUSALS_KEPT, Refusal
 from meshcore_home_gateway.core.lpp import Named
 from meshcore_home_gateway.core.mesh import (
     AdvertCheck,
@@ -45,6 +47,8 @@ from meshcore_home_gateway.views import (
     nodes_document,
     pending_document,
     pending_entry,
+    refusal_entry,
+    refused_document,
     restated,
     stats_document,
     telemetry_event,
@@ -529,6 +533,52 @@ def test_a_pending_document_near_its_bound_stays_within_it_whole_or_cut() -> Non
         assert len(encode(document)) <= PENDING_LIMIT_BYTES, size
         whole.add(document["truncated"] is False)
     assert whole == {True, False}
+
+
+REFUSAL_KEYS = ["at", "sender_key", "sender_prefix", "sender_name", "reason"]
+
+
+def test_a_refused_command_has_every_key_and_never_its_word() -> None:
+    """#141: who sent a refused command, when and why; never its word, arguments or code (the
+    rule of `config`, ADR 0009). A sender the gateway could not name has `null` there."""
+    refusal = Refusal(T + 2.75, "code_invalid", KEY[:12], KEY, "Alice")
+    assert list(refusal_entry(refusal)) == REFUSAL_KEYS
+    assert refusal_entry(refusal) == {
+        "at": "2027-01-15T08:00:02+00:00",
+        "sender_key": KEY,
+        "sender_prefix": KEY[:12],
+        "sender_name": "Alice",
+        "reason": "code_invalid",
+    }
+    unknown = Refusal(T, "sender_unknown", "c3" * 6)
+    assert refusal_entry(unknown) == dict.fromkeys(REFUSAL_KEYS) | {
+        "at": iso(T),
+        "sender_prefix": "c3" * 6,
+        "reason": "sender_unknown",
+    }
+    assert {field.name for field in dataclasses.fields(Refusal)} == set(REFUSAL_KEYS)
+
+
+def test_the_refused_commands_document_lists_the_newest_first_within_its_bound() -> None:
+    """In the order given, the newest first, every key there when empty; bounded by bytes as
+    ADR 0015 asks of every list, the head counted, also with names of control characters (6
+    bytes each in JSON). The gateway keeps the latest REFUSALS_KEPT."""
+    assert refused_document([]) == {"total": 0, "truncated": False, "commands": []}
+    refusals = [Refusal(T - i, "replay", KEY[:12], KEY, "Alice") for i in range(3)]
+    document = refused_document(refusals)
+    assert (document["total"], document["truncated"]) == (3, False)
+    assert [c["at"] for c in document["commands"]] == [iso(T), iso(T - 1), iso(T - 2)]
+    hostile = [Refusal(T - i, "code_locked", KEY[:12], KEY, "\x02" * 31) for i in range(5)]
+    assert refused_document(hostile)["truncated"] is False  # the latest kept fit whole
+    assert REFUSALS_KEPT == 5
+    cut = set()
+    for count in (1, 50, 200):
+        document = refused_document([*hostile, *([hostile[0]] * count)])
+        assert len(encode(document)) <= ATTRIBUTE_LIMIT_BYTES, count
+        assert document["total"] == count + 5
+        assert document["truncated"] is (len(document["commands"]) < count + 5)
+        cut.add(document["truncated"])
+    assert cut == {True, False}
 
 
 def _settings() -> dict[str, dict[str, Any]]:

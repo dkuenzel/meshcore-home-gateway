@@ -18,6 +18,7 @@ from meshcore_home_gateway.core.commands import (
     CODE_FAILURE_LIMIT,
     CODE_FAILURE_WINDOW_S,
     CODE_STEP_S,
+    REFUSALS_KEPT,
     code_at,
 )
 from meshcore_home_gateway.protocol.codes import AutoAdd, Command, Push
@@ -1057,5 +1058,137 @@ def test_only_the_channels_of_targets_are_published_when_asked(
             else:
                 assert texts == ["gate open"]
                 assert "anyone around?" not in history
+
+    scenario(main)
+
+
+# --- the refused commands (#141) -------------------------------------------------------------
+
+
+def _refused(bus: FakeBus) -> list[dict[str, Any]]:
+    return bus.payloads("radio1/refused_commands")
+
+
+def test_refused_commands_are_kept_without_their_word_until_the_next_refusal(
+    tmp_path: Path,
+) -> None:
+    """#141: each refusal published on `received` also goes to the retained document of the
+    latest ones, the newest first, with who sent it, when and why, never its word, arguments or
+    code (ADR 0009). A message that is no command and an accepted command leave it as it is,
+    so that a front end shows the refusal after the next message too."""
+    secret = b"12345678901234567890"
+    config = make_config()
+    sender = ALICE.public_key.hex()
+    config = dataclasses.replace(
+        config, commands=dataclasses.replace(config.commands, secrets=((sender, secret),))
+    )
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path) as (_, bus, _notes):
+            # at the start and at the broker's connect, also with nothing refused yet
+            empty = {"total": 0, "truncated": False, "commands": []}
+            assert _refused(bus)
+            assert all(d == empty for d in _refused(bus))
+            radio.queue_direct_message(ALICE.public_key[:6], "arm now 000000", NOW - 10)
+            received = await bus.wait_for("/received", lambda r: True)
+            assert received["command"]["reason"] == "code_invalid"
+            document = await bus.wait_for("radio1/refused_commands", lambda d: d["total"] == 1)
+            assert document == {
+                "total": 1,
+                "truncated": False,
+                "commands": [
+                    {
+                        "at": received["received_at"],
+                        "sender_key": sender,
+                        "sender_prefix": sender[:12],
+                        "sender_name": "Alice",
+                        "reason": "code_invalid",
+                    }
+                ],
+            }
+            retained = [p for t, p, r in bus.published if t.endswith("/refused_commands")]
+            assert all(r for t, _, r in bus.published if t.endswith("/refused_commands"))
+            assert not any(b"arm" in p or b"000000" in p for p in retained)
+            published = len(_refused(bus))
+            radio.queue_channel_message(0, "Carol: arm", NOW - 9)  # no command
+            right = code_at(secret, int(NOW // CODE_STEP_S))
+            radio.queue_direct_message(ALICE.public_key[:6], f"arm {right}", NOW - 8)
+            await bus.wait_for("/command", lambda c: c["event_type"] == "arm")
+            assert len(_refused(bus)) == published  # neither publishes it
+            assert _refused(bus)[-1] == document
+            radio.queue_direct_message(BOB.public_key[:6], "status", NOW - 7)  # not allowed
+            newer = await bus.wait_for("radio1/refused_commands", lambda d: d["total"] == 2)
+            assert [(c["sender_name"], c["reason"]) for c in newer["commands"]] == [
+                ("Bob", "sender_not_allowed"),
+                ("Alice", "code_invalid"),
+            ]
+
+    scenario(main)
+
+
+def test_the_latest_refused_commands_outlive_a_restart_and_go_out_at_each_connect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#141: the latest REFUSALS_KEPT are kept in the state file, published at the start (also
+    without command words) and again at each connect to the broker. A refusal that the rate of
+    received messages leaves out (SEC-012, SEC-013) is not kept either."""
+    monkeypatch.setattr(inbox_module, "RECEIVED_PER_SENDER_PER_S", 1e-6)  # no refill meanwhile
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    alice, bob, stranger = ALICE.public_key[:6], BOB.public_key[:6], bytes.fromhex("d4" * 6)
+    not_allowed, unknown = "sender_not_allowed", "sender_unknown"
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.queue_direct_message(alice, "arm", NOW - 10)  # accepted
+            for n in range(3):
+                radio.queue_direct_message(bob, f"status {n}", NOW - 100 + n)
+                radio.queue_direct_message(stranger, f"status {n}", NOW - 100 + n)
+                radio.queue_direct_message(alice, f"arm {n}", NOW - 100 + n)  # a replay
+            reasons = [not_allowed, unknown, "replay"] * 3
+            await bus.wait_for("/received", lambda r: r["text"] == "arm 2")
+            document = _refused(bus)[-1]
+            assert [c["reason"] for c in document["commands"]] == reasons[::-1][:REFUSALS_KEPT]
+            assert document["total"] == REFUSALS_KEPT
+            published = len(_refused(bus))
+            for callback in bus.on_connected:  # the broker connected again
+                callback()
+            assert _refused(bus)[published:] == [document]
+            burst = int(inbox_module.RECEIVED_PER_SENDER_BURST)
+            for n in range(burst - 3):
+                radio.queue_direct_message(bob, f"hello {n}", NOW - 50 + n)
+            radio.queue_direct_message(bob, "status", NOW - 10)  # beyond the burst: left out
+            radio.queue_direct_message(stranger, "hello", NOW - 9)
+            await bus.wait_for("/received", lambda r: r["text"] == "hello")
+            assert _refused(bus)[-1] == document
+            assert bus.payloads("/received")[-2]["text"] == f"hello {burst - 4}"
+        restarted = EmulatedRadio(contacts=[ALICE, BOB])
+        quiet = make_config()
+        quiet = dataclasses.replace(
+            quiet, commands=dataclasses.replace(quiet.commands, words=frozenset())
+        )
+        async with running(quiet, restarted, tmp_path) as (_, bus, _notes):
+            assert _refused(bus)[0] == document
+
+    scenario(main)
+
+
+@pytest.mark.parametrize("clean", [False, True])
+def test_a_refused_senders_name_is_kept_cleaned_only_when_asked(
+    tmp_path: Path, clean: bool
+) -> None:
+    """#141: the name of a refused command's sender as the radio's table gives it, without
+    control and direction characters with `[messages] clean_received` (SEC-017)."""
+    forger = EmulatedContact(bytes.fromhex("c3" * 32), "Mal\x1b[2J\u202elory")
+    radio = EmulatedRadio(contacts=[ALICE, forger])
+    config = make_config(messages=f"clean_received = {str(clean).lower()}")
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path) as (_, bus, _notes):
+            radio.queue_direct_message(forger.public_key[:6], "arm", NOW - 5)
+            document = await bus.wait_for("radio1/refused_commands", lambda d: d["total"] == 1)
+            (refusal,) = document["commands"]
+            assert refusal["reason"] == "sender_not_allowed"
+            assert refusal["sender_name"] == ("Mal[2Jlory" if clean else "Mal\x1b[2J\u202elory")
 
     scenario(main)

@@ -8,6 +8,22 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Added
+
+- The retained document `refused_commands` and, with `[commands] words`, the sensor *Refused
+  commands* in Home Assistant: the latest five commands the gateway refused, the newest first,
+  each with its time, its reason and the sender's prefix, key and name, never the command's word,
+  arguments or code, which only the household's automations need (#141). With `[messages]
+  clean_received` the names are cleaned. It goes out at the start, at every connect to the
+  broker and after each refusal published on `received`; the gateway keeps the refusals in its
+  state file, so a restart keeps them, and leaves out a refusal that the rate of received
+  messages leaves out. The sensor stays available while the gateway is offline; the recorder
+  stores who sent a refused command unless it excludes the sensor
+  ([home-assistant.md](docs/home-assistant.md#privacy)). After a downgrade to 2.1 the broker keeps
+  the last document; an empty retained message clears it, such as
+  `mosquitto_pub -r -n -t meshcore/radio1/refused_commands`
+  ([mqtt-api.md](docs/mqtt-api.md#refused-commands-refused_commands)).
+
 ## [2.1.1rc2] - 2026-11-12
 
 The release candidate of 2.1.1: the program of 2.1.1rc1, and the gateway also sets back a radio

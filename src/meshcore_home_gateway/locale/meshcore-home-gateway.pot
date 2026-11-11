@@ -6793,6 +6793,13 @@ msgctxt "home assistant"
 msgid "Receive errors"
 msgstr ""
 
+#. sensor (timestamp) of the gateway: the latest commands it refused,
+#. with who sent each and why; its state is the time of the newest one
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Refused commands"
+msgstr ""
+
 #. the name of an entity that exists only for a moment, while the gateway
 #. removes it from Home Assistant
 #: src/meshcore_home_gateway/mqtt/discovery.py

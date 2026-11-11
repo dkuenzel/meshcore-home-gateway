@@ -526,6 +526,10 @@ EU duty cycle for them. Telemetry has two budgets of its own, which never take f
    published, so a crash cannot turn into a replay; if the file cannot be written, the command is
    rejected (`state_unwritable`) and the service carries on. A command refused because the broker
    is unreachable (`broker_unavailable`) stores its timestamp too: its sender was verified.
+   A refusal published on `received` also joins the latest five in the state file and the
+   retained `refused_commands` document, without the command's word (#141): the next message
+   replaces the `received` event in Home Assistant, the document stays until the next refusal.
+   The state file holds them until the status tick writes it, so a crash may lose the newest.
 6. Channels listed in `ignore_channels` are not published (busy public channels).
 
 ### 6.5 MQTT interface
@@ -542,6 +546,7 @@ there).
 | `delivery` | out | no | JSON with `event_type` = delivery state |
 | `received` | out | no | JSON with `event_type` = `contact` or `channel` |
 | `command` | out | no | JSON with `event_type` = command word |
+| `refused_commands` | out | yes | JSON: the latest refused commands, without their words (§6.4) |
 | `rx` | out | no | JSON per received packet: SNR, RSSI, raw bytes (optional) |
 | `stats`, `contacts`, `contacts/<key>`, `nodes`, `history`, `pending` | out | yes | JSON documents of the observer (§6.6) |
 | `config` | out | yes | JSON: the settings in effect, by an allowlist (module `config_view`), at the start and at each radio connect |
@@ -590,7 +595,8 @@ core's view of the mesh, writes the history
 documents ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)): `stats`,
 `contacts` and `contacts/<key>`, `nodes`, `history`, `pending` (the outbox's messages on their
 way), `config` (the settings in effect, which the bridge hands it at the start and at each radio
-connect), and the events `contact`, `node` and `telemetry`.
+connect), `refused_commands` (the latest refused commands, which the inbox hands it at the start
+and after each refusal, §6.4), and the events `contact`, `node` and `telemetry`.
 
 The detail is in [design-observer.md](design-observer.md#66-observer-documents-and-history).
 

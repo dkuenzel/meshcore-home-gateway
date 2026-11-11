@@ -73,6 +73,7 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | `sensor.meshcore_home_gateway_radio1_pending_messages` | count | *Messages on their way*: the messages the gateway accepted and has not delivered or given up yet, the one being sent included; the `pending` document as attributes `messages` (oldest first, with `step` `queued` or `sent` and their keys as in [mqtt-api.md](mqtt-api.md#messages-on-their-way-pending)), `total` and `truncated`. A message `queued` for more than a minute waits for the radio or for airtime. It stays available while the gateway is offline |
 | `sensor.meshcore_home_gateway_radio1_configuration` | timestamp, diagnostic | *Configuration*: when the gateway started; the settings in effect as attributes (`targets` with each one's `room`, `messages`, `contacts`, `telemetry`, `homeassistant`, `radio`, `airtime`, `history`, `commands`), as in [mqtt-api.md](mqtt-api.md#configuration-config): never a host, password, key or command word. Read only: Home Assistant cannot change them |
 | `event.meshcore_home_gateway_radio1_command` | event: the configured words | accepted commands (only with `commands.words`) |
+| `sensor.meshcore_home_gateway_radio1_refused_commands` | timestamp | *Refused commands*: the time of the newest command the gateway refused, `unknown` while there is none; the `refused_commands` document as attributes `commands` (the latest 5, newest first, with `at`, `sender_key`, `sender_prefix`, `sender_name` and `reason` as in [mqtt-api.md](mqtt-api.md#refused-commands-refused_commands), never the command's word), `total` and `truncated`. Only with `commands.words`; it stays available while the gateway is offline (#141) |
 | `notify.meshcore_home_gateway_radio1_send_<alias>` | notify, one per target | sends the message text to that target; `-` in an alias becomes `_`, so two aliases that differ only there get the same IDs, the later ones ending in `_2` (the gateway warns, [configuration.md](configuration.md#targetsalias)) |
 | `text.meshcore_home_gateway_radio1_write_<alias>` | text, one per target not in `hidden_targets` | *Write to …*: the draft of a message to that target, which the gateway keeps until it is sent ([below](#writing-and-sending)); `max` is the room of a text to the target in bytes |
 | `button.meshcore_home_gateway_radio1_write_<alias>_send` | button, one per target not in `hidden_targets` | *Send what is written to …*: sends that draft |
@@ -1337,7 +1338,10 @@ such as a second gateway's `mesh_2`, is taken already, any other needs its own t
 *Send* buttons hold no text and stay recorded. *Configuration* holds no message; it shows every
 user the settings, the names, prefixes and suffixes of the hidden targets included, and the
 recorder stores it at each start and radio connect: add
-`sensor.meshcore_home_gateway_*_configuration` to keep it out too.
+`sensor.meshcore_home_gateway_*_configuration` to keep it out too. *Refused commands* holds no
+text and no command word, but who sent each of the latest refused commands and why, which the
+recorder stores again with every refusal: add `sensor.meshcore_home_gateway_*_refused_commands*`
+to keep it out too.
 
 The contacts' trackers store their positions in the history too, which a map card with
 `hours_to_show` draws as their traces ([Traces on the map](#traces-on-the-map)): a companion that
