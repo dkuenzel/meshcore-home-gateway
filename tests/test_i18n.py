@@ -75,6 +75,24 @@ def test_english_comes_first_and_stands_in_for_any_other_language() -> None:
     assert i18n.translator("en") is i18n.ENGLISH
 
 
+def test_every_language_has_its_decimal_mark() -> None:
+    """The dashboard writes a number with its language's decimal mark, from locale data, not from
+    a translator (ADR 0019, amended 2026-11-11): a language added to LANGUAGES needs its mark
+    (docs/translations.md, Adding a language), and German writes 0,4."""
+    assert set(i18n.DECIMAL_MARKS) == set(i18n.LANGUAGES)
+    assert (i18n.DECIMAL_MARKS["en"], i18n.DECIMAL_MARKS["de"]) == (".", ",")
+
+
+def test_a_language_the_tests_offer_has_a_decimal_mark_of_its_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pseudo-language writes the Arabic decimal separator, which no shipped language
+    writes: a number that did not pass through the dashboard's num() shows by its point."""
+    speaking(monkeypatch, pseudo())
+    assert set(i18n.DECIMAL_MARKS) == set(i18n.LANGUAGES)
+    assert i18n.DECIMAL_MARKS["xx"] == "\u066b"
+
+
 @pytest.fixture
 def package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """A temporary package whose locale/ the translators read, with xx offered."""
