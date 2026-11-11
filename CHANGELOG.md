@@ -30,7 +30,8 @@ format, the command line and Home Assistant discovery are public interfaces
   keys, names, times and signal (before: keys and names). Make the dashboard again after the
   update.
 - `[messages] clean_received` also cleans the names of contacts and heard nodes, where the
-  gateway takes them from the radio: without control and direction characters, on one line, in
+  gateway takes them from the radio, the history and the documents of the last run in its state
+  file: without control and direction characters, on one line, in
   `sender_name` of the `received` and `command` events, the history, `pending`, the contacts'
   documents, `nodes`, the `node`, `contact` and `telemetry` events, the device names, labels and
   options in Home Assistant, and Homie. Commands are still judged on the text as it came, and the

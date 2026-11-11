@@ -1761,6 +1761,41 @@ def test_a_document_of_the_last_run_expires_also_while_the_radio_is_away(tmp_pat
     assert on_disk(store) == {key: waiting}
 
 
+def test_with_clean_received_a_document_of_the_last_run_is_published_cleaned(
+    tmp_path: Path,
+) -> None:
+    """#137: a run with `clean_received` off stored its contact's name as it came; the next run
+    with the setting on cleans it in the stored document before the first table read too, while
+    the radio stays away, and stores it so at once."""
+    named = replace(ALICE, name="Ali\x1b[2J\u202ece")
+    store, before = last_run(tmp_path, named)
+    key = named.public_key.hex()
+    assert before[key]["name"] == "Ali\x1b[2J\u202ece"
+    observer, bus = restarted(store, {key: "answering"})
+    observer.clean_names = True
+    observer.publish_all()  # the broker connected
+    cleaned = {**before[key], "name": "Ali[2Jce"}
+    assert last(bus, f"{ROOT}/contacts/{key}") == cleaned
+    assert on_disk(store) == {key: cleaned}
+    observer.tick()
+    assert len(retained(bus, f"{ROOT}/contacts/{key}")) == 1  # unchanged since
+
+
+@pytest.mark.parametrize("clean", [False, True])
+def test_without_clean_received_a_document_of_the_last_run_keeps_its_name(
+    tmp_path: Path, clean: bool
+) -> None:
+    """The other way round: off, the stored name stays as it came; a clean name stays as it is."""
+    name = "Alice" if clean else "Ali\x1b[2Jce"
+    store, before = last_run(tmp_path, replace(ALICE, name=name))
+    key = ALICE.public_key.hex()
+    observer, bus = restarted(store, {key: "answering"})
+    observer.clean_names = clean
+    observer.publish_all()
+    assert last(bus, f"{ROOT}/contacts/{key}") == before[key]
+    assert on_disk(store) == {key: before[key]}
+
+
 def test_an_expiry_the_broker_missed_is_published_at_the_next_connect(tmp_path: Path) -> None:
     """A run that stopped before the broker connected published it to nobody: the state file
     keeps it expired, and the next run publishes it at each connect; one still answering too,

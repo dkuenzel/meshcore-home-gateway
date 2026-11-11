@@ -926,10 +926,14 @@ class Observer:
     def _restate(self, key: str, *, connect: bool = False) -> None:
         """A document of the last run, published again when its contact's state changed (its
         answers expired, it was excluded or included, telemetry is off), also while the radio
-        stays away. Kept in every state until the first table read; each change stored at once."""
+        stays away. Kept in every state until the first table read; each change stored at once.
+        With `clean_received` its contact's name is cleaned, as a run with it off stored it
+        as it came (#137)."""
         stored = self._current[key]
         excluded = key in self.exclusions
         document = restated(stored, self._companion_state(key), excluded=excluded)
+        if self.clean_names and isinstance(document.get("name"), str):
+            document["name"] = clean_name(document["name"])
         if document != stored:
             self._publish(self._topics.contact(key), document)
             self._current[key] = document
