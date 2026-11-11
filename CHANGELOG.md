@@ -19,7 +19,9 @@ format, the command line and Home Assistant discovery are public interfaces
   Its history also keeps when each was first and last heard, how, and the time its last advert
   carried, until 7 days after it was last heard; it publishes none of them
   ([privacy.md](docs/privacy.md)). The MQTT API left out that each entry of `nodes` also
-  carries `name_taken` then ([mqtt-api.md](docs/mqtt-api.md#nodes-heard-nodes)).
+  carries `name_taken` then ([mqtt-api.md](docs/mqtt-api.md#nodes-heard-nodes)). With
+  `heard_nodes = "off"`, the three pages named only the look-alikes' keys as published; the
+  `nodes` document also lists the keys of heard nodes whose name is taken (`name_taken`).
 
 ## [2.1.0] - 2026-11-09
 
