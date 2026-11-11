@@ -1346,13 +1346,13 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   *Verified:* 2026.10.2 and 2026.11.0,
   `test_the_message_history_shows_the_newest_message_and_outlives_the_gateway`,
   `test_the_message_history_comes_back_after_a_restart_of_home_assistant` and the same two tests of
-  *Messages on their way*; source
+  *Messages on their way* and of *Refused commands*; source
   `components/mqtt/discovery.py` lines 335-357 at 2026.10.2 and 395-417 at 2026.11.0
   (`_merge_common_device_options`), `components/mqtt/schemas.py` lines 64-76 at 2026.10.2
-  (`SHARED_OPTIONS`). *Here:* *Message history* and *Messages on their way* read the retained
-  `history` and `pending` documents, which the gateway never clears, so the messages stay readable
-  while it is offline. The drafts' text entities and *Send* buttons set `qos: 0` over the device's
-  `qos: 1` ([mqtt-api.md](mqtt-api.md#drafts-of-home-assistants-chats-homeassistantdraftkindchat)).
+  (`SHARED_OPTIONS`). *Here:* *Message history*, *Messages on their way* and *Refused commands*
+  read the retained `history`, `pending` and `refused_commands` documents, which the gateway never
+  clears, so they stay readable while it is offline. The drafts' text entities and *Send* buttons
+  set `qos: 0` over the device's `qos: 1` ([mqtt-api.md](mqtt-api.md#drafts-of-home-assistants-chats-homeassistantdraftkindchat)).
   *Check:* `make ha-test`.
 * **A text entity's state may not be longer than its `max`: Home Assistant raises for such a state,
   also when it writes the state again as it takes a new discovery that lowers `max`.** The entity
