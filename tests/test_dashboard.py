@@ -2272,12 +2272,17 @@ BROKEN = [
         ("{#- the row is hidden:\n", 1),
         ("{#- a comment\nover two lines -#}", 0),
         ("<!-- the row is hidden:\n", 1),
+        ("{#- a comment that names\n{% if %} over two lines -#}", 0),
+        ("<!-- a comment that names\n<details> over two lines -->", 0),
+        ("<!-- a comment closed as HTML allows --!>", 0),
+        ("<!-- the row is hidden, not by --!\n", 1),
     ],
 )
 def test_rule_12_counts_the_blocks_open_before_the_row(text: str, depth: int) -> None:
     """Rule 12: the row under Overview's status line stands at the top level of its card, outside
-    every {% if %}, {% for %}, macro, <details> and comment over several lines; a comment on one
-    line hides nothing, and an elif or else opens no block."""
+    every {% if %}, {% for %}, macro, <details> and comment that is still open; what a closed
+    comment names opens nothing, HTML's comment also ends at --!>, and an elif or else opens no
+    block."""
     assert rules._depth(text) == depth
 
 

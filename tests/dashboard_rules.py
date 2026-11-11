@@ -976,15 +976,16 @@ def rule_12(template: str, source: Any, loaded: Any, household: Household) -> li
     return found
 
 
-# rule 12: what opens and what closes a block that can hide what is in it, and a comment on one line
+# rule 12: what opens and what closes a block that can hide what is in it, and a closed comment,
+# also over several lines; HTML ends a comment at --> and also at --!>
 _OPENS = re.compile(r"\{%-?\s*(?:if|for|macro)\b|<details\b|\{#|<!--")
-_CLOSES = re.compile(r"\{%-?\s*end(?:if|for|macro)\b|</details>|#\}|-->")
-_COMMENT = re.compile(r"\{#.*?#\}|<!--.*?-->")
+_CLOSES = re.compile(r"\{%-?\s*end(?:if|for|macro)\b|</details>|#\}|--!?>")
+_COMMENT = re.compile(r"\{#.*?#\}|<!--.*?--!?>", re.DOTALL)
 
 
 def _depth(text: str) -> int:
     """How many blocks are open at the end of a card's text: Jinja's if, for and macro, HTML's
-    <details>, and comments over several lines."""
+    <details>, and a comment not yet closed. What a closed comment names opens nothing."""
     plain = _COMMENT.sub("", text)
     return len(_OPENS.findall(plain)) - len(_CLOSES.findall(plain))
 
