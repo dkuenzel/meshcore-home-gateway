@@ -356,6 +356,12 @@ def target_channels(config: Config) -> frozenset[int]:
     return frozenset(t.channel_index for t in config.targets if t.channel_index is not None)
 
 
+def published_channels(config: Config) -> frozenset[int]:
+    """The channels whose messages are published while only the targets' are (`publish_channels
+    = "targets"`): the targets' channels, but not those in `ignore_channels`."""
+    return target_channels(config) - config.messages.ignore_channels
+
+
 def channel_published(config: Config, index: int | None) -> bool:
     """Whether the messages of channel `index` are published and kept in the history: not one of
     `ignore_channels`, and a target's while only those are published (SEC-012)."""

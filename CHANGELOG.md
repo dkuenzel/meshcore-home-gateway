@@ -30,6 +30,18 @@ format, the command line and Home Assistant discovery are public interfaces
   keys, names, times and signal (before: keys and names). Make the dashboard again after the
   update.
 
+### Security
+
+- With `[messages] publish_channels = "targets"`, the default, every start deletes from the
+  history database the messages received on a channel that is no target's or that
+  `ignore_channels` names: what 1.x kept of every channel, and what was kept while
+  `publish_channels` was `"all"`. Before, they stayed until they were `messages_days` old, in
+  `history export` and in `backup`, although the documents left them out (#103). The deletion
+  is for good, at the first start after the update; the log says how many went. The gateway's
+  own messages stay, also to an ignored channel. Check the targets' `channel_index` before the
+  update: a mistyped one deletes that channel's messages. To keep a copy, export the messages
+  before the update ([deployment.md](docs/deployment.md#update-reconfigure-remove), #136).
+
 ## [2.1.1rc2] - 2026-11-12
 
 The release candidate of 2.1.1: the program of 2.1.1rc1, and the gateway also sets back a radio

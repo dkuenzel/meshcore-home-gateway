@@ -1002,7 +1002,8 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
 * Messages on the radio are only as confidential as MeshCore's encryption; channel secrets of
   public or hashtag channels are known to everyone. With `publish_channels = "all"` strangers'
   texts on such channels reach the bus, the history and Home Assistant's recorder; `"targets"`,
-  the default since 2.0.0, keeps only the channels the household chose.
+  the default since 2.0.0, keeps only the channels the household chose, and since 2.2 deletes at
+  every start what the history kept of the others (#136, §6.6).
 * Every radio in range is a heard node with its key, type, its owner's chosen name, when it was
   heard and its signal on the bus, in the history and in Home Assistant's recorder and its
   `core.restore_state` (`[contacts] heard_nodes = "full"`, the default since 2.2,

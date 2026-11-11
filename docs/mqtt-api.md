@@ -606,7 +606,9 @@ outgoing messages the recipient. `state` is the final delivery state of an outgo
 document has only those of the channels that are published (`[messages] publish_channels`,
 `ignore_channels`): since 2.1 also at the start, when the history database still holds messages
 of other channels that an earlier version kept, and it then shows the newest of the rest (#103).
-The gateway's own messages to a channel target are in it, also when that channel is ignored.
+Since 2.2, with `publish_channels = "targets"`, the start deletes those from the history database
+for good, and the log says how many (#136). The gateway's own messages to a channel target stay in
+both, also when that channel is ignored.
 
 Since 2.1 every entry also has these keys, `null` when they do not apply or are not known (a
 message from an earlier version):

@@ -297,28 +297,32 @@ def test_the_history_survives_a_restart(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("messages", "shown"),
+    ("messages", "shown", "kept"),
     [
-        ("", ["to the family", "Hi from Alice", "family news"]),
+        ("", ["to the family", "Hi from Alice", "family news"], 3),
         (
             'publish_channels = "all"',
             ["to the family", "Hi from Alice", "Dave: chatter", "family news"],
+            4,
         ),
         (
             'publish_channels = "all"\nignore_channels = [0]',
             ["to the family", "Hi from Alice", "Dave: chatter"],
+            4,
         ),
     ],
     ids=["targets", "all", "all-but-ignored"],
 )
 def test_the_history_document_shows_only_the_channels_that_are_published(
-    tmp_path: Path, messages: str, shown: list[str]
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, messages: str, shown: list[str], kept: int
 ) -> None:
     """#103: 1.x stored the messages of every channel. With `publish_channels = "targets"` (the
     default since 2.0) the retained `history` document must not bring a stranger's text on the
     Public channel back to the broker at the start; nor the received messages of an ignored
     channel. The gateway's own message to a target's channel stays, as it does while the gateway
-    runs (all-but-ignored). The rows stay in the history, until they are `messages_days` old."""
+    runs (all-but-ignored). #136: with "targets", the start deletes the received rows of the
+    other channels for good, and the log says how many; with "all" they stay, until they are
+    `messages_days` old."""
     path = tmp_path / "history.sqlite3"
     stored = History.open(path)
     assert stored is not None
@@ -347,18 +351,24 @@ def test_the_history_document_shows_only_the_channels_that_are_published(
             for document in documents:
                 assert [m["text"] for m in document["messages"]] == shown
 
+    caplog.set_level(logging.INFO, logger="meshcore_home_gateway.observer")
     scenario(main)
     for history in histories:
-        assert len(history.recent_messages(10)) == 4  # kept: only the documents leave them out
+        assert len(history.recent_messages(10)) == kept
         history.close()
+    deleted = [r.getMessage() for r in caplog.records if "not published" in r.getMessage()]
+    line = "history: received messages of channels not published deleted: 1"
+    assert deleted == ([line] if kept == 3 else [])
 
 
 def test_a_message_sent_to_an_ignored_channel_stays_in_the_history_document_at_a_restart(
-    tmp_path: Path,
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """#103: a target's channel may also be in `ignore_channels` (alerts go to a busy channel,
     whose chatter is not published). The gateway's own message there is in the `history` document
-    while it runs, so the next start must not leave it out."""
+    while it runs, so the next start must not leave it out. #136: the start deletes the chatter
+    an earlier version kept of it, not the gateway's own message; a start that deletes nothing
+    logs nothing."""
     path = tmp_path / "history.sqlite3"
     config = make_config(messages="ignore_channels = [0]")  # the target `alerts` is channel 0
     shown: list[list[str]] = []
@@ -382,11 +392,21 @@ def test_a_message_sent_to_an_ignored_channel_stays_in_the_history_document_at_a
         async with running(config, radio, tmp_path, observer=observer) as (_, bus, _notes):
             shown.append([m["text"] for m in bus.payloads(f"{ROOT}/history")[-1]["messages"]])
 
+    caplog.set_level(logging.INFO, logger="meshcore_home_gateway.observer")
     scenario(first)
+    assert not [r for r in caplog.records if "not published" in r.getMessage()]
+    histories[0].add_message(
+        HistoryEntry(NOW - 1, "in", "channel", "chatter", channel_index=0, name="Dave")
+    )
+    histories[0].close()
     scenario(second)
+    texts = [m.text for m in histories[1].recent_messages(10)]
     for history in histories:
         history.close()
     assert shown == [["Smoke in the barn"], ["Smoke in the barn"]]
+    assert texts == ["Smoke in the barn"]
+    deleted = [r.getMessage() for r in caplog.records if "not published" in r.getMessage()]
+    assert deleted == ["history: received messages of channels not published deleted: 1"]
 
 
 def test_the_history_document_finds_the_published_messages_behind_other_channels_rows(

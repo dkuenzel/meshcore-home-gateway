@@ -229,6 +229,17 @@ class Observer:
         for key, kept in readings.items():
             self._restore_contact(key, None, None, kept)
 
+    def forget_unpublished_channels(self, kept: Iterable[int]) -> None:
+        """Delete from the history, for good, the received messages of every channel but those
+        `kept` (#136): at the start, while only the targets' channels are published, the rows an
+        earlier version kept of the others. The gateway's own messages stay. The log says how
+        many went."""
+        if self._history is None:
+            return
+        rows = self._history.forget_received_channels(kept)
+        if rows:
+            log.info("history: received messages of channels not published deleted: %d", rows)
+
     def show_channels(self, published: Callable[[int | None], bool]) -> None:
         """The channels whose received messages are published (`[messages] publish_channels`,
         `ignore_channels`). Those of the others that the history holds, which an earlier version
