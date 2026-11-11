@@ -253,7 +253,43 @@ async def running(
         yield bridge, bus, notes
     finally:
         stop.set()
-        await asyncio.wait_for(task, 5)
+        await stopped(task)
+
+
+# A stop of the harness's bridge takes at most this long. One that takes longer fails with where
+# each task still waits, so a stop that hangs once on a slow runner says where it hung.
+STOP_LIMIT_S = 5.0
+
+
+def _awaiting(task: asyncio.Task[Any]) -> str:
+    """Where a task waits: each coroutine it awaits, outermost first, with its line."""
+    lines = []
+    awaited: Any = task.get_coro()
+    while (
+        frame := getattr(awaited, "cr_frame", None) or getattr(awaited, "gi_frame", None)
+    ) is not None:
+        lines.append(f"    {frame.f_code.co_filename}:{frame.f_lineno} in {frame.f_code.co_name}")
+        awaited = getattr(awaited, "cr_await", None) or getattr(awaited, "gi_yieldfrom", None)
+    return "\n".join(lines)
+
+
+async def stopped(task: asyncio.Task[None]) -> None:
+    """The bridge's run, after its stop was set: its exception if it raised; if it still runs
+    after STOP_LIMIT_S, a failure that names every task still running and where it waits."""
+    done, _ = await asyncio.wait({task}, timeout=STOP_LIMIT_S)
+    if done:
+        task.result()
+        return
+    current = asyncio.current_task()
+    running = sorted(
+        (each for each in asyncio.all_tasks() if each is not current and not each.done()),
+        key=lambda each: each.get_name(),
+    )
+    report = "\n".join(f"  {each.get_name()}:\n{_awaiting(each)}" for each in running)
+    task.cancel()
+    raise AssertionError(
+        f"the bridge did not stop within {STOP_LIMIT_S} s; still running:\n{report}"
+    )
 
 
 def scenario(coro: Callable[[], Any]) -> None:

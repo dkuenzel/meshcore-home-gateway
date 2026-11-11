@@ -36,6 +36,7 @@ from tests.bridge_harness import (
     make_config,
     running,
     scenario,
+    stopped,
 )
 from tests.radio_emulator import EmulatedContact, EmulatedRadio
 
@@ -924,7 +925,7 @@ def test_a_rejected_command_cannot_be_replayed_while_its_age_window_lasts(
             assert not bus.payloads("/command")
         finally:
             stop.set()
-            await asyncio.wait_for(task, 5)
+            await stopped(task)
 
     scenario(main)
 
