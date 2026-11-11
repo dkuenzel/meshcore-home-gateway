@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -160,13 +161,17 @@ def test_the_state_tells_the_gateways_health(
 ) -> None:
     """Each part's trouble in the `health` section; `degraded` while one is not as it should
     be, which the status line of systemd says too. Events the broker did not take are told,
-    and do not degrade: the broker was away."""
+    and do not degrade: the broker was away. The free space is the disk's at first, then a
+    fixed one: other processes write to the disk between two reads."""
     config = make_config(extra="[history]\nenabled = false")
     bridge, bus, notes = idle_bridge(tmp_path, config)
+    real = bridge.status.payload()["health"]["disk_free_mb"]
+    assert isinstance(real, int)
+    assert real >= 0
+    free = 5_421
+    fixed = shutil.disk_usage(tmp_path)._replace(free=free * 1_000_000 + 999_999)
+    monkeypatch.setattr(shutil, "disk_usage", lambda _directory: fixed)
     health = bridge.status.payload()["health"]
-    free = health["disk_free_mb"]
-    assert isinstance(free, int)
-    assert free >= 0
     assert health == {
         "degraded": False,
         "history": "off",
