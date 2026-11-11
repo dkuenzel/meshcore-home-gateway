@@ -1758,9 +1758,13 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   needs a latitude and a longitude, a person's zone aside),
   `src/panels/lovelace/cards/hui-map-card.ts` lines 931-988 (the points, from the rows with a
   position); `20261028.4` (2026.11.0): the same at `ha-map.ts` 1404-1407 and 1222-1335,
-  `hui-map-card.ts` 1035-1093; the drawing was not run in a browser. `home-assistant/tests/test_traces.py` sends the
-  generated dashboard's own card's request after an expiry: the tracker's state has no latitude,
-  and the rows with a position before it stay in the answer. *Here:* the Map page's help says
+  `hui-map-card.ts` 1035-1093. In Chromium against Home Assistant 2026.10.2 and 2026.11.0, the
+  generated Map page at 1280x800 and 390x844 with a tracker `unavailable` without a location
+  (its gateway stopped): no marker for it, and its trail drawn by MapLibre as a line layer and a
+  circle layer (`ha-map-path-<n>-lines`, `ha-map-path-<n>-points`), a dot for each point, the line
+  ending in the dot of the last one. `home-assistant/tests/test_traces.py` sends the generated
+  dashboard's own card's request after an expiry: the tracker's state has no latitude, and the
+  rows with a position before it stay in the answer. *Here:* the Map page's help says
   that a device whose position is not current shows only its line, which ends in a dot where it
   was last, until that is more than 24 hours ago (2.1.1). *Check:* `make ha-test`; `sed -n
   1393,1396p src/components/map/ha-map.ts` in the frontend's source at `20260930.4`.
