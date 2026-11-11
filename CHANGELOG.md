@@ -54,8 +54,8 @@ format, the command line and Home Assistant discovery are public interfaces
   `history export` and in `backup`, although the documents left them out (#103). The deletion
   is for good, at the first start after the update; the log says how many went. The gateway's
   own messages stay, also to an ignored channel. Check the targets' `channel_index` before the
-  update: a mistyped one deletes that channel's messages. To keep a copy, export the messages
-  before the update ([deployment.md](docs/deployment.md#update-reconfigure-remove), #136).
+  update: a mistyped one deletes the received messages of the channel it was meant to name. To
+  keep a copy, export the messages before the update ([deployment.md](docs/deployment.md#update-reconfigure-remove), #136).
 
 ## [2.1.1rc2] - 2026-11-12
 

@@ -136,5 +136,5 @@ Tests cover schema creation and migration, retention by age and count, a corrupt
   `[messages] publish_channels = "targets"`, every start deletes, for good, the received messages
   of every channel that is no target's or that `ignore_channels` names, also those without a
   channel's index: rows that an earlier version kept of every channel, or that `"all"` kept. The
-  gateway's own messages stay; the log says how many rows went. A mistyped target's channel
-  deletes that channel's messages at the next start.
+  gateway's own messages stay; the log says how many rows went. A mistyped `channel_index` of a
+  target deletes, at the next start, the received messages of the channel it was meant to name.
