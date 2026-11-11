@@ -1652,7 +1652,7 @@ msgstr "Log-Level debug: das Journal erhält die Texte der Nachrichten, die Posi
 #: src/meshcore_home_gateway/config_checks.py
 #, python-brace-format
 msgid "mqtt.node_id {node_id} with homie.enabled: Homie IDs have no '_', so the Homie device is {root}, the same as for node_id {twin}: no other gateway on this broker may have that node ID, and the broker's ACL must grant {root}/#"
-msgstr "mqtt.node_id {node_id} mit homie.enabled: Homie-IDs haben kein '_', daher ist das Homie-Gerät {root} dasselbe wie bei node_id {twin}: kein anderes Gateway an diesem Broker darf diese Knoten-ID haben, und die ACL des Brokers muss {root}/# erlauben"
+msgstr "mqtt.node_id {node_id} mit homie.enabled: Homie-IDs haben kein '_', daher ist das Homie-Gerät {root}, dasselbe wie bei node_id {twin}: kein anderes Gateway auf diesem Broker darf diese Knoten-ID haben, und die ACL des Brokers muss {root}/# erlauben"
 
 #. first and second are contacts, each a shortened key and its roles.
 #: src/meshcore_home_gateway/config_checks.py

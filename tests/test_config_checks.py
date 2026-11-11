@@ -146,8 +146,8 @@ def test_check_config_prints_the_homie_warning_in_german(
     assert cli_main(["check-config", "--config", str(path)]) == EX_OK
     german = (
         "meshcore-home-gateway: Warnung: mqtt.node_id radio_1 mit homie.enabled: Homie-IDs "
-        "haben kein '_', daher ist das Homie-Gerät homie/meshcore-radio-1 dasselbe wie bei "
-        "node_id radio-1: kein anderes Gateway an diesem Broker darf diese Knoten-ID haben, und "
+        "haben kein '_', daher ist das Homie-Gerät homie/meshcore-radio-1, dasselbe wie bei "
+        "node_id radio-1: kein anderes Gateway auf diesem Broker darf diese Knoten-ID haben, und "
         "die ACL des Brokers muss homie/meshcore-radio-1/# erlauben"
     )
     assert capsys.readouterr().err.splitlines() == [german]
