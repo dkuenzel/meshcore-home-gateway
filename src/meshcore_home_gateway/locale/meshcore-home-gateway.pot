@@ -2861,6 +2861,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "It can come back after an update or a restart, as long as this home's radio remembers the old position."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "It differs from what this home wants, and the gateway only watches this radio."
 msgstr ""
 
@@ -3339,7 +3344,7 @@ msgstr ""
 #. names are the names of contacts, or the first digits of their keys
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "On that device, check in the MeshCore app that sharing the location in adverts is off, then send an advert near this home's radio."
+msgid "On that device, make sure in the MeshCore app that sharing the location in adverts is off, then send an advert near this home's radio."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
