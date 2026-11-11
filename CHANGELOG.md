@@ -14,6 +14,12 @@ format, the command line and Home Assistant discovery are public interfaces
   and in `doctor`: the Homie device writes `_` as `-`, so `radio_1` and `radio-1` share the
   device `homie/meshcore-radio-1`, whose topic the broker's ACL must grant with `-`
   ([mqtt-api.md](docs/mqtt-api.md#homie-homiehomie_device)) (#134).
+- The privacy page and the configuration guide said that with `[contacts] heard_nodes = "keys"`,
+  the default, the gateway keeps only the key and the type of a node it heard but did not add.
+  Its history also keeps when each was first and last heard, how, and the time its last advert
+  carried, until 7 days after it was last heard; it publishes none of them
+  ([privacy.md](docs/privacy.md)). The MQTT API left out that each entry of `nodes` also
+  carries `name_taken` then ([mqtt-api.md](docs/mqtt-api.md#nodes-heard-nodes)).
 
 ## [2.1.0] - 2026-11-09
 

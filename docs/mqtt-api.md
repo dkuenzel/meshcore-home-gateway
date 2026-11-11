@@ -558,10 +558,11 @@ radio does not report, from a log of its key within 10 s. That log is not authen
 them as a hint.
 
 The nodes are other people's radios ([What the gateway keeps](privacy.md)). By default
-(`[contacts] heard_nodes = "keys"`) each entry has its key, prefix, type and `look_alike` only:
-`name`, `first_heard_at`, `heard_at`, `heard_via`, `hops`, `snr_db` and `rssi_dbm` are `null`;
-`"full"` fills them, as in the example. With `"off"`, `total` is 0 and `nodes` empty; `look_alike`
-and `look_alike_total` still name the look-alikes ([configuration](configuration.md#contacts)).
+(`[contacts] heard_nodes = "keys"`) each entry has its key, prefix, type, `look_alike` and
+`name_taken` only: `name`, `first_heard_at`, `heard_at`, `heard_via`, `hops`, `snr_db` and
+`rssi_dbm` are `null`; `"full"` fills them, as in the example. With `"off"`, `total` is 0 and
+`nodes` empty; `look_alike` and `look_alike_total` still name the look-alikes
+([configuration](configuration.md#contacts)).
 
 ## History: `history`
 
