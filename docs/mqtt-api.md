@@ -200,10 +200,13 @@ Texts and names are published as they came: control and direction characters inc
 terminal, a file or a page must not take for instructions
 ([development.md](development.md#text-from-the-mesh-and-the-bus)). `[messages] clean_received`
 drops them from texts before publishing, and so from the name a channel message claims
-([configuration.md](configuration.md#messages)); commands are judged on the text as it came. A
-contact's name stays as its adverts gave it, also in `sender_name`, `history` and the device
-names in Home Assistant; the command line prints such characters escaped in JSON and as spaces
-in lists and CSV (#114).
+([configuration.md](configuration.md#messages)); commands are judged on the text as it came.
+Since 2.2 it also cleans the names of contacts and heard nodes, on one line, where the gateway
+takes them from the radio: in `sender_name`, `command` events, `history`, `pending`, the
+contacts' documents, `nodes`, the `node`, `contact` and `telemetry` events, the device names in
+Home Assistant and Homie (#137). Messages the history kept before keep their names. Without it,
+a contact's name stays as its adverts gave it; the command line prints such characters escaped in
+JSON and as spaces in lists and CSV (#114).
 
 ```json
 {"event_type": "contact", "text": "status please", "text_type": "plain",

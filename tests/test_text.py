@@ -8,6 +8,7 @@ from meshcore_home_gateway.core.text import (
     CONFIRM_NONCE_BYTES,
     TextPolicy,
     TextRejectedError,
+    clean_name,
     clean_received,
     contact_name,
     cut_chars,
@@ -51,6 +52,19 @@ def test_a_received_text_is_cleaned_like_an_outgoing_one() -> None:
     hostile = "\x1b[2Jalarm\u202eoff\u2066 \x07ok\r\nnext\u200dline \U0001f468\u200d\U0001f469"
     assert clean_received(hostile) == "[2Jalarmoff ok\nnext\u200dline \U0001f468\u200d\U0001f469"
     assert clean_received("x" * 500) == "x" * 500
+
+
+def test_a_received_name_is_cleaned_on_one_line() -> None:
+    """`[messages] clean_received` also cleans the names of contacts and heard nodes (#137): as a
+    received text, and its line breaks become single spaces; neither normalised nor cut, as the
+    name came. Joiners, marks and the Hangul filler stay: they belong to the name."""
+    hostile = " Da\x1b[2Jve\u202e\r\n\u2028\x07Bob\t\u2066  \U0001f468\u200d\U0001f469 "
+    assert clean_name(hostile) == "Da[2Jve Bob \U0001f468\u200d\U0001f469"
+    assert clean_name("Ali\n\nce") == "Ali ce"
+    assert clean_name("Cafe\u0301") == "Cafe\u0301"  # not composed (NFC would)
+    assert clean_name("\u3164") == "\u3164"
+    assert clean_name("x" * 40) == "x" * 40  # not cut
+    assert clean_name("\x1b\u202e") == ""
 
 
 def test_plain_ascii_passes_unchanged() -> None:

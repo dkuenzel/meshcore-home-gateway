@@ -24,7 +24,7 @@ from meshcore_home_gateway.core.commands import (
 )
 from meshcore_home_gateway.core.contacts import PREFIX_HEX_DIGITS, Contact
 from meshcore_home_gateway.core.model import InboundMessage, MessageKind
-from meshcore_home_gateway.core.text import clean_received
+from meshcore_home_gateway.core.text import clean_name, clean_received
 from meshcore_home_gateway.health import FAILURES
 from meshcore_home_gateway.mqtt.payloads import command_payload, encode, received_payload
 from meshcore_home_gateway.mqtt.topics import Topics
@@ -210,10 +210,7 @@ class Inbox:
             return  # judged, but neither published nor recorded: one sender or channel floods
         if self.config.messages.clean_received:  # judged as it came, published cleaned
             message = replace(message, text=clean_received(message.text))
-        sender = None
-        if message.sender_prefix is not None:
-            matches = session.contacts.resolve(message.sender_prefix)
-            sender = matches[0] if len(matches) == 1 else None
+        sender = self._sender(message, session)
         target = self._target_for(message, sender)
         # %r: names come from the mesh and must not forge log lines or terminal escapes
         log.info(
@@ -251,6 +248,19 @@ class Inbox:
             )
         if decision is not None:
             self._answer(decision, command)
+
+    def _sender(self, message: InboundMessage, session: RadioPort) -> Contact | None:
+        """The contact the message's key prefix names, if exactly one; with `[messages]
+        clean_received` its name cleaned as the text is (#137)."""
+        if message.sender_prefix is None:
+            return None
+        matches = session.contacts.resolve(message.sender_prefix)
+        if len(matches) != 1:
+            return None
+        sender = matches[0]
+        if self.config.messages.clean_received:
+            sender = replace(sender, name=clean_name(sender.name))
+        return sender
 
     def _count_wrong_code(self, decision: CommandDecision | None) -> None:
         """A wrong code is counted before anything is published (#79): at the limit the

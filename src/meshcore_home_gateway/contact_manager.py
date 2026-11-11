@@ -40,7 +40,7 @@ from meshcore_home_gateway.core.contacts import (
     remove_refusal,
 )
 from meshcore_home_gateway.core.mesh import Node
-from meshcore_home_gateway.core.text import contact_name
+from meshcore_home_gateway.core.text import clean_name, contact_name
 from meshcore_home_gateway.health import FAILURES
 from meshcore_home_gateway.observer import Observer
 from meshcore_home_gateway.ports import (
@@ -403,7 +403,8 @@ class ContactManager:
         reason = remove_refusal(job.key, table=session.contact_records)
         if reason is not None or record is None:
             raise _RefusedError(reason or "unknown_contact")
-        named = Job(job.kind, job.key, job.request_id, job.source, record.name, record.node_type)
+        name = clean_name(record.name) if self._config.messages.clean_received else record.name
+        named = Job(job.kind, job.key, job.request_id, job.source, name, record.node_type)
         await self._write(session, named, session.remove_contact(record.public_key))
 
     async def _write(self, session: RadioPort, job: Job, write: Awaitable[None]) -> None:

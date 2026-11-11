@@ -728,6 +728,70 @@ def test_by_default_a_stranger_is_kept_with_its_name_times_and_signal(tmp_path: 
     histories[0].close()
 
 
+def test_with_clean_received_a_strangers_name_is_cleaned_everywhere(tmp_path: Path) -> None:
+    """#137: with `[messages] clean_received` and the default `heard_nodes`, a heard node's name
+    is cleaned where the gateway takes it from the radio: the `node` event, the `nodes` document
+    and the history carry it without control and direction characters; a contact's too."""
+    radio, path = EmulatedRadio(contacts=[replace(ALICE, name="Ali\x1bce")]), tmp_path / "h.db"
+    hostile = replace(CAROL, name="Car\x1b[2Jol\u202e")
+    histories: list[History] = []
+
+    def observer(bus: FakeBus) -> Observer:
+        history = History.open(path)
+        assert history is not None
+        histories.append(history)
+        return Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW)
+
+    async def main() -> None:
+        config = make_config(messages="clean_received = true")
+        async with running(config, radio, tmp_path, observer=observer) as (_, bus, _notes):
+            radio.emit(advert_log(hostile, hops=3))
+            radio.advertise(hostile)
+            event = await bus.wait_for(f"{ROOT}/node", lambda e: e["event_type"] == "new")
+            assert (event["name"], event["hops"]) == ("Car[2Jol", 3)
+            nodes = await bus.wait_for(f"{ROOT}/nodes", lambda d: d["total"] == 1)
+            assert nodes["nodes"][0]["name"] == "Car[2Jol"
+            assert last(bus, f"{ROOT}/contacts/{ALICE.public_key.hex()}")["name"] == "Alice"
+
+    scenario(main)
+    (row,) = histories[0].nodes()
+    assert row.name == "Car[2Jol"
+    histories[0].close()
+
+
+def test_with_clean_received_a_restored_strangers_name_is_cleaned(tmp_path: Path) -> None:
+    """#137: a row kept before 2.2 or with `clean_received` off holds the name as it came: the
+    gateway cleans it as it takes the node back."""
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    key = CAROL.public_key.hex()
+    history.node_heard(key, "Car\x07ol\u202e", 2, Heard(NOW, "advert"), int(NOW))
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW + 60)
+    observer.clean_names = True
+    observer.radio_event(ContactsRead({}, NOW + 60))
+    (entry,) = last(bus, f"{ROOT}/nodes")["nodes"]
+    assert entry["name"] == "Carol"
+    history.close()
+
+
+@pytest.mark.parametrize(("clean", "taken"), [(False, False), (True, True)])
+def test_a_stranger_named_like_a_contact_with_a_control_character(clean: bool, taken: bool) -> None:
+    """SEC-007 with #137: a control character kept in a name reads as a space (`name_key`), so
+    "Ali<BEL>ce" is not Alice; once `clean_received` takes it out, the name is Alice's, and the
+    node is flagged."""
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, wall_clock=lambda: NOW)
+    observer.clean_names = clean
+    observer.radio_event(ContactsRead({ALICE.public_key.hex(): contact_record(ALICE)}, NOW))
+    twin = contact_record(EmulatedContact(b"\xee" * 32, "Ali\x07ce", last_advert=int(NOW) - 5))
+    observer.radio_event(AdvertHeard(codec.Advert(twin.public_key, True, twin), NOW))
+    (event,) = bus.payloads(f"{ROOT}/node")
+    assert (event["name"], event["name_taken"]) == ("Alice" if clean else "Ali\x07ce", taken)
+    flagged = [twin.public_key.hex()] if taken else []
+    assert last(bus, f"{ROOT}/nodes")["name_taken"] == flagged
+
+
 def test_by_default_a_taken_name_is_still_flagged_after_a_restart(tmp_path: Path) -> None:
     """SEC-007 across a restart: with the default the history keeps the name, so a node named
     like a contact is flagged before its next advert (with `keys` only after it)."""

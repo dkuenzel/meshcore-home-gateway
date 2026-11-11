@@ -244,6 +244,7 @@ def _observer(config: Config, observer: Observer) -> Observer:
         config.contacts.heard_nodes,
     )
     observer.telemetry_types = config.telemetry.node_types
+    observer.clean_names = config.messages.clean_received
     if config.messages.publish_channels == "targets":  # #136: the others' rows go for good
         observer.forget_unpublished_channels(published_channels(config))
     observer.show_channels(lambda index: channel_published(config, index))

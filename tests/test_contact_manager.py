@@ -448,6 +448,26 @@ def test_the_radio_refusing_the_write_fails_the_request(tmp_path: Path) -> None:
     scenario(main)
 
 
+@pytest.mark.parametrize("clean", [False, True])
+def test_a_failed_remove_names_the_contact_cleaned_only_when_asked(
+    tmp_path: Path, clean: bool
+) -> None:
+    """#137: the result of a remove names the contact as the radio's table has it; with
+    `[messages] clean_received`, cleaned as everywhere else."""
+    hostile = EmulatedContact(DAVE.public_key, "Da\x1b[2Jve\u202e", last_advert=DAVE.last_advert)
+    radio = EmulatedRadio(contacts=[ALICE, BOB, hostile], errors={Command.REMOVE_CONTACT: 3})
+    config = make_config(messages=f"clean_received = {str(clean).lower()}")
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path) as (_, bus, _n):
+            request(bus, "remove", {"id": "err"}, key=DAVE.public_key.hex())
+            event = await result(bus, "err")
+            name = "Da[2Jve" if clean else hostile.name
+            assert (event["event_type"], event["name"]) == ("failed", name)
+
+    scenario(main)
+
+
 def test_a_write_the_table_does_not_show_is_not_confirmed(tmp_path: Path) -> None:
     radio = EmulatedRadio(contacts=[ALICE, BOB], ignored={Command.ADD_UPDATE_CONTACT})
 

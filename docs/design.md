@@ -1217,7 +1217,8 @@ reasons (security review 2026-11, ARC-017).
   people, never commands or markup; cleaning them on the way in would change what was received
   and hide what an attacker sent. Consumers escape them where they display them
   ([development.md](development.md#text-from-the-mesh-and-the-bus)); `[messages] clean_received`
-  is the opt-in for consumers that cannot (SEC-017).
+  is the opt-in for consumers that cannot (SEC-017), since 2.2 for the names of contacts and
+  heard nodes too (#137).
 
 ## 12 Open questions and future work
 
