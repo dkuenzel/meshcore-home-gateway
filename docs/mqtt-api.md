@@ -558,10 +558,12 @@ radio does not report, from a log of its key within 10 s. That log is not authen
 them as a hint.
 
 The nodes are other people's radios ([What the gateway keeps](privacy.md)). By default
-(`[contacts] heard_nodes = "keys"`) each entry has its key, prefix, type and `look_alike` only:
-`name`, `first_heard_at`, `heard_at`, `heard_via`, `hops`, `snr_db` and `rssi_dbm` are `null`;
-`"full"` fills them, as in the example. With `"off"`, `total` is 0 and `nodes` empty; `look_alike`
-and `look_alike_total` still name the look-alikes ([configuration](configuration.md#contacts)).
+(`[contacts] heard_nodes = "keys"`) each entry has its key, prefix, type, `look_alike` and
+`name_taken` only: `name`, `first_heard_at`, `heard_at`, `heard_via`, `hops`, `snr_db` and
+`rssi_dbm` are `null`; `"full"` fills them, as in the example. With `"off"`, `total` is 0 and
+`nodes` empty; `look_alike` and `look_alike_total` still name the look-alikes, and `name_taken`
+and `name_taken_total` the heard nodes whose name is taken
+([configuration](configuration.md#contacts)).
 
 ## History: `history`
 
@@ -1032,7 +1034,11 @@ documents above (`state` and `contacts/<key>`): it shows nothing they do not. It
 unit tests; openHAB's side is maintained by those who use it, as releases are checked with Home
 Assistant ([ADR 0030](decisions/0030-release-checked-by-ci-self-test-and-use.md)).
 `<homie_device>` is `meshcore-<node_id>` with `_` as `-` (`meshcore-radio1`): Homie's IDs are
-lower-case letters, digits and `-`.
+lower-case letters, digits and `-`. So node IDs that differ only in `_` and `-` share one device:
+`radio_1` and `radio-1` both publish `homie/meshcore-radio-1`. With `[homie]` on, the service
+warns about a node ID with `_` at every start, and so do `check-config` and `doctor`: give no
+other gateway on the broker the node ID with `-`, and grant the device's topic with `-` in the
+broker's ACL.
 
 Homie wants the device's `$state` as the last will of its connection, and a connection has one
 last will, which the gateway's carries for `availability`. So the device has a connection of its

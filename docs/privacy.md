@@ -44,14 +44,16 @@ the history holds: treat both as the history itself.
 
 | What | Where | How long | Off |
 | --- | --- | --- | --- |
-| Nodes heard but not added: key and type; with `[contacts] heard_nodes = "full"` also the name its owner chose, when it was first and last heard, hops, SNR and RSSI; never a position | `nodes` (retained, the last 50), `node` events, Home Assistant's *Nodes heard*, *New node* and *Look-alike node heard*, the history | 7 days after the last time heard, in memory and in the history | `[contacts] heard_nodes = "off"` keeps nothing but the keys of look-alikes of contacts and protected keys ([configuration](configuration.md#contacts)) |
+| Nodes heard but not added: key and type; the history also keeps when each was first and last heard, how, and the time its last advert carried; with `[contacts] heard_nodes = "full"` also the name its owner chose, hops, SNR and RSSI, and the times and how are published too; never a position | `nodes` (retained, the last 50), `node` events, Home Assistant's *Nodes heard*, *New node* and *Look-alike node heard*, the history | 7 days after the last time heard, in memory and in the history | `[contacts] heard_nodes = "off"` keeps nothing but the keys of look-alikes of contacts and protected keys, and of heard nodes whose name a contact, the gateway or another heard node has (`name_taken`) ([configuration](configuration.md#contacts)) |
 | Messages on the channels that are a target: text and the name the sender claims; with `[messages] publish_channels = "all"` on every channel | `received` events, `history` (retained) and Home Assistant's *Message history*, the history | 30 days | a channel that is not a target is dropped (`[messages] publish_channels = "targets"`, the default); `ignore_channels` leaves out single ones ([configuration](configuration.md#messages)) |
 | Other people's companions among the radio's contacts | as the household's | as the household's | none of them is asked until included (`[telemetry] ask = "household"`, the default); with `"all"` exclude them ([telemetry](configuration.md#telemetry)) |
 | Every packet the radio receives: raw bytes with other people's ciphertext and the positions in their adverts, and the signal | `rx` events; Home Assistant's *Last packet RSSI* and *Last packet SNR* (disabled by default) | not kept by the gateway | off unless `[diagnostics] publish_rx_log = true`: a diagnostic, it shows the packets as received, positions included |
 
 A look-alike, a node with the first 6 bytes of a contact's key, is kept even with `heard_nodes =
 "off"`: it is the warning that someone could pass for that contact
-([ADR 0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md)).
+([ADR 0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md)). So is the key of a
+heard node whose name is taken: someone may pass for a member of the household
+([mqtt-api.md](mqtt-api.md#nodes-heard-nodes)).
 
 The gateway sends nothing it learns on the mesh back to the mesh. As the managed profile keeps
 it, its radio puts no position into its adverts and answers no one's telemetry requests
