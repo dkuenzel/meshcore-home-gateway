@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+import tests.bridge_harness as harness
 from meshcore_home_gateway import bridge as bridge_module
 from meshcore_home_gateway import outbox as outbox_module
 from meshcore_home_gateway.config import ProfileConfig, parse_config
@@ -542,3 +543,26 @@ def test_the_radio_becomes_an_observer_and_reports_its_settings(tmp_path: Path) 
             assert all(radio.commands().index(c) < first_read for c in setters)
 
     scenario(main)
+
+
+def test_a_stop_that_hangs_names_the_tasks_still_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The harness gives a stop STOP_LIMIT_S. One that takes longer fails with the name and the
+    stack of each task still running, so a stop that hangs once on a slow runner says where."""
+    monkeypatch.setattr(harness, "STOP_LIMIT_S", 0.3)
+
+    async def stuck(self: Any, loop: asyncio.Task[None]) -> None:
+        await asyncio.Event().wait()  # a stop that never ends
+
+    monkeypatch.setattr(outbox_module.Delivery, "finish", stuck)
+
+    async def main() -> None:
+        async with running(make_config(), EmulatedRadio(contacts=[ALICE]), tmp_path):
+            pass
+
+    with pytest.raises(AssertionError) as raised:
+        scenario(main)
+    message = str(raised.value)
+    assert "did not stop within 0.3 s" in message, message
+    assert "in stuck" in message, message  # the stack of the bridge's task, down to the wait
