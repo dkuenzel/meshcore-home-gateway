@@ -319,7 +319,7 @@ again.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `manage` | `true` | add and remove contacts on request: from Home Assistant ([home-assistant.md](home-assistant.md#adding-and-removing-contacts)), the command line (`meshcore-home-gateway contacts`) and MQTT ([mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)). A contact grants no rights; contact targets and command senders are never removed. With `false` the controls in Home Assistant are `unavailable` |
-| `heard_nodes` | `"keys"` | what the gateway publishes and keeps of the nodes it heard but did not add, other people's radios ([privacy.md](privacy.md)): `"keys"` key and type only, also in the history and in the labels of *Add heard node*; `"full"` key, type, name, when and how they were heard; `"off"` nothing: no `nodes` entries, no `node` events, no history rows, nothing to add from the select, only the keys of look-alikes of contacts and protected keys ([mqtt-api.md](mqtt-api.md#nodes-heard-nodes)). Rows of an earlier setting lose name and signal at the start with `"keys"`, and go with the next hourly purge with `"off"` |
+| `heard_nodes` | `"keys"` | what the gateway publishes and keeps of the nodes it heard but did not add, other people's radios ([privacy.md](privacy.md)): `"keys"` key and type only, also in the labels of *Add heard node*, and the history keeps besides them when each was first and last heard, how, and the time its last advert carried, never its name or signal; `"full"` key, type, name, when and how they were heard; `"off"` nothing: no `nodes` entries, no `node` events, no history rows, nothing to add from the select, only the keys of look-alikes of contacts and protected keys, and of heard nodes whose name a contact, the gateway or another heard node has (`name_taken`) ([mqtt-api.md](mqtt-api.md#nodes-heard-nodes)). Rows of an earlier setting lose name and signal at the start with `"keys"`, and go with the next hourly purge with `"off"` |
 
 Who may send the requests is the broker's ACL to decide ([mqtt-api.md](mqtt-api.md#securing-the-broker)).
 Contacts are written only on tested firmware, like the managed profile; `radio.profile.manage =
@@ -422,7 +422,7 @@ connection to the broker is a second one, with the settings of `[mqtt]`.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `enabled` | `false` | publish the device `homie/meshcore-<node_id>` (`_` as `-`); the broker's ACL needs `homie/meshcore-<node_id>/#` for the gateway's user. Switched off, the device stays on the broker until you clear it ([Homie](mqtt-api.md#homie-homiehomie_device)) |
+| `enabled` | `false` | publish the device `homie/meshcore-<node_id>` (`_` as `-`); the broker's ACL needs `homie/meshcore-<node_id>/#` for the gateway's user. A node ID with `_` shares the device with the node ID that has `-` for it (`radio_1` and `radio-1`: `homie/meshcore-radio-1`), so the service at every start, `check-config` and `doctor` warn about it. Switched off, the device stays on the broker until you clear it ([Homie](mqtt-api.md#homie-homiehomie_device)) |
 | `contacts` | `50` | contacts with a node, 0 to 1000, chosen as for their devices in Home Assistant (`homeassistant.contact_devices`) |
 
 ## Installer answers

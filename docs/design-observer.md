@@ -126,8 +126,9 @@ flowchart LR
   minute tick after that), so a flood of adverts does not republish it (up to 15 KiB) per advert.
   The history keeps the rows of the contacts and of the heard nodes the gateway keeps: the hourly
   purge removes the others, and every row after 7 days. Heard nodes are other people's radios:
-  `[contacts] heard_nodes = "keys"` publishes and stores their keys and types only, `"off"`
-  nothing; the memory still holds them, for the look-alike check, whose keys stay published
+  `[contacts] heard_nodes = "keys"` publishes their keys and types only and stores besides them
+  when and how they were heard and the time their last advert carried, `"off"` nothing; the
+  memory still holds them, for the look-alike check, whose keys stay published
   ([privacy.md](privacy.md)).
 * **Last heard** follows adverts and messages at once; a contact heard only by its telemetry
   answers moves it at most once an hour, keeping the signal of its last advert or message (an

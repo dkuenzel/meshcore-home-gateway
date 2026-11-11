@@ -1644,6 +1644,14 @@ msgstr ""
 msgid "log level debug: the journal gets the texts of the messages, the positions, the keys and every frame of the radio, which journald keeps for weeks; set it back to info after the search (docs/configuration.md, diagnostics)"
 msgstr ""
 
+#. node_id is the gateway's node ID, such as radio_1; root is the Homie
+#. device's topic, such as homie/meshcore-radio-1; twin is the node ID with '-' for '_'.
+#. mqtt.node_id, homie.enabled, node_id and ACL stay as they are
+#: src/meshcore_home_gateway/config_checks.py
+#, python-brace-format
+msgid "mqtt.node_id {node_id} with homie.enabled: Homie IDs have no '_', so the Homie device is {root}, the same as for node_id {twin}: no other gateway on this broker may have that node ID, and the broker's ACL must grant {root}/#"
+msgstr ""
+
 #. first and second are contacts, each a shortened key and its roles.
 #: src/meshcore_home_gateway/config_checks.py
 #, python-brace-format

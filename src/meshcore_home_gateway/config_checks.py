@@ -4,6 +4,7 @@ and the risks that the start logs and `check-config` shows (SEC-004, OPS-017, AD
 from __future__ import annotations
 
 from meshcore_home_gateway.config import Config
+from meshcore_home_gateway.mqtt.homie import ROOT, device_id
 from meshcore_home_gateway.protocol.codec import radio_name
 from meshcore_home_gateway.texts import Text
 
@@ -28,6 +29,7 @@ def start_warnings(config: Config) -> list[Text]:
     return (
         protected_look_alikes(config)
         + alias_pairs(config)
+        + homie_device(config)
         + ignored_codes(config)
         + broker_warnings(config)
         + log_level_warnings(config)
@@ -88,6 +90,29 @@ def alias_pairs(config: Config) -> list[Text]:
         )
         for group in groups.values()
         if len(group) > 1
+    ]
+
+
+def homie_device(config: Config) -> list[Text]:
+    """A node ID with `_` while Homie is on: Homie's IDs have no `_`, so the device writes it as
+    `-`, and the node ID with `-` for it gets the same device on the broker (#134). The broker's
+    ACL must grant the device's topic with `-` too."""
+    node_id = config.mqtt.node_id
+    if not config.homie.enabled or "_" not in node_id:
+        return []
+    root = f"{ROOT}/{device_id(node_id)}"
+    return [
+        # Translators: node_id is the gateway's node ID, such as radio_1; root is the Homie
+        # device's topic, such as homie/meshcore-radio-1; twin is the node ID with '-' for '_'.
+        # mqtt.node_id, homie.enabled, node_id and ACL stay as they are
+        Text(
+            "mqtt.node_id {node_id} with homie.enabled: Homie IDs have no '_', so the Homie "
+            "device is {root}, the same as for node_id {twin}: no other gateway on this broker "
+            "may have that node ID, and the broker's ACL must grant {root}/#",
+            node_id=node_id,
+            root=root,
+            twin=node_id.replace("_", "-"),
+        )
     ]
 
 

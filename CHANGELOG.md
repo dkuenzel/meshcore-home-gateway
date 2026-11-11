@@ -36,6 +36,18 @@ format, the command line and Home Assistant discovery are public interfaces
   869,618 MHz; 3,9 V), and in every language a whole number without `.0` (a duty cycle of 10, a
   budget of 36 s). The decimal mark comes from locale data, not from a translator; a number in a
   message or a name stays as it was written (#145). Make the dashboard again after the update.
+- With `[homie] enabled`, a node ID with `_` gets a warning at every start, in `check-config`
+  and in `doctor`: the Homie device writes `_` as `-`, so `radio_1` and `radio-1` share the
+  device `homie/meshcore-radio-1`, whose topic the broker's ACL must grant with `-`
+  ([mqtt-api.md](docs/mqtt-api.md#homie-homiehomie_device)) (#134).
+- The privacy page and the configuration guide said that with `[contacts] heard_nodes = "keys"`,
+  the default, the gateway keeps only the key and the type of a node it heard but did not add.
+  Its history also keeps when each was first and last heard, how, and the time its last advert
+  carried, until 7 days after it was last heard; it publishes none of them
+  ([privacy.md](docs/privacy.md)). The MQTT API left out that each entry of `nodes` also
+  carries `name_taken` then ([mqtt-api.md](docs/mqtt-api.md#nodes-heard-nodes)). With
+  `heard_nodes = "off"`, the three pages named only the look-alikes' keys as published; the
+  `nodes` document also lists the keys of heard nodes whose name is taken (`name_taken`).
 
 ## [2.1.0] - 2026-11-09
 
