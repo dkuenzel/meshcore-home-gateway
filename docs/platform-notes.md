@@ -188,6 +188,7 @@ One line per fact, by section.
 * A Markdown card parses what its template puts out as Markdown, after the template's own escaping: an escaped mesh text still becomes an image that the browser loads, a link or an autolink; in an HTML block on one line it stays text.
 * A Markdown card can show a QR code: `ha-qr-code` with `data` and `scale` is on the sanitiser's allow list. A button entity's own row in an entities card is disabled while the button is unavailable and asks first when the row has `confirmation`; a row of `type: button` stays pressable then, asks, and its `button.press` reaches no entity (Home Assistant only logs a warning). The more-info dialog presses at once.
 * A map card draws a trail only with `hours_to_show` above 0, which defaults to 0; the Map panel sets none. A trail is the entity's recorder rows that have `latitude` and `longitude`: a row without them (`unavailable`) is skipped, and the line joins its neighbours.
+* A map card draws no marker for an entity without a location, such as an `unavailable` tracker, and keeps its trail: the points of the last `hours_to_show` hours that had one, each a dot whose tooltip names the entity and the time, the last one where it was last.
 * A device tracker is `force_update`: every write is a new state, so a write after an MQTT reconnect or a restart adds a second point on one spot. A card open while its entity is kept out of the recorder still draws the points that come while it stays open, and a `person` keeps its own copy of the position.
 * A map card's `conditions` filter only the markers: with `show_all`, every entity with a location draws its trail, a phone's and a person's too, also when its marker is filtered out. `show_all` takes the entities that have a location when the card gets its configuration; one without a location then (an `unavailable` tracker) gets neither marker nor trail until the page loads again.
 * A Markdown card's `entity_id` option does nothing: Home Assistant renders the template again when what it read changes, and a template that calls `now()` also each minute.
@@ -1746,6 +1747,21 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   ([Traces on the map](home-assistant.md#traces-on-the-map)); `home-assistant/tests/test_traces.py`
   sends the card's exact request against the real recorder: one row per move, none per resting
   answer, an expiry as a row without coordinates. *Check:* `make ha-test`.
+* **A map card draws no marker for an entity without a location, such as an `unavailable`
+  tracker, and keeps its trail: the points of the last `hours_to_show` hours that had one, each a
+  dot whose tooltip names the entity and the time, the last one where it was last.** *Verified:*
+  frontend `20260930.4` (Home Assistant 2026.10.2): `src/components/map/ha-map.ts` lines
+  1393-1396 (an entity without a location is skipped), 1204-1317 (a dot for each point of a
+  trail and for its last), `src/common/entity/get_entity_location.ts` lines 28-39 (a location
+  needs a latitude and a longitude, a person's zone aside),
+  `src/panels/lovelace/cards/hui-map-card.ts` lines 931-988 (the points, from the rows with a
+  position); `20261028.4` (2026.11.0): the same at `ha-map.ts` 1404-1407 and 1222-1335,
+  `hui-map-card.ts` 1035-1093; the drawing was not run in a browser. `home-assistant/tests/test_traces.py` sends the
+  generated dashboard's own card's request after an expiry: the tracker's state has no latitude,
+  and the rows with a position before it stay in the answer. *Here:* the Map page's help says
+  that a device whose position is not current shows only its line, which ends in a dot where it
+  was last, until that is more than 24 hours ago (2.1.1). *Check:* `make ha-test`; `sed -n
+  1393,1396p src/components/map/ha-map.ts` in the frontend's source at `20260930.4`.
 * **A device tracker is `force_update`: every write is a new state, so a write after an MQTT
   reconnect or a restart adds a second point on one spot. A card open while its entity is kept out
   of the recorder still draws the points that come while it stays open, and a `person` keeps its

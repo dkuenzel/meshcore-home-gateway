@@ -32,7 +32,7 @@ controls that add and remove contacts, `test_telemetry.py` the companions' telem
 readings, states, switch and expiry, a `person` and its presence triggers, the telemetry examples),
 `test_adverts.py` the check for positions in adverts (*Position in adverts*, the gateway's sensor,
 the event and its example), `test_traces.py` the traces on the map (the map card's own request
-against the real recorder), `test_languages.py` the names in another language (the same entity
+against the real recorder, also the generated dashboard's card after a tracker expired), `test_languages.py` the names in another language (the same entity
 IDs, unique IDs and attributes in English and in a pseudo-language, a change of language that
 renames only display names, a device name the user chose kept) and `test_dashboard.py` the
 generated dashboard (loaded as a YAML-mode

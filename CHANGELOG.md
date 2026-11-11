@@ -26,6 +26,10 @@ format, the command line and Home Assistant discovery are public interfaces
   *Gateway*, *Settings* and *Help*. Since the map lost its tab in 2.1.0, its links stood only
   under *Where everyone is*, below everything on a phone, and the map seemed gone. Make the
   dashboard again after the update.
+- The help of the dashboard's *Map* says what a device whose position is not current shows: its
+  marker goes, as on Home Assistant's own Map panel, but the map keeps its line, which ends in a
+  dot where it was last, until that is more than 24 hours ago. Make the dashboard again after the
+  update.
 
 ## [2.1.0] - 2026-11-09
 

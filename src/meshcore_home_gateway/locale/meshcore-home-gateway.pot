@@ -1777,6 +1777,11 @@ msgctxt "dashboard"
 msgid "A dashboard of another version can miss new cards or name entities that changed."
 msgstr ""
 
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "A device whose position is not current shows only its line, which ends in a dot where it was last, until that is more than 24 hours ago."
+msgstr ""
+
 #. security text (docs/translations.md): what a tick proves and what it does not; a confirmation that came too soon may be forged
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"

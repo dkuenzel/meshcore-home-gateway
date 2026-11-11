@@ -518,8 +518,9 @@ hours_to_show: 24
 List one tracker per companion. The trace reaches back as far as the recorder keeps states
 (10 days by default); the gateway's own history keeps positions for `positions_days`, but Home
 Assistant cannot read it. While a tracker is `unavailable` (its telemetry expired, or its
-position from adverts went), it has no position: the card joins the points before and after
-with a straight line. A restart of the gateway or of Home Assistant adds a second point on the
+position from adverts went), it has no position: the card draws no marker for it, its trace ends
+in a dot where it was last until that is older than `hours_to_show`, and once it has a position
+again the card joins the points before and after with a straight line. A restart of the gateway or of Home Assistant adds a second point on the
 same spot. A tracker kept out of the recorder ([Privacy](#privacy)) has no trace after a
 reload; a card open at that moment still draws the points that come while it stays open. With
 `show_all: true` instead of `entities`, the card draws the traces of every tracker and person,
@@ -757,7 +758,10 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   the settings, while the switches still keep who would be asked. A list whose rows all hide
   shows no empty frame.
 * *Map*: the contacts with a position and their traces of the last 24 hours
-  ([Traces on the map](#traces-on-the-map)), and below it *Where everyone is*, in words.
+  ([Traces on the map](#traces-on-the-map)), and below it *Where everyone is*, in words. A
+  contact whose position is not current has no marker there, as on Home Assistant's own Map
+  panel, but keeps its trace, which ends in a dot where it was last, until that is more than 24
+  hours ago; the map's help says so.
 * *Gateway*: *Health*, each part of the gateway with its state, those that need a look named
   first, the messages on their way and those waiting over a minute, counted as the first line of
   *Overview* counts them, and the airtime left of the hour's budget; *Radio*, its name, model,
