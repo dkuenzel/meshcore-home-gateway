@@ -18,6 +18,7 @@ import pytest
 
 from meshcore_home_gateway import history as history_module
 from meshcore_home_gateway import observer as observer_module
+from meshcore_home_gateway.config import ContactsConfig
 from meshcore_home_gateway.config_checks import protected_keys
 from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core.adverts import MAX_LOGGED
@@ -664,6 +665,96 @@ def test_a_new_node_named_like_the_gateway_is_flagged() -> None:
     (event,) = bus.payloads(f"{ROOT}/node")
     assert event["name_taken"] is True
     assert last(bus, f"{ROOT}/nodes")["name_taken"] == [CAROL.public_key.hex()]
+
+
+def test_by_default_a_stranger_is_kept_with_its_name_times_and_signal(tmp_path: Path) -> None:
+    """The default of `[contacts] heard_nodes` since 2.2, `full` (ADR 0032): the `node` event, the
+    `nodes` document and the history carry a stranger's name, when it was heard and its signal,
+    never its position."""
+    radio, path = EmulatedRadio(contacts=[ALICE]), tmp_path / "history.sqlite3"
+    histories: list[History] = []
+
+    def observer(bus: FakeBus) -> Observer:
+        history = History.open(path)
+        assert history is not None
+        histories.append(history)
+        return Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path, observer=observer) as (_, bus, _notes):
+            radio.emit(advert_log(CAROL, hops=3))
+            radio.advertise(CAROL)
+            event = await bus.wait_for(f"{ROOT}/node", lambda e: e["event_type"] == "new")
+            assert (event["name"], event["hops"], event["snr_db"], event["rssi_dbm"]) == (
+                "Carol",
+                3,
+                5.5,
+                -95,
+            )
+            assert [k for k, v in event.items() if v is None] == []
+            nodes = await bus.wait_for(f"{ROOT}/nodes", lambda d: d["total"] == 1)
+            (entry,) = nodes["nodes"]
+            assert (entry["name"], entry["heard_via"], entry["rssi_dbm"]) == (
+                "Carol",
+                "advert",
+                -95,
+            )
+            assert [k for k, v in entry.items() if v is None] == []
+            assert "latitude" not in json.dumps(nodes)
+
+    scenario(main)
+    (row,) = histories[0].nodes()
+    assert (row.name, row.heard.signal) == ("Carol", Signal(3, 5.5, -95))
+    histories[0].close()
+
+
+def test_by_default_a_taken_name_is_still_flagged_after_a_restart(tmp_path: Path) -> None:
+    """SEC-007 across a restart: with the default the history keeps the name, so a node named
+    like a contact is flagged before its next advert (with `keys` only after it)."""
+    path = tmp_path / "history.sqlite3"
+    history = History.open(path)
+    assert history is not None
+    first = Observer(FakeBus(), TOPICS, history=history, wall_clock=lambda: NOW)
+    first.heard_nodes = ContactsConfig().heard_nodes  # the run before the restart
+    first.radio_event(ContactsRead({}, NOW))
+    twin = contact_record(EmulatedContact(b"\xee" * 32, "Carol", last_advert=int(NOW) - 5))
+    first.radio_event(AdvertHeard(codec.Advert(twin.public_key, True, twin), NOW))
+    stranger = twin.public_key.hex()
+    history.close()
+
+    history = History.open(path)
+    assert history is not None
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW + 60)
+    observer.heard_nodes = ContactsConfig().heard_nodes
+    observer.radio_event(ContactsRead({CAROL.public_key.hex(): contact_record(CAROL)}, NOW + 60))
+    assert observer.mesh.nodes[stranger].node.name == "Carol"
+    assert last(bus, f"{ROOT}/nodes")["name_taken"] == [stranger]
+    history.close()
+
+
+def test_by_default_a_node_kept_under_keys_gets_its_name_back_with_its_next_advert(
+    tmp_path: Path,
+) -> None:
+    """The rows a run with `keys` kept have no name or signal; after the update to the default
+    the node's next advert brings its name back, in the `nodes` document and in the history."""
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    key = CAROL.public_key.hex()
+    history.node_heard(key, "", 2, Heard(NOW - 600, "advert"), CAROL.last_advert - 600)
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW)
+    observer.heard_nodes = ContactsConfig().heard_nodes
+    observer.radio_event(ContactsRead({}, NOW))
+    (entry,) = last(bus, f"{ROOT}/nodes")["nodes"]
+    assert (entry["key"], entry["name"], entry["rssi_dbm"]) == (key, "", None)
+    carol = contact_record(CAROL)
+    observer.radio_event(AdvertHeard(codec.Advert(carol.public_key, True, carol), NOW))
+    (entry,) = last(bus, f"{ROOT}/nodes")["nodes"]
+    assert (entry["name"], entry["heard_at"]) == ("Carol", iso(NOW))
+    (row,) = history.nodes()
+    assert (row.name, row.last_advert) == ("Carol", CAROL.last_advert)
+    history.close()
 
 
 def test_with_heard_nodes_keys_a_stranger_has_no_name_times_or_signal(tmp_path: Path) -> None:

@@ -1296,11 +1296,14 @@ and kept; with `"all"` every channel's messages become events, history rows and 
 like the household's own. `ignore_channels` leaves out single channels
 ([configuration.md](configuration.md#messages)).
 
-The nodes heard are other people's radios: *Nodes heard*, the *New node* event and *Look-alike
-node heard*. By default (`[contacts] heard_nodes = "keys"`) they show their keys and types only;
-`"full"` adds the name its owner chose and its signal, `"off"` keeps nothing but the look-alikes'
-keys ([configuration.md](configuration.md#contacts)). What the gateway keeps, of whom and for how
-long, is in [privacy.md](privacy.md).
+The nodes heard are other people's radios: *Nodes heard*, the *New node* event, *Look-alike node
+heard* and the select *Add heard node*. By default (`[contacts] heard_nodes = "full"`, since 2.2)
+the *New node* event carries the name its owner chose, when it was heard and its signal, which
+the recorder keeps, and *Add heard node* offers the nodes by name; `"keys"` shows their keys and
+types only, `"off"` keeps nothing but the look-alikes' keys
+([configuration.md](configuration.md#contacts)). What the gateway keeps, of whom and for how
+long, and the pattern that keeps the *New node* events out of the recorder, are in
+[privacy.md](privacy.md#other-people).
 
 Message texts, sender keys and sender names are attributes of the event entities, so Home
 Assistant stores them in its history database, and the last event of each entity also in

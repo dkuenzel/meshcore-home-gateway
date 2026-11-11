@@ -113,11 +113,12 @@ every setting in the table.
 | Contacts allowed to send commands, command words | read from the radio; `status` | both |
 | Commands without a user name or TLS: accept (`mqtt.insecure`) | no: no commands | both, only then |
 
-Without a question, an installation keeps of other people's radios their keys and types only
-(the default `contacts.heard_nodes = keys`, [what the gateway keeps](privacy.md)) and asks only
-the companions the household includes for telemetry (`telemetry.ask = household`); the answers
-`contacts.heard_nodes=full`, `telemetry.ask=all` and `messages.publish_channels=all` in an
-answers file keep more.
+Without a question, an installation keeps of other people's radios their keys, types, names,
+when they were heard and their signal (the default `contacts.heard_nodes = full`, since 2.2;
+[what the gateway keeps](privacy.md)) and asks only the companions the household includes for
+telemetry (`telemetry.ask = household`); the answer `contacts.heard_nodes=keys` or
+`contacts.heard_nodes=off` in an answers file keeps less of other people's radios, and
+`telemetry.ask=all` and `messages.publish_channels=all` keep more.
 
 The script asks for confirmation before it creates anything. Then it downloads the newest Debian
 13 template if needed, creates and starts the container, installs the program, checks the
@@ -342,6 +343,15 @@ pct stop 105 && pct destroy 105
   Home Assistant's *Message history* leave them out. To be rid of them at once, stop the service
   and delete `/var/lib/meshcore-home-gateway/history.sqlite3` with its `-wal` and `-shm` files:
   the gateway starts a new history, without the rest of the old one.
+* **The heard nodes after an update to 2.2:** a configuration that does not set `[contacts]
+  heard_nodes` keeps and publishes of other people's radios their names, when they were heard and
+  their signal again (`"full"`,
+  [ADR 0032](decisions/0032-heard-nodes-kept-with-name-signal-and-time-by-default.md)); a node
+  kept under 2.0's or 2.1's default gets its name back with its next advert. A configuration that
+  sets `heard_nodes` keeps its value; one that set `"full"` can drop the line. To keep what 2.0
+  and 2.1 kept, add `heard_nodes = "keys"` to `[contacts]` in
+  `/etc/meshcore-home-gateway/config.toml` before the update: both know the setting
+  ([privacy.md](privacy.md#other-people)).
 * **Telemetry after an update** from 1.0.0, or from 1.1.0a1 with telemetry off, with
   `[telemetry] ask = "all"`: telemetry is on from 1.1.0a2 on, and the first time it runs on the
   state directory it asks nobody for an hour

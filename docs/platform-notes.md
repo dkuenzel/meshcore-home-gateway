@@ -148,6 +148,7 @@ One line per fact, by section.
 * A text entity's state may not be longer than its `max`: Home Assistant raises for such a state, also when it writes the state again as it takes a new discovery that lowers `max`.
 * A `command_template` with Jinja's `tojson` writes every character outside ASCII as a `\u` escape, an emoji as two (12 bytes), and `<`, `>`, `&` and `'` as escapes too.
 * Event attributes, message texts and sender keys included, are recorded, and the last event of each event entity is kept as restore data in `.storage/core.restore_state`.
+* A select's `options` are not recorded.
 * The MQTT notify entity publishes only the `message` of `notify.send_message`, with the entity's QoS and without retain; `title` is dropped.
 * From 2026.10.0, `mqtt.publish` and `mqtt.dump` need an administrator when a user starts them; `notify.send_message` does not.
 * A device discovery topic may have a node ID level, `<prefix>/device/<node_id>/<object_id>/config`, and works like one without; one subscription with `+` for the object ID sees all devices below that node ID, and does not match the one-level topic.
@@ -1375,6 +1376,15 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   [home-assistant.md, Privacy](home-assistant.md#privacy) shows the recorder exclude; it does not
   cover `core.restore_state`. *Check:* receive a message, stop Home Assistant, and search
   `.storage/core.restore_state` for its text.
+* **A select's `options` are not recorded.** The select platform keeps only `options` out of the
+  recorder, as the event platform keeps `event_types`. *Verified:* 2026.10.2 and 2026.11.0, source
+  `components/select/__init__.py` lines 97-99 at 2026.10.2 and `components/select/entity.py`
+  lines 29-31 at 2026.11.0 (`_entity_component_unrecorded_attributes`). *Here:*
+  [privacy.md](privacy.md#other-people): the options of *Add heard node* name the nodes heard
+  (`[contacts] heard_nodes = "full"`, the default), and its state is always unknown, so the
+  recorder keeps neither; the exclusion there is for the *New node* event. *Check:*
+  `src 2026.10.2 components/select/__init__.py | sed -n 97,99p` and
+  `src 2026.11.0 components/select/entity.py | sed -n 29,31p`.
 * **The MQTT notify entity publishes only the `message` of `notify.send_message`, with the entity's
   QoS and without retain; `title` is dropped.** Stated in
   [home-assistant.md, How discovery behaves](home-assistant.md#how-discovery-behaves); verified

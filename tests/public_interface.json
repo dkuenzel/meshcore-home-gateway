@@ -935,7 +935,7 @@
   },
   "contacts.heard_nodes": {
    "answer": "str",
-   "default": "keys",
+   "default": "full",
    "type": "string"
   },
   "contacts.manage": {

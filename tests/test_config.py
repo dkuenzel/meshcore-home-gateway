@@ -12,6 +12,7 @@ from meshcore_home_gateway import config as config_module
 from meshcore_home_gateway.config import (
     Config,
     ConfigError,
+    ContactsConfig,
     HomieConfig,
     config_answers,
     load_config,
@@ -527,17 +528,19 @@ def test_rendering_escapes_control_characters() -> None:
 
 
 def test_the_shipped_example_is_valid() -> None:
-    """It follows the defaults of telemetry and the history of readings: a copy of it changes
-    with them."""
+    """It follows the defaults of telemetry, the history of readings and the heard nodes: a copy
+    of it changes with them."""
     example = Path(__file__).resolve().parent.parent / "deploy" / "config.example.toml"
     config = load_config(example)
     assert {t.alias for t in config.targets} == {"alerts", "operator"}
     defaults = parse_config(MINIMAL)
     assert config.telemetry == defaults.telemetry
     assert config.history.readings_days == defaults.history.readings_days
+    assert config.contacts == defaults.contacts
     text = example.read_text(encoding="utf-8")
     assert "\n# enabled = true " in text.split("[telemetry]")[1]
     assert "\n# readings_days = 30 " in text.split("[history]")[1]
+    assert '\n# heard_nodes = "full" ' in text.split("[contacts]")[1]
     assert "contacts telemetry KEY on" in text
 
 
@@ -986,9 +989,12 @@ def test_home_assistant_controls_hidden_targets_and_entity_prefix() -> None:
 
 def test_contacts_are_managed_on_request_by_default() -> None:
     assert parse_config(MINIMAL).contacts.manage is True
-    assert parse_config(MINIMAL).contacts.heard_nodes == "keys"  # SEC-015, since 2.0.0
-    full = parse_config(MINIMAL + '\n[contacts]\nheard_nodes = "full"\n')
-    assert full.contacts.heard_nodes == "full"
+    # since 2.2 the names, signal and times of the nodes heard nearby (ADR 0032); before: keys
+    assert parse_config(MINIMAL).contacts.heard_nodes == "full"
+    assert ContactsConfig().heard_nodes == "full"
+    for level in ("keys", "off", "full"):
+        chosen = parse_config(MINIMAL + f'\n[contacts]\nheard_nodes = "{level}"\n')
+        assert chosen.contacts.heard_nodes == level
     with pytest.raises(ConfigError, match=r"contacts\.heard_nodes: one of full, keys, off"):
         parse_config(MINIMAL + '\n[contacts]\nheard_nodes = "names"\n')
     assert parse_config(MINIMAL + "\n[contacts]\nmanage = false\n").contacts.manage is False
