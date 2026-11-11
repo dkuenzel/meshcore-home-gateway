@@ -1765,8 +1765,9 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   ending in the dot of the last one. `home-assistant/tests/test_traces.py` sends the generated
   dashboard's own card's request after an expiry: the tracker's state has no latitude, and the
   rows with a position before it stay in the answer. *Here:* the Map page's help says
-  that a device whose position is not current shows only its line, which ends in a dot where it
-  was last, until that is more than 24 hours ago (2.1.1). *Check:* `make ha-test`; `sed -n
+  marker for where a device is now and dot for each position of its line, and that a device whose
+  position is not current has no marker, only its line, whose last dot is where it was last,
+  until that is more than 24 hours ago (2.1.1). *Check:* `make ha-test`; `sed -n
   1393,1396p src/components/map/ha-map.ts` in the frontend's source at `20260930.4`.
 * **A device tracker is `force_update`: every write is a new state, so a write after an MQTT
   reconnect or a restart adds a second point on one spot. A card open while its entity is kept out

@@ -708,10 +708,10 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   radio, a position broadcast to everyone, the radio's settings changed or not set, asking for
   position and battery paused, the radio's clock far off, a full contact table, and a gateway of
   another major or minor version than the dashboard's (which of the two to update). The card of a
-  position broadcast to everyone says to check in the MeshCore app that sharing the location in
-  adverts is off, then to send an advert near this home's radio: until the gateway has read a
-  device's newest advert, it goes by the position the radio remembers
-  ([companions.md](companions.md#positions-in-adverts)).
+  position broadcast to everyone says to make sure in the MeshCore app that sharing the location
+  in adverts is off, then to send an advert near this home's radio: until the gateway has read a
+  device's newest advert, it goes by the position the radio remembers, so the card can come back
+  after an update or a restart ([companions.md](companions.md#positions-in-adverts)).
   *Latest chats* shows the three chats with the newest messages, each a link to its page, "new"
   for a message received in the last 15 minutes, and a message not sent yet as on its way.
   *Where everyone is* lists the contacts with a position, in words, and links to the map.
@@ -761,7 +761,8 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   ([Traces on the map](#traces-on-the-map)), and below it *Where everyone is*, in words. A
   contact whose position is not current has no marker there, as on Home Assistant's own Map
   panel, but keeps its trace, which ends in a dot where it was last, until that is more than 24
-  hours ago; the map's help says so.
+  hours ago; the map's help says so, a marker for where a device is now and a dot for each
+  position of its line.
 * *Gateway*: *Health*, each part of the gateway with its state, those that need a look named
   first, the messages on their way and those waiting over a minute, counted as the first line of
   *Overview* counts them, and the airtime left of the hour's budget; *Radio*, its name, model,

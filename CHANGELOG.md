@@ -16,20 +16,22 @@ format, the command line and Home Assistant discovery are public interfaces
   text: the field keeps it, and a text sent twice is in the thread (#143). Make the dashboard
   again after the update.
 - The dashboard's card of a position broadcast to everyone says what to do also when the device
-  no longer shares: check in the MeshCore app that sharing the location in adverts is off, then
-  send an advert near this home's radio. Its fold and *Help* say why the card can come after an
-  update or a restart: until the gateway has read a device's newest advert, it goes by the
+  no longer shares: make sure in the MeshCore app that sharing the location in adverts is off,
+  then send an advert near this home's radio. Its fold and *Help* say why the card can come after
+  an update or a restart: until the gateway has read a device's newest advert, it goes by the
   position the radio still remembers for that device, from an older advert or written by another
-  app. The gateway's log says so at info level when such an advert turns *Position in adverts*
-  on. Make the dashboard again after the update.
+  app. The fold also says that the card can come back while the radio remembers that position;
+  [companions.md](docs/companions.md#positions-in-adverts) gives the lasting fix. The gateway's
+  log says at info level when an advert it could not check turns *Position in adverts* on. Make
+  the dashboard again after the update.
 - The dashboard's *Overview* links to *Map* in the row under its first line, first, before
   *Gateway*, *Settings* and *Help*. Since the map lost its tab in 2.1.0, its links stood only
   under *Where everyone is*, below everything on a phone, and the map seemed gone. Make the
   dashboard again after the update.
 - The help of the dashboard's *Map* says what a device whose position is not current shows: its
   marker goes, as on Home Assistant's own Map panel, but the map keeps its line, which ends in a
-  dot where it was last, until that is more than 24 hours ago. Make the dashboard again after the
-  update.
+  dot where it was last, until that is more than 24 hours ago. It no longer calls the marker a
+  dot. Make the dashboard again after the update.
 - The dashboard writes numbers as its language does: in German with a decimal comma (0,4 s;
   869,618 MHz; 3,9 V), and in every language a whole number without `.0` (a duty cycle of 10, a
   budget of 36 s). The decimal mark comes from locale data, not from a translator; a number in a

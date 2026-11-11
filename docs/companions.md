@@ -182,12 +182,17 @@ imported contact. When such an advert turns the sensor on, the gateway logs it a
 ("contact a1b2c3d4e5f6: its advert at <time> was not checked (no report from the radio); the
 radio's record holds a position, so Position in adverts is on until an advert without one is
 checked"), and at debug level when it changes nothing. The dashboard's card on *Overview* says
-what to do: check in the MeshCore app that sharing the location in adverts is off, then send an
-advert near this home's radio; the sensor goes off once the gateway has checked an advert without
-a position. A companion that cannot advert near the radio: remove its contact and add it again
-from the gateway ([home-assistant.md](home-assistant.md#adding-and-removing-contacts)), whose add
-writes no position into the record (`protocol/codec.py`, `new_contact`), so the sensor stays off
-until an advert carries one. A protected contact (a target or a command sender) cannot be removed.
+what to do: make sure in the MeshCore app that sharing the location in adverts is off, then send
+an advert near this home's radio; the sensor goes off once the gateway has checked an advert
+without a position. That advert does not clear the radio's record: the firmware keeps the old
+position until an advert carries a new one or an app writes the record. So while the record holds
+it, every advert the gateway misses, such as one made during the next update or restart, turns
+the sensor on again, until the gateway checks the next advert without a position; the card's fold
+says that it can come back. The lasting fix, and the one for a companion that cannot advert near
+the radio: remove its contact and add it again from the gateway
+([home-assistant.md](home-assistant.md#adding-and-removing-contacts)), whose add writes no
+position into the record (`protocol/codec.py`, `new_contact`), so the sensor stays off until an
+advert carries one. A protected contact (a target or a command sender) cannot be removed.
 
 Before a companion's first check (none stored: after the update to 1.1.0a3, after the state file
 was lost, or for a contact another app added with a position), the record's position is also its
