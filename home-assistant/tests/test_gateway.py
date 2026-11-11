@@ -234,7 +234,7 @@ async def test_who_may_ask_the_radio_is_shown_as_the_radio_acts(
         "<td>Radio name</td><td>Kitchen radio</td><td>Gateway</td><td>changed on the radio</td>"
         in said
     )
-    assert f"<td>Duty cycle</td><td>10.0</td><td>{NONE}</td><td>left as found</td>" in said
+    assert f"<td>Duty cycle</td><td>10</td><td>{NONE}</td><td>left as found</td>" in said  # #145
     assert "<td>Contacts added only by hand</td><td>yes</td><td>yes</td><td>written</td>" in said
     await fire(hass, topics.settings, profile(None, None))
     assert f"{position}<td>{NONE}</td><td>{NONE}</td>" in render(hass, settings)
@@ -244,7 +244,7 @@ async def test_who_may_ask_the_radio_is_shown_as_the_radio_acts(
     document["settings"]["advert_location"] = advert
     await fire(hass, topics.settings, document)
     said = render(hass, settings)
-    assert "<td>Duty cycle</td><td>1.0</td><td>0</td><td>changed on the radio</td>" in said
+    assert "<td>Duty cycle</td><td>1</td><td>0</td><td>changed on the radio</td>" in said
     adverts = "<td>Position in the radio's adverts</td>"
     assert f"{adverts}<td>yes</td><td>no</td><td>changed on the radio</td>" in said
     document["settings"]["advert_location"] = advert | {"live": "later"}  # a code added later

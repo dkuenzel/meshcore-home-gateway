@@ -121,3 +121,14 @@ Assistant contract tests, installer packs in sync with their pins and read back 
   "Plural forms"; ruff's `INT` rules catch f-strings inside `_()`.
 * Revisit the language list before each minor release with the same measures; add Italian or
   Russian when translators offer them.
+* Amended on 2026-11-11 (#145): the dashboard writes a number with the decimal mark of its
+  language, taken from locale data, never from a translator: CLDR's decimal symbol for the
+  language's Latin digits (`i18n.DECIMAL_MARKS`: `.` for English, `,` for German); and a whole
+  number without `.0` in every language. A Markdown card's template knows neither the viewer's
+  language nor the number format of the viewer's profile, so the dashboard's language decides,
+  when the dashboard is made ([platform-notes.md](../platform-notes.md#home-assistant-dashboards)).
+  The languages offered are English and German; another comes when a translator or contributor
+  offers it (the maintainer, 2026-11-10). This supersedes the Decision's bullet *Languages*, which
+  named Dutch, Polish and French as well, and the line above that plans to revisit the list before
+  each minor release. Adding a language stays cheap: its two catalogs, its name and its decimal
+  mark ([translations.md](../translations.md#adding-a-language)).

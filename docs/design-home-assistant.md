@@ -147,18 +147,22 @@ their way, a draft and its *Send* for each chat and the configuration
   with each contact's *Remove*, which asks first, the nodes heard nearby). The other pages have
   no tab (`subview: true`): a page for each chat, *Map* (the contacts' trackers with 24 hours of
   traces), *Gateway* (health, the radio, its settings, the latest event of each kind),
-  *Settings* (the configuration document, read only) and *Help*. All are sections views, which
-  reflow on a phone, so there is one variant; cards show by conditions on states and on
+  *Settings* (the configuration document, read only) and *Help*. A row of links under
+  *Overview*'s status line opens *Map*, *Gateway*, *Settings* and *Help*, the map first: its
+  other links, under *Where everyone is*, come below everything on a phone, and with them the map
+  seemed gone (2.1.1). All are sections views, which reflow on a phone, so there is one variant; cards show by conditions on states and on
   templates, which the frontend evaluates since Home Assistant 2026.10.
 * **Writing:** 2.0 offered the guide's script *Mesh message* (`script.mesh_message`) as a form
   in a tile, with a hint while the script was missing. Since 2.1 each chat page ends in the
   gateway's draft of that chat, the text entity *Write to …*, and its button *Send*: the gateway
   keeps the draft until it is sent ([home-assistant.md](home-assistant.md#dashboard)). The
   script stays for automations. The field and *Send* are the view's footer, which stays at the
-  bottom of the screen; why the gateway refused a *Send* stands under the thread, not in the
-  footer: the frontend caps the footer at a quarter of the screen, and the refused line on top
-  of the field pushed *Send* below a phone's screen
-  ([platform-notes.md](platform-notes.md#home-assistant-dashboards)).
+  bottom of the screen; why the gateway refused a *Send* stands right above the thread, not in
+  the footer: the frontend caps the footer at a quarter of the screen, and the refused line on
+  top of the field pushed *Send* below a phone's screen. Under the thread, as in 2.1.0, the
+  footer covered the line until the page was scrolled (#143); above it, its place depends on
+  neither the thread's length nor the screen, and while it shows, the thread starts lower by its
+  height ([platform-notes.md](platform-notes.md#home-assistant-dashboards)).
 * **What changes while the dashboard stays** comes from Markdown templates over the device
   registry: the contacts of this gateway (the contact devices whose via device is the gateway's),
   the heard nodes, the last contact event. What a card needs as fixed IDs is written when the
@@ -171,7 +175,8 @@ their way, a draft and its *Send* for each chat and the configuration
 * **The template** is `src/meshcore_home_gateway/dashboard.yaml`, package data like the catalogs,
   filled in as text, without a YAML parser (ADR 0005): `@gw@`, `@node@`, `@version@`,
   `@major@` and `@minor@` (its first two numbers), `@guide@` (the address of the guide of this
-  version), `["@trackers@"]` (the map's trackers), `["@chats@"]` (the chat pages, JSON objects
+  version), `@decimal@` (the decimal mark of the dashboard's language, which each card's `num()`
+  writes in place of a number's point), `["@trackers@"]` (the map's trackers), `["@chats@"]` (the chat pages, JSON objects
   that Jinja reads) and `["@models@"]` (each model of a contact's device with its node type).
   2.0 also filled in how the contacts' entity IDs begin; the cards of 2.1 find the contacts by
   their devices, and the lists' items carry the IDs. Since 2.1, comment lines repeat lines for each item

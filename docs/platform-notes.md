@@ -188,9 +188,11 @@ One line per fact, by section.
 * A Markdown card parses what its template puts out as Markdown, after the template's own escaping: an escaped mesh text still becomes an image that the browser loads, a link or an autolink; in an HTML block on one line it stays text.
 * A Markdown card can show a QR code: `ha-qr-code` with `data` and `scale` is on the sanitiser's allow list. A button entity's own row in an entities card is disabled while the button is unavailable and asks first when the row has `confirmation`; a row of `type: button` stays pressable then, asks, and its `button.press` reaches no entity (Home Assistant only logs a warning). The more-info dialog presses at once.
 * A map card draws a trail only with `hours_to_show` above 0, which defaults to 0; the Map panel sets none. A trail is the entity's recorder rows that have `latitude` and `longitude`: a row without them (`unavailable`) is skipped, and the line joins its neighbours.
+* A map card draws no marker for an entity without a location, such as an `unavailable` tracker, and keeps its trail: the points of the last `hours_to_show` hours that had one, each a dot whose tooltip names the entity and the time, the last one where it was last.
 * A device tracker is `force_update`: every write is a new state, so a write after an MQTT reconnect or a restart adds a second point on one spot. A card open while its entity is kept out of the recorder still draws the points that come while it stays open, and a `person` keeps its own copy of the position.
 * A map card's `conditions` filter only the markers: with `show_all`, every entity with a location draws its trail, a phone's and a person's too, also when its marker is filtered out. `show_all` takes the entities that have a location when the card gets its configuration; one without a location then (an `unavailable` tracker) gets neither marker nor trail until the page loads again.
 * A Markdown card's `entity_id` option does nothing: Home Assistant renders the template again when what it read changes, and a template that calls `now()` also each minute.
+* A Markdown card's template knows two variables, `config` (the card's own configuration) and `user` (the viewer's name), and Home Assistant's template functions; none of them gives the viewer's language or the number format of their profile, so a number prints as Python writes it, with a point.
 * Since Home Assistant 2026.10 the frontend decides only some visibility conditions itself and sends the others to core: a `state` or `state_not` condition on an entity that does not exist then hides the card, and a template condition is evaluated again every second.
 * A script saved in the script editor takes its ID from its alias (`_2` if that is taken), and its more-info dialog shows a form for its `fields`.
 * A script's `data` written as a mapping of templates reads each value as Python would: `message: "{{ message }}"` sends `+493023125000` as `493023125000`, `1.10` as `1.1`, a text without the spaces around it, and refuses `None`. One template for the whole mapping, `data: "{{ {'message': message} }}"`, keeps the text as it was.
@@ -205,6 +207,7 @@ One line per fact, by section.
 * The Markdown card's sanitiser escapes `<wbr>`, which js-xss's default allow list lacks; the soft hyphen (U+00AD) and the zero-width space (U+200B) pass as text.
 * A view without `icon` shows its title alone in the tab bar; one with `icon` shows the icon alone, the title only as its tooltip, unless `show_icon_and_title: true`; a subview gets no tab.
 * A section of a sections view hides while all its cards are hidden; since frontend `20261028.4` (Home Assistant 2026.11) while all its cards, badges and sections are.
+* On Home Assistant 2026.10 the first load of a YAML dashboard whose file was written again while Home Assistant ran can report `this._layoutElement.setConfig is not a function`; the page still shows its cards. Frontend `20261028.4` (2026.11) does not.
 
 **[openHAB Homie binding](#openhab-homie-binding)**
 
@@ -1746,6 +1749,26 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   ([Traces on the map](home-assistant.md#traces-on-the-map)); `home-assistant/tests/test_traces.py`
   sends the card's exact request against the real recorder: one row per move, none per resting
   answer, an expiry as a row without coordinates. *Check:* `make ha-test`.
+* **A map card draws no marker for an entity without a location, such as an `unavailable`
+  tracker, and keeps its trail: the points of the last `hours_to_show` hours that had one, each a
+  dot whose tooltip names the entity and the time, the last one where it was last.** *Verified:*
+  frontend `20260930.4` (Home Assistant 2026.10.2): `src/components/map/ha-map.ts` lines
+  1393-1396 (an entity without a location is skipped), 1204-1317 (a dot for each point of a
+  trail and for its last), `src/common/entity/get_entity_location.ts` lines 28-39 (a location
+  needs a latitude and a longitude, a person's zone aside),
+  `src/panels/lovelace/cards/hui-map-card.ts` lines 931-988 (the points, from the rows with a
+  position); `20261028.4` (2026.11.0): the same at `ha-map.ts` 1404-1407 and 1222-1335,
+  `hui-map-card.ts` 1035-1093. In Chromium against Home Assistant 2026.10.2 and 2026.11.0, the
+  generated Map page at 1280x800 and 390x844 with a tracker `unavailable` without a location
+  (its gateway stopped): no marker for it, and its trail drawn by MapLibre as a line layer and a
+  circle layer (`ha-map-path-<n>-lines`, `ha-map-path-<n>-points`), a dot for each point, the line
+  ending in the dot of the last one. `home-assistant/tests/test_traces.py` sends the generated
+  dashboard's own card's request after an expiry: the tracker's state has no latitude, and the
+  rows with a position before it stay in the answer. *Here:* the Map page's help says
+  marker for where a device is now and dot for each position of its line, and that a device whose
+  position is not current has no marker, only its line, whose last dot is where it was last,
+  until that is more than 24 hours ago (2.1.1). *Check:* `make ha-test`; `sed -n
+  1393,1396p src/components/map/ha-map.ts` in the frontend's source at `20260930.4`.
 * **A device tracker is `force_update`: every write is a new state, so a write after an MQTT
   reconnect or a restart adds a second point on one spot. A card open while its entity is kept out
   of the recorder still draws the points that come while it stays open, and a `person` keeps its
@@ -1773,6 +1796,23 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   table calls `now()` once, so a new contact shows within a minute also when no row has a time,
   and reads its contacts from the registry, which sets up no listener; `test_dashboard.py` checks
   `has_time` and that no card listens to a whole domain. *Check:* `make ha-test`.
+* **A Markdown card's template knows two variables, `config` (the card's own configuration) and
+  `user` (the viewer's name), and Home Assistant's template functions; none of them gives the
+  viewer's language or the number format of their profile, so a number prints as Python writes
+  it, with a point.** The card sends just these two with the `render_template` subscription, and
+  core renders the template with what the message holds. *Verified:* frontends `20260930.4`
+  (Home Assistant 2026.10.2), `src/panels/lovelace/cards/hui-markdown-card.ts` lines 236-239, and
+  `20261028.4` (2026.11.0), lines 291-294; core `components/websocket_api/commands.py` lines
+  777 and 837 at 2026.10.2, 826 and 886 at 2026.11.0 (`variables = msg.get("variables")`, then
+  `TrackTemplate(template_obj, variables)`, nothing added); no function or filter in `helpers/template/` of either release reads a language or a
+  number format (`grep -rn "language\|number_format\|locale"` finds none). The contract tests
+  render the cards with the same two variables. *Here:* the dashboard writes its numbers in its
+  own language, which it knows when it is made: each card's `num()` puts the language's decimal
+  mark in place of the point ([development.md](development.md#translations), rule 22), so a
+  viewer whose profile sets another number format still reads the dashboard's
+  ([home-assistant.md](home-assistant.md#dashboard)). `home-assistant/tests/test_numbers.py`
+  checks the numbers in English, German and the pseudo-language. *Check:* `make ha-test`; the
+  lines above in the next frontend's source.
 * **Since Home Assistant 2026.10 the frontend decides only some visibility conditions itself and
   sends the others to core: a `state` or `state_not` condition on an entity that does not exist
   then hides the card, and a template condition is evaluated again every second.** The browser
@@ -1847,14 +1887,25 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   2026.11.0 (the dashboard's [browser check](testing.md#the-dashboard-in-a-browser)), a chat
   page's footer held the field and the *Send* tile (162 px) and, while a *Send* was refused, the
   line that says why on top of them (61 to 77 px): that line pushed the *Send* tile 15 px below
-  the screen at 360x800 and 4 px at 390x844. *Here:* since 2.1.0 the refused line stands under
-  the thread, and the footer holds only the field and the tile
-  ([development.md](development.md#translations), rule 18). On a phone the line then stands
-  above the footer (at 360x800 with a full thread it ends 8 px above it), but the footer still
-  covers the bottom of the page until it is scrolled: at 1280x800 with a full thread, the line
-  stood at 589 to 638 px and the footer's top at 606 px, so 32 of its 49 px were behind the
-  field on first paint, on both versions, and 10 px in a later run with another full thread.
-  *Check:* `grep -n max-height
+  the screen at 360x800 and 4 px at 390x844. The footer also covers the bottom of the page
+  until it is scrolled: in 2.1.0 the refused line stood under the thread, and at 1280x800 with a
+  full thread it stood at 589 to 638 px and the footer's top at 606 px, so 32 of its 49 px were
+  behind the field on first paint, on both versions, and 10 px in a later run with another full
+  thread (#143). On a phone the line then ended 8 px above the footer at 360x800, but that
+  thread had 3 open rows. With six open rows of 60 characters (as many as a thread opens, within
+  its 360 characters) the footer covers the newest row itself on a 360x800 phone, on both
+  versions, with the dashboard of 2.1.0 as with that of 2.1.1 (English; 2.1.1's also German):
+  the row's bottom stood 20 px below the footer's top, 61 px when two of the rows were not
+  delivered (their reason takes a line), and 64 and 106 px when the thread also said that older
+  messages are no longer kept. At 390x844 it ended 2 to 47 px above the footer, 8 px below in
+  the last case; from 412x915 up, at least 28 px above. *Here:* the footer holds only the field and the tile, and since 2.1.1 the refused line
+  stands right above the thread, where its place depends on neither the thread's length nor the
+  screen ([development.md](development.md#translations), rule 18). Measured in 2.1.1 at 360x800
+  to 1920x1080, English and German, both versions, with those six rows and with three long ones:
+  the line's top at 143 to 165 px, below the toolbar (56 px), its bottom at 183 to 246 px, above
+  the footer's top (574 to 886 px), and *Send* 32 px above the bottom of the screen. While the
+  line shows, the thread starts 60 to 101 px lower, so on a phone more of its newest rows stand
+  behind the field until the page is scrolled. *Check:* `grep -n max-height
   src/panels/lovelace/views/hui-view-footer.ts` in the frontend's source.
 * **Core strips what a template renders, so a Markdown card whose content renders only spaces or
   line breaks counts as empty; markup without text, an HTML entity such as `&nbsp;` and a
@@ -1928,6 +1979,53 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   *Verified:* `src/panels/lovelace/sections/hui-section.ts` lines 292-296 at `20260930.4` and
   379-384 at `20261028.4`. *Here:* a list whose rows all hide shows no empty frame, and
   `Viewer.shown` in the contract tests walks the same rule. *Check:* `make ha-test`.
+* **On Home Assistant 2026.10 the first load of a YAML dashboard whose file was written again
+  while Home Assistant ran can report `this._layoutElement.setConfig is not a function`; the
+  page still shows its cards. Frontend `20261028.4` (2026.11) does not.** Core keeps the
+  dashboard it last read. At the next `lovelace/config` after the file changed, it reads the file
+  again and fires `lovelace_updated`, also to the page whose call it answers. Frontend
+  `20260930.4` ignores that event only when the page already has a configuration, so a first load
+  fetches the configuration a second time. When the second one reaches `hui-view` after it created
+  the sections view, whose code loads on demand, and before that code has loaded, `hui-view` calls
+  `setConfig` on an element that has no such method yet: an uncaught `TypeError`. The second
+  configuration, the same as the first, is then not applied. A large dashboard makes the second
+  configuration come later, and so makes the error likelier. `20261028.4` ignores the next update
+  event at every fetch of a YAML dashboard and forgets that 2 s later; its `hui-view` is unchanged.
+  *Verified:* frontends `20260930.4` (Home Assistant 2026.10.2) and `20261028.4` (2026.11.0), in
+  the bundle:
+  - `hui-view`'s `_setConfig`, `this._layoutElement&&this._layoutElementType===e.type?this._layoutElement.setConfig(e):…`
+    (`frontend_latest/90012.9945d8238ffa5a3a.js` line 1, column 27994, where the `TypeError` is
+    raised; `86920.c8c3826e90a8961b.js` line 2, column 35397). It is called from
+    `_initializeConfig`, which `willUpdate` calls again for a new `lovelace` whose view differs.
+  - The sections view loaded on demand (`sections:()=>i.e(25456)`, `sections:()=>i.e(92947)`).
+  - `ha-panel-lovelace`'s `_fetchConfig`:
+    `this.lovelace&&"yaml"===this.lovelace.mode&&(this._ignoreNextUpdateEvent=!0)`
+    (`5496.c0eba59802d17a07.js` line 1, column 5900) against
+    `"yaml"===a&&(this._ignoreNextUpdateEvent=!0)` (`16459.a3ed9d288958fd74.js` line 1,
+    column 5480).
+  - Core `components/lovelace/dashboard.py` at 2026.10.2: lines 234-265 (a changed file read
+    again counts as updated once a copy was read) and 88-90 (the event); the same code at
+    2026.11.0, lines 232-263 and 86-88.
+
+  In Chromium against both versions, 10 loads per case, each in a new browser at 360x800:
+  - With the file unchanged, no load reported the error on either version, also with the sections
+    view's code held back 800 ms. This covered Home Assistant's own minimal dashboard (one
+    sections view with one Markdown card), three variants of it (a second view first, the view as
+    a subview, with a footer) and the generated dashboard's chat page.
+  - With the file's time set to now before each load, 2026.10.2 reported it on 1 and 0 of 10 loads
+    of the minimal dashboard (without and with the code held back), 2 and 5 of 10 of the minimal
+    dashboard with an unvisited second view that makes it as large as the generated one, and 7
+    and 9 of 10 of the chat page. 2026.11.0 reported it on none.
+  - The browser check's step 6 right after its step 4 reported it on its first page on 2026.10.2
+    in two of two runs, and not on 2026.11.0.
+
+  *Here:* step 4 of the dashboard's [browser check](testing.md#the-dashboard-in-a-browser)
+  writes the dashboard again while Home Assistant runs, so step 6 allows exactly this message
+  (`--allow-error`). A household that makes the dashboard again sees no change on the page;
+  the message appears only in the browser's console. *Check:* `grep -o
+  '.\{45\}(this\._ignoreNextUpdateEvent=!0)' hass_frontend/frontend_latest/*.js` in the
+  `home-assistant-frontend` wheel shows `this.lovelace&&"yaml"===this.lovelace.mode&&` before
+  it in `20260930.4` and `"yaml"===a&&` in `20261028.4`.
 
 ## openHAB Homie binding
 

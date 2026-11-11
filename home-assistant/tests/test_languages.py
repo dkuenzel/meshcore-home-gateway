@@ -61,6 +61,9 @@ OWN = {
     "_cache",
 }
 SPOKEN = ["xx", *(code for code in i18n.LANGUAGES if code != "en")]
+# the pseudo-language's decimal mark, as tests/i18n_helpers.py gives it: the Arabic decimal
+# separator, which no shipped language writes, so a number not written by num() shows by its point
+PSEUDO_MARK = "\u066b"
 
 
 def pseudo(language: str = "xx", mark: str = "‹{language} {text}›") -> i18n.Translator:
@@ -92,12 +95,15 @@ def offer(
     language: str, monkeypatch: pytest.MonkeyPatch, mark: str = "‹{language} {text}›"
 ) -> i18n.Translator:
     """The language's translator; the pseudo-language offered as a language of this version
-    first: the configuration and the builders look the languages up through the module."""
+    first, with its decimal mark: the configuration and the builders look the languages up
+    through the module."""
     if language != "xx":
         return i18n.translator(language)
     offered, original = pseudo(mark=mark), i18n.translator
     languages = MappingProxyType({**i18n.LANGUAGES, offered.language: "Pseudo"})
     monkeypatch.setattr(i18n, "LANGUAGES", languages)
+    marks = MappingProxyType({**i18n.DECIMAL_MARKS, offered.language: PSEUDO_MARK})
+    monkeypatch.setattr(i18n, "DECIMAL_MARKS", marks)
 
     def translator(language: str) -> i18n.Translator:
         return offered if language == offered.language else original(language)

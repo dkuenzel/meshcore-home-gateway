@@ -64,7 +64,7 @@ documents for Home Assistant and later front ends (§13).
 | G8 | Observable: availability, radio link, battery, airtime use, logs, watchdog. |
 | G9 | Observer: contacts with their own Home Assistant devices, heard nodes, positions and telemetry of the household's companions, the radio's measured duty cycle; nothing about the household leaks to the mesh ([ADR 0014](decisions/0014-the-gateway-as-the-households-mesh-observer.md)). |
 | G10 | One set of provider-neutral documents for every front end, with a local history ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md), [ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md)). |
-| G11 | In the household's language: English, German, Dutch, Polish, French ([ADR 0019](decisions/0019-internationalisation-with-gettext.md)). |
+| G11 | In the household's language: English and German, others when a translator offers one ([ADR 0019](decisions/0019-internationalisation-with-gettext.md), amended 2026-11-11). |
 
 **Non-goals**
 
@@ -645,9 +645,11 @@ output, exit codes and `run` never change with it.
   keeps an older one)" when it does), a logged copy that differs from the advert the radio took as
   a warning, and each advert the radio took that the gateway could not check at debug level
   ("contact …: its advert at <time> was not checked (not logged)" or "(no report from the
-  radio)"). A heard companion's differing copies and its advert without a log are logged at debug
-  level only, when its `NEW_ADVERT` comes ("node …"), and not again at the read that adds it. No
-  coordinate is logged.
+  radio)"), at info level when the position the radio's record holds turns *Position in adverts*
+  on with it ("…; the radio's record holds a position, so Position in adverts is on until an
+  advert without one is checked"). A heard companion's differing copies and its advert without a
+  log are logged at debug level only, when its `NEW_ADVERT` comes ("node …"), and not again at the
+  read that adds it. No coordinate is logged.
 
 ### 6.11 Telemetry
 
@@ -703,6 +705,11 @@ machinery and English only. Another language comes as a contribution of its cata
   strict, one of `i18n.LANGUAGES`, default `en`; a change renames the display names at the next
   start, and Home Assistant keeps the entity IDs and the names a user gave
   ([home-assistant.md](home-assistant.md#language-of-the-names)).
+* **Numbers on the dashboard** are written in its language from locale data, not from the
+  catalogs: `i18n.DECIMAL_MARKS` beside `LANGUAGES` gives each language's decimal mark (CLDR's),
+  which the generator fills in for `@decimal@` and each card's `num()` writes in place of the
+  point; a whole number has no `.0`, a text or a name from the mesh keeps its points
+  ([development.md](development.md#translations), rule 22).
 * **Whole messages.** One text per line or sentence, with named fields (`{alias}`), plurals
   through `trn`, the program's prefix outside every text; never an f-string. English output stays
   as it was, except two lines of `check-config` (`1 sender`, the language of the names).

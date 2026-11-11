@@ -40,6 +40,9 @@ THREAD = "macro row(e)"
 REFUSED = f"'event.{GW}_delivery'"
 ALICE, BOB = "a1" * 32, "b2" * 32
 TABS = ("overview", "messages", "contacts")
+# rule 12: the row of links under Overview's status line, to the pages without a tab
+LINK_ROW = '<div><a href="./'
+ROW_PAGES = ("map", "gateway", "settings", "help")
 TAB_LETTERS = 22  # the three titles together, or the tab bar scrolls at 360 px
 # the name of the tile beside a chat's Send button: 122 px at 360 px, which 17 letters of
 # "Return, then Send" fill to 111 px; a longer name is cut (docs/testing.md, the browser check)
@@ -83,7 +86,7 @@ QUOTES: dict[str, tuple[str, ...]] = {
     "Gateway: Health": ("Gateway",),
     (
         "The household's map does not need it: the gateway asks for positions privately (Ask for "
-        "position and battery). The card goes when that device's next advert carries no position."
+        "position and battery)."
     ): ("Ask for position and battery",),
     "Gateway: Radio settings": ("Gateway",),
     (
@@ -121,7 +124,9 @@ QUOTES: dict[str, tuple[str, ...]] = {
         "Other people's radios that this home's radio heard in the last 7 days. Add one under Add "
         "a contact."
     ): ("Add a contact",),
-    "Tap a dot for its name. Where everyone is, below, says it in words.": ("Where everyone is",),
+    "Tap a marker or a dot for its name. Where everyone is, below, says it in words.": (
+        "Where everyone is",
+    ),
     "Where everyone is, below, lists everyone with a position now.": ("Where everyone is",),
     "Someone missing: see Where everyone is.": ("Where everyone is",),
     ("Ask for position and battery on Contacts turns it on or off for each person."): (
@@ -593,7 +598,7 @@ def macros(card: Card) -> dict[str, tuple[str, list[str]]]:
     found: dict[str, tuple[str, list[str]]] = {}
     current = ""
     for line in card.lines:
-        if match := re.search(r"\{%-?\s*macro (\w+)\((\w+)\)\s*-?%\}", line):
+        if match := re.search(r"\{%-?\s*macro (\w+)\((\w+)(?:, \w+=\w+)*\)\s*-?%\}", line):
             current = match.group(1)
             found[current] = (match.group(2), [])
         if current:
@@ -849,14 +854,12 @@ def rule_8(template: str, source: Any, loaded: Any, household: Household) -> lis
         listed = [
             card for section in view.get("sections") or [] for card in section.get("cards") or []
         ]
-        for card, before, after in zip(
-            listed, [None, *listed[:-1]], [*listed[1:], None], strict=True
-        ):
+        for card, after in zip(listed, [*listed[1:], None], strict=True):
             # a Markdown card holds its own help; the card after a tile, entities, map or
-            # history-graph card may hold its help (design D-10); the refused line, a line of
-            # the thread (D-17) until H-27, has the help of the thread above it (rule 18)
+            # history-graph card may hold its help (design D-10); the refused line, right above
+            # the thread since #143, has the help of the thread under it (rule 18)
             borrowed = card.get("type") != "markdown" and after is not None and _about(after)
-            borrowed |= is_refused_line(card) and before is not None and is_thread(before)
+            borrowed |= is_refused_line(card) and after is not None and is_thread(after)
             if card.get("type") == "heading" or _helped(card) or borrowed:
                 continue
             found.append(f"rule 8: {view['path']}: a {card.get('type')} card without help")
@@ -933,7 +936,8 @@ def rule_11(template: str, source: Any, loaded: Any, household: Household) -> li
 
 
 def rule_12(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
-    """Three tabs with their titles alone; the pages without a tab one tap away."""
+    """Three tabs with their titles alone; the pages without a tab one tap away: from the row
+    of links under Overview's status line, and from the badges of a heading of Contacts."""
     found = []
     views = loaded["views"]
     tabs = [view for view in views if not view.get("subview")]
@@ -945,16 +949,19 @@ def rule_12(template: str, source: Any, loaded: Any, household: Household) -> li
         if "icon" in view or "show_icon_and_title" in view
     ]
     by_path = {view["path"]: view for view in views}
-    outside = " ".join(
-        line
-        for text in texts(by_path.get("overview", {}))
-        for line in re.sub(r"<details>.*?</details>", "", text).split("\n")
-    )
-    for target in ("map", "gateway", "settings", "help"):
-        if f'href="./{target}"' not in outside and f"./{target}" not in _navigations(
-            by_path.get("overview", {})
-        ):
-            found.append(f"rule 12: no link to {target} on overview")
+    # the pages without a tab one tap from the top of Overview, the map first: its other links
+    # come below everything on a phone, and the map seemed gone (owner feedback on 2.1.0)
+    status = [text for text in texts(by_path.get("overview", {})) if "macro problem(" in text]
+    rows = [line for text in status for line in text.split("\n") if line.startswith(LINK_ROW)]
+    if len(status) != 1 or len(rows) != 1:
+        found.append(f"rule 12: {len(rows)} rows of links under overview's status line")
+    elif (targets := re.findall(r'<a href="\./([^"]*)">', rows[0])) != list(ROW_PAGES):
+        found.append(f"rule 12: the links under overview's status line are {targets}")
+    elif depth := _depth(status[0].split(rows[0])[0]):
+        found.append(
+            "rule 12: the row of links under overview's status line is inside an {% if %}, a"
+            f" {{% for %}}, a <details> or a comment (depth {depth})"
+        )
     badges = [
         badge.get("tap_action", {}).get("navigation_path")
         for card, _ in nodes(by_path.get("contacts", {}))
@@ -969,12 +976,18 @@ def rule_12(template: str, source: Any, loaded: Any, household: Household) -> li
     return found
 
 
-def _navigations(view: Any) -> list[str]:
-    return [
-        str(n["navigation_path"])
-        for n, _ in nodes(view)
-        if isinstance(n, dict) and "navigation_path" in n
-    ]
+# rule 12: what opens and what closes a block that can hide what is in it, and a closed comment,
+# also over several lines; HTML ends a comment at --> and also at --!>
+_OPENS = re.compile(r"\{%-?\s*(?:if|for|macro)\b|<details\b|\{#|<!--")
+_CLOSES = re.compile(r"\{%-?\s*end(?:if|for|macro)\b|</details>|#\}|--!?>")
+_COMMENT = re.compile(r"\{#.*?#\}|<!--.*?--!?>", re.DOTALL)
+
+
+def _depth(text: str) -> int:
+    """How many blocks are open at the end of a card's text: Jinja's if, for and macro, HTML's
+    <details>, and a comment not yet closed. What a closed comment names opens nothing."""
+    plain = _COMMENT.sub("", text)
+    return len(_OPENS.findall(plain)) - len(_CLOSES.findall(plain))
 
 
 def rule_13(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
@@ -1002,6 +1015,60 @@ def rule_13(template: str, source: Any, loaded: Any, household: Household) -> li
             for printed in re.findall(r"\{\{ m\((.*?)\) \}\}", body)
             if "'text'" in printed or printed in holding
         )
+    return found
+
+
+# rule 22: a value whose key names a unit is a number, which may have a fraction
+UNIT_KEY = re.compile(
+    r"\bm\((?:state_attr\([^()]*, |\w+\.get\()'(\w+_(?:s|mb|v|db|dbm|mhz|khz|percent|hour))'\)"
+)
+# rule 22: the fields of the texts that are numbers, which may have a fraction (the template sets
+# each through num(), tests/test_dashboard.py checks that this list names them all)
+NUMBERS = frozenset(
+    {"volts", "slow", "spare", "hour", "mhz", "khz", "dbm", "cr", "budget", "burst", "hops", "snr"}
+)
+NUM_MACRO = re.compile(r"\{%-?\s*macro num\(")
+_PERCENT_FORMAT = re.compile(r"""['"]%[-+ #0]*\d*\.""")
+_WHOLE = re.compile(r"\|\s*(?:int|count)(?:\([^()]*\))?$")
+_SET = re.compile(r"set (\w+) = (.*?)\s*-?%\}")
+
+
+def rule_22(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
+    """Numbers in the dashboard's language (#145): a card prints a number that may have a
+    fraction through num(), which it defines and which reads the same in every card. A card
+    that prints a field of NUMBERS sets it through num(), or as a whole number (from | int or
+    | count); m(x | string) prints only a whole number; a value whose key names a unit goes
+    through num(), not m(); no number is formatted with '%.'. A number printed some other way,
+    such as m() of a value Home Assistant gives, is beyond these patterns: the contract test
+    test_numbers_follow_the_dashboards_language prints every number in German."""
+    found = []
+    written = {line for card in cards(template) for line in card.lines if NUM_MACRO.search(line)}
+    if len(written) > 1:
+        found.append(f"rule 22: {len(written)} forms of num()")
+    for card in cards(template):
+        body = "\n".join(card.lines)
+        if re.search(r"\bnum\(", body.replace("macro num(", "")) and "macro num(" not in body:
+            found.append(f"rule 22: {card.first}: num() without its macro")
+        if _PERCENT_FORMAT.search(body):
+            found.append(f"rule 22: {card.first}: a number formatted with '%.'")
+        sets = _SET.findall(body)
+        whole = {name for name, value in sets if _WHOLE.search(value)}
+        printed = {name for text in msgids(body) for name in fields(text)}
+        printed |= set(re.findall(r"\{\{ (\w+) \}\}", body))
+        found += [
+            f"rule 22: {card.first}: the number {{{name}}} not set through num()"
+            for name in sorted(NUMBERS & printed)
+            if not (values := [value for named, value in sets if named == name])
+            or not all(value.startswith("num(") or _WHOLE.search(value) for value in values)
+        ]
+        found += [
+            f"rule 22: {card.first}: m({name} | string) of a number"
+            for name in re.findall(r"\bm\((\w+) \| string\)", body)
+            if name not in whole
+        ]
+        found += [
+            f"rule 22: {card.first}: {key} through m(), not num()" for key in UNIT_KEY.findall(body)
+        ]
     return found
 
 
@@ -1160,9 +1227,10 @@ def rule_17(template: str, source: Any, loaded: Any, household: Household) -> li
 
 def rule_18(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
     """A chat page's footer: the draft's row and the Send tile, in this order. The refused line
-    is the card under the thread, not in the footer: the frontend caps the footer at a quarter of
-    the screen, and a refused line on top of the field pushed the Send tile below a phone's
-    screen (H-27, docs/platform-notes.md)."""
+    is the card right above the thread, not in the footer: the frontend caps the footer at a
+    quarter of the screen, and a refused line on top of the field pushed the Send tile below a
+    phone's screen (H-27); under the thread, the footer, which sticks to the bottom of the screen,
+    covered the line until the page was scrolled (#143, docs/platform-notes.md)."""
     found = []
     for view in loaded["views"]:
         if "footer" not in view:
@@ -1189,10 +1257,10 @@ def rule_18(template: str, source: Any, loaded: Any, household: Household) -> li
             card for section in view.get("sections") or [] for card in section.get("cards") or []
         ]
         threads = [n for n, card in enumerate(listed) if is_thread(card)]
-        under = listed[threads[0] + 1] if len(threads) == 1 and threads[0] + 1 < len(listed) else {}
-        if not is_refused_line(under):
-            found.append(f"rule 18: {view['path']}: the refused line is not under the thread")
-        elif not shown_by_content(under):
+        above = listed[threads[0] - 1] if len(threads) == 1 and threads[0] > 0 else {}
+        if not is_refused_line(above):
+            found.append(f"rule 18: {view['path']}: the refused line is not above the thread")
+        elif not shown_by_content(above):
             found.append(f"rule 18: {view['path']}: the refused line shows when empty")
     return found
 
@@ -1316,6 +1384,7 @@ RULES: list[Rule] = [
     rule_19,
     rule_20,
     rule_21,
+    rule_22,
 ]
 
 

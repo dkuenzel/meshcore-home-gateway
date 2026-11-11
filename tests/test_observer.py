@@ -2121,6 +2121,84 @@ def test_an_advert_the_gateway_cannot_check_is_logged_as_not_checked(
     assert caplog.text.count("was not checked") == 1
 
 
+def not_checked(caplog: pytest.LogCaptureFixture) -> list[tuple[int, str]]:
+    """The lines about an advert not checked, with their level."""
+    return [(r.levelno, r.getMessage()) for r in caplog.records if "was not checked" in r.message]
+
+
+TURNED_ON = (
+    "; the radio's record holds a position, so Position in adverts is on until an advert without "
+    "one is checked"
+)
+
+
+def test_an_unchecked_advert_that_turns_the_warning_on_is_logged_at_info(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The owner's case: Alice's record keeps a position from an older advert, her checked advert
+    carried none. An advert she made while the gateway was stopped is not checked at the next
+    start, and the record's position turns *Position in adverts* on (ADR 0025): one line at info
+    level says why, so the journal shows it. A further unchecked advert while it is on, and one
+    in the same run whose log was lost, which turns it on again after a checked one, say it at
+    debug and at info level."""
+    alice = replace(ALICE, latitude_e6=SHARED[0], longitude_e6=SHARED[1])
+    key = alice.public_key.hex()
+    _observer, _bus, air = checking(tmp_path, alice)
+    air.advert(alice)  # checked: no position; the record keeps the older one
+    air.read()
+    caplog.set_level(logging.DEBUG, logger="meshcore_home_gateway.observer")
+    bus = restarted_on(tmp_path, air)
+    missed = air.advert(alice, logged=False, pushed=False)  # while the gateway was stopped
+    air.read()
+    assert checked(bus, key)[0] is True
+    line = f"contact {key[:12]}: its advert at {{}} was not checked ({{}})"
+    assert not_checked(caplog) == [
+        (logging.INFO, line.format(iso(missed), "no report from the radio") + TURNED_ON)
+    ]
+    caplog.clear()
+    again = air.advert(alice, pushed=False)  # its push lost: still on
+    air.read()
+    assert not_checked(caplog) == [
+        (logging.DEBUG, line.format(iso(again), "no report from the radio"))
+    ]
+    caplog.clear()
+    air.advert(alice)  # checked: off
+    air.read()
+    assert checked(bus, key)[0] is False
+    unlogged = air.advert(alice, logged=False)  # too long for a frame: on again
+    air.read()
+    assert checked(bus, key)[0] is True
+    assert not_checked(caplog) == [
+        (logging.INFO, line.format(iso(unlogged), "not logged") + TURNED_ON)
+    ]
+
+
+@pytest.mark.parametrize("carried", [False, True])
+def test_an_unchecked_advert_that_leaves_the_warning_as_it_was_is_logged_at_debug(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, *, carried: bool
+) -> None:
+    """At a start and in the same run: a record without a position leaves *Position in adverts*
+    off, and while the last check carried one it was on already; neither is worth more than the
+    debug line (hardware row 44)."""
+    alice = replace(ALICE, latitude_e6=SHARED[0], longitude_e6=SHARED[1]) if carried else ALICE
+    key = alice.public_key.hex()
+    _observer, _bus, air = checking(tmp_path, alice)
+    air.advert(alice, SHARED if carried else None)
+    air.read()
+    caplog.set_level(logging.DEBUG, logger="meshcore_home_gateway.observer")
+    bus = restarted_on(tmp_path, air)
+    missed = air.advert(alice, logged=False, pushed=False)
+    air.read()
+    unlogged = air.advert(alice, logged=False)
+    air.read()
+    assert checked(bus, key)[0] is carried
+    line = f"contact {key[:12]}: its advert at {{}} was not checked ({{}})"
+    assert not_checked(caplog) == [
+        (logging.DEBUG, line.format(iso(missed), "no report from the radio")),
+        (logging.DEBUG, line.format(iso(unlogged), "not logged")),
+    ]
+
+
 def test_a_heard_companions_advert_without_its_log_is_logged_once_when_it_comes(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

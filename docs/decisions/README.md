@@ -26,7 +26,7 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0016](0016-history-in-a-local-sqlite-database.md) | History in a local SQLite database | accepted; amended 2026-11-03 (the purge in a thread; the state file held in memory) |
 | [0017](0017-contacts-on-the-radio-each-with-its-own-device.md) | Contacts live on the radio; each contact is a recipient with its own device | accepted |
 | [0018](0018-telemetry-pulled-from-the-households-companions.md) | Telemetry and positions pulled from the household's companions, in budget lanes | accepted; amended by 0025; amended 2026-11-04 (sensors may be asked) and 2026-11-05 (the household's companions asked by default) |
-| [0019](0019-internationalisation-with-gettext.md) | Internationalisation with gettext catalogs; English source, German, Dutch, Polish, French | accepted; amended by 0027 |
+| [0019](0019-internationalisation-with-gettext.md) | Internationalisation with gettext catalogs; English source, German, Dutch, Polish, French | accepted; amended by 0027; amended 2026-11-11 (numbers in the dashboard's language; English and German offered, others when a translator offers one) |
 | [0020](0020-managed-radio-profile-for-the-observer.md) | A managed radio profile for the observer, reconciled at every connect | accepted; amended 2026-11-06 (a restart sets back a radio clock that is ahead) |
 | [0021](0021-generated-dashboards-for-desktop-and-mobile.md) | Generated dashboards for desktop and mobile | accepted; amended by 0031 |
 | [0022](0022-releases-tagged-by-ci-on-main.md) | Releases tagged by CI on main, from the version a pull request writes | accepted; amended by 0023 and 0030; amended 2026-11-05 (a release tagged a day after its version), 2026-11-06 (a candidate tagged at once) and 2026-11-07 (a tag pushed by hand checked too) |
@@ -38,4 +38,4 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0028](0028-outgoing-queue-kept-across-restarts.md) | The outgoing queue kept across restarts, alerts first | accepted; amended 2026-11-03 (where its tests are) and 2026-11-07 (the queue kept through a stop; an alert ends a wait) |
 | [0029](0029-what-a-contact-is-trusted-with.md) | What a contact of the radio is trusted with | accepted; amended 2026-11-05 (the defaults of 2.0.0) |
 | [0030](0030-release-checked-by-ci-self-test-and-use.md) | A release checked by CI, the installer's self-test and the maintainer's use, not by a manual checklist | accepted; amended 2026-11-06 with 0022 (a candidate tagged once CI passed) |
-| [0031](0031-household-chat-problems-and-settings-on-the-generated-dashboard.md) | Household chat, problems and settings on the generated dashboard | accepted |
+| [0031](0031-household-chat-problems-and-settings-on-the-generated-dashboard.md) | Household chat, problems and settings on the generated dashboard | accepted; amended 2026-11-11 (the refused line above the thread) |

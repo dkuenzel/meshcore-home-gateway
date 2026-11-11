@@ -31,6 +31,9 @@ log = logging.getLogger(__name__)
 
 # en is the source; every other language has complete catalogs (tests/test_translations.py)
 LANGUAGES: Final[Mapping[str, str]] = MappingProxyType({"en": "English", "de": "Deutsch"})
+# each language's decimal mark, CLDR's for its Latin digits: the dashboard writes its numbers with
+# it (ADR 0019, amended 2026-11-11); every language of LANGUAGES has one (tests/test_i18n.py)
+DECIMAL_MARKS: Final[Mapping[str, str]] = MappingProxyType({"en": ".", "de": ","})
 HOME_ASSISTANT: Final = "home assistant"  # msgctxt of every name sent to Home Assistant
 DASHBOARD: Final = "dashboard"  # msgctxt reserved for the dashboards (ADR 0021)
 CATALOGS: Traversable = resources.files(__package__ or __name__) / "locale"

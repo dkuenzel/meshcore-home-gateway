@@ -158,8 +158,9 @@ lines of its own, which `dashboard.py` reads:
   lines of the content, such as the keys of the contacts a list holds.
 * `# @if trackers`, `# @if chats` (a list that is not empty) or, inside its `@each`,
   `# @if chats.write` (a field that is not empty), then `# @else` and `# @end`.
-* `@gw@`, `@node@`, `@version@`, `@major@`, `@minor@` and `@guide@` (the guide of this
-  version, for a link to one of its sections) are filled in;
+* `@gw@`, `@node@`, `@version@`, `@major@`, `@minor@`, `@guide@` (the guide of this
+  version, for a link to one of its sections) and `@decimal@` (the decimal mark of the
+  dashboard's language, `i18n.DECIMAL_MARKS`, which `num()` writes, rule 22) are filled in;
   `["@trackers@"]` and `["@chats@"]` become JSON lists, `["@models@"]` the pairs of each model of
   a contact's device, as the gateway names it in the dashboard's language, and its node type. A chat page in `["@chats@"]` says with
   `write` only whether it has a field: the entity IDs of its field and its *Send* button stand
@@ -207,16 +208,17 @@ its rule; the shipped template breaks none of them.
 7. No marker inside an HTML attribute.
 8. Every card but a heading has a `<details>` last; a tile, entities, map or history-graph card
    may have it in a `text_only` card that follows it, and a chat's refused line has the help of
-   the thread above it (rule 18); every page ends with such a card; what a mapping macro says is explained there or on *Help*
+   the thread under it (rule 18); every page ends with such a card; what a mapping macro says is explained there or on *Help*
    (but the names of the months); *Help* names every page and every control.
 9. The status line and the problem cards list the same problems in the same order: the branches
    of the status line's `problem()`, and the problem a card names on its first line,
    `{#- problem: <class> -#}`.
 10. The counts in the tests follow the template.
 11. No GitHub alert (`> [!`): a coloured box is a `<div><ha-alert>` line.
-12. The tabs are `overview`, `messages` and `contacts`, without icons. *Overview* links to
-    *Map*, *Gateway*, *Settings* and *Help* outside every `<details>`, and a heading of
-    *Contacts* has buttons to *Gateway*, *Settings* and *Help*.
+12. The tabs are `overview`, `messages` and `contacts`, without icons. *Overview*'s status line
+    has one row of links under it, at the top level of its card (outside every `{% if %}`,
+    `{% for %}`, `<details>` and comment): *Map*, *Gateway*, *Settings* and *Help*, in this order;
+    and a heading of *Contacts* has buttons to *Gateway*, *Settings* and *Help*.
 13. A card that prints a message's text prints it through `mt()`; `m()` and `mt()` read the same
     in every card.
 14. The three tabs' titles have at most 22 letters together in every language shipped, or the
@@ -234,9 +236,10 @@ its rule; the shipped template breaks none of them.
     starts with "For your administrator:" names Home Assistant's menus.
 18. A chat page's footer is a `vertical-stack` of one text row whose three actions are `none`
     and a tile with a `button` feature. The refused line (a Markdown card that hides while empty,
-    rule 21) is the card right under the thread, whose help it shares (rule 8): the frontend caps
+    rule 21) is the card right above the thread, whose help it shares (rule 8): the frontend caps
     the footer at a quarter of the screen, and on top of the field the line pushed *Send* below
-    a phone's screen ([platform-notes.md](platform-notes.md#home-assistant-dashboards)).
+    a phone's screen; under the thread, the footer covered it until the page was scrolled (#143,
+    [platform-notes.md](platform-notes.md#home-assistant-dashboards)).
 19. `m()` removes the C0 and C1 controls but tab, LF and CR, and the invisible characters the
     gateway drops before it reads a contact link; never U+200C and U+200D.
 20. No page has a `back_path`: the back arrow goes back to the page it came from.
@@ -245,6 +248,22 @@ its rule; the shipped template breaks none of them.
     the card's own content: Home Assistant's card wrapper takes a card that hides itself out of
     the page, and it does not come back until the page is loaded again; a card hidden by its
     conditions comes back once they hold.
+22. A card prints a number through `num(v, digits=none)`, which it defines after `m()` and which
+    reads the same in every card: the number with the dashboard's decimal mark in place of the
+    point (`@decimal@`; German writes 0,4), a whole number without `.0`, rounded to `digits`
+    places when given; anything else as `m()` prints it. A field of a text that is a number
+    (`NUMBERS` in `tests/dashboard_rules.py`: `{volts}`, `{mhz}`, `{snr}` …) is set through
+    `num()` in the card that prints it, or as a whole number (from `| int` or `| count`);
+    `m(x | string)` prints only a whole number; a value whose key names a unit (`frequency_mhz`,
+    `burst_s`) goes through `num()`, not `m()`; no number is formatted with `'%.1f'`. A number
+    printed another way, such as `m()` of a value from Home Assistant inside a text, is beyond
+    these patterns: the contract test `test_numbers_follow_the_dashboards_language` prints every
+    number of the dashboard in German. A message's text and a name keep their points. A Markdown
+    card's template knows neither the viewer's language nor the number format of their profile
+    ([platform-notes.md](platform-notes.md#home-assistant-dashboards)), so the dashboard's
+    language decides when the dashboard is made. `num()` goes through a float: a fraction below
+    0.0001 comes out in Python's exponent form (`1e-05`), and a whole number above 2^53 loses
+    its last digits (no value the dashboard prints comes near it).
 
 A translation of a dashboard text is used only when `dashboard.unsafe()` finds nothing in it (no
 Jinja, HTML, Markdown link or address, no line break); the catalog check applies the same test.

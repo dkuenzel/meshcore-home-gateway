@@ -23,11 +23,12 @@ from ha_plugin import async_wait_recording_done
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
-from test_contract import TOPICS, fire, guide_block, problems
+from test_contract import CONFIG, TOPICS, fire, guide_block, problems
 
 from meshcore_home_gateway.core.mesh import AdvertCheck, Mesh
 from meshcore_home_gateway.core.model import Position
 from test_contact_devices import ALICE, ALICE_NODE, NOW, contact_entities, guide_recorder
+from test_dashboard import card, cards, made
 from test_telemetry import (
     BATTERY_4_12,
     MCU,
@@ -191,6 +192,50 @@ async def test_the_documented_map_card_reads_its_trace(
     await fire(hass, TOPICS.contact(ALICE), document(mesh))
     expected.append(point(mesh))
     assert points((await rows(await subscribe(hass, hass_ws_client, card)))[TRACKER]) == expected
+    assert problems(caplog) == []
+
+
+async def test_the_dashboards_map_keeps_the_trail_of_an_expired_tracker(
+    recorder_mock: Any,
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
+    """The Map page's own card, made from the state file: Alice moves, then her answers expire.
+    Her tracker is `unavailable` without a position, so the card has no place for her now
+    (ha-map draws an entity only with a location), and her trail of the last 24 hours stays,
+    ending where she was last. The fold under the map says so, in the word the page uses for
+    the points: a dot."""
+    assert await async_setup_component(hass, "history", {})
+    mesh, _devices, _broker = await with_alice(
+        hass, tmp_path, BATTERY_4_12, gps(home(hass, 300)), MCU
+    )
+    expected = [point(mesh)]
+    answer(mesh, NOW + 900, BATTERY_4_12, gps(home(hass, 400)), MCU)
+    await fire(hass, TOPICS.contact(ALICE), document(mesh))
+    expected.append(point(mesh))
+    await fire(hass, TOPICS.contact(ALICE), document(mesh, "away"))
+    expired = hass.states.get(TRACKER)
+    assert expired is not None
+    assert expired.state == "unavailable"
+    assert "latitude" not in expired.attributes
+    shown = cards(await made(hass, hass_ws_client, CONFIG, tmp_path), "map")
+    (map_card,) = [c for c in shown if c["type"] == "map"]
+    assert (map_card["entities"], map_card["hours_to_show"]) == ([TRACKER], 24)
+    found = (await rows(await subscribe(hass, hass_ws_client, map_card)))[TRACKER]
+    assert points(found) == expected  # the trail, ending where she was last
+    assert found[-1]["s"] == "unavailable"
+    fold = card(shown, "How to read the map")["content"]
+    assert (  # a marker where a device is now, a dot for each position of its line
+        "<li>Each marker with the first letters of a name is where a device is now; the line "
+        "behind it, with a dot for each position, shows where it went in the last 24 hours.</li>"
+        "<li>A device whose position is not current has no marker, only its line, whose last dot "
+        "is where it was last, until that is more than 24 hours ago.</li>"
+        "<li>Tap a marker or a dot for its name."
+    ) in fold
     assert problems(caplog) == []
 
 

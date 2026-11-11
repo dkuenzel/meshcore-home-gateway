@@ -518,8 +518,9 @@ hours_to_show: 24
 List one tracker per companion. The trace reaches back as far as the recorder keeps states
 (10 days by default); the gateway's own history keeps positions for `positions_days`, but Home
 Assistant cannot read it. While a tracker is `unavailable` (its telemetry expired, or its
-position from adverts went), it has no position: the card joins the points before and after
-with a straight line. A restart of the gateway or of Home Assistant adds a second point on the
+position from adverts went), it has no position: the card draws no marker for it, its trace ends
+in a dot where it was last until that is older than `hours_to_show`, and once it has a position
+again the card joins the points before and after with a straight line. A restart of the gateway or of Home Assistant adds a second point on the
 same spot. A tracker kept out of the recorder ([Privacy](#privacy)) has no trace after a
 reload; a card open at that moment still draws the points that come while it stays open. With
 `show_all: true` instead of `entities`, the card draws the traces of every tracker and person,
@@ -701,19 +702,24 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   act now (the gateway not found or offline, the radio disconnected or taken over by another
   program), blue for no report yet or messages that have waited over a minute, yellow when
   something needs a look, naming the first problem, and green for *All fine*. Below it, the links
-  to *Gateway*, *Settings* and *Help*, then a card for each problem while it exists, each with
-  what to do: another program took the radio's link (red), a fault in the gateway, a node
+  to *Map*, *Gateway*, *Settings* and *Help*, then a card for each problem while it exists, each
+  with what to do: another program took the radio's link (red), a fault in the gateway, a node
   nearby that imitates a contact (named after that contact), a contact with remote access to the
   radio, a position broadcast to everyone, the radio's settings changed or not set, asking for
   position and battery paused, the radio's clock far off, a full contact table, and a gateway of
-  another major or minor version than the dashboard's (which of the two to update).
+  another major or minor version than the dashboard's (which of the two to update). The card of a
+  position broadcast to everyone says to make sure in the MeshCore app that sharing the location
+  in adverts is off, then to send an advert near this home's radio: until the gateway has read a
+  device's newest advert, it goes by the position the radio remembers, so the card can come back
+  after an update or a restart ([companions.md](companions.md#positions-in-adverts)).
   *Latest chats* shows the three chats with the newest messages, each a link to its page, "new"
   for a message received in the last 15 minutes, and a message not sent yet as on its way.
   *Where everyone is* lists the contacts with a position, in words, and links to the map.
 * *Chats*: *All chats*, every chat page with its kind and newest message, those only automations
   write to last, then the contacts with a device that have no chat page yet and the channels
   heard that have none; and *Latest messages*, all messages together as a thread.
-* A chat's page shows the chat's messages: received on the left, sent from this home on the
+* A chat's page shows the chat's messages, under the line that says why the gateway refused a
+  message to the chat, while there is one: received on the left, sent from this home on the
   right with their time and ✓ (sent) or ✓✓ (delivered, which the person's radio confirmed);
   a message not delivered, not sent or maybe forged in yellow, with the reason in words; one on
   its way in italics. The newest six stay open, fewer when they are long, the older ones in a
@@ -725,13 +731,13 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   was sent: after a change, the messages sent before it, also one kept on its way across the
   restart that changed it, show the other way until they leave the history. While the gateway
   is offline, Home Assistant drops *Configuration*'s attributes and the cards cut it as before.
-  The thread's help links to *Help*, which explains each reason. Under the thread, why the
-  gateway refused a message to the chat, why writing is not possible when it is not, and
-  *About*: where the person is, the battery, asking for position and battery with how the
-  device answers, or the chat's text before and after messages. On a desktop screen with a long
-  thread, the line that says why a message was refused can stand behind the field until the page
-  is scrolled; on a phone it stands above it. The page ends in the field
-  to write in and its *Send* button (writing, below). A person whose device is gone, removed from
+  The thread's help links to *Help*, which explains each reason. The line that says why a
+  message was refused stands above the thread, where the field does not cover it; it does not
+  repeat the text, which stays in the field, and a text sent twice is in the thread. Under the
+  thread, why writing is not possible when it is not, and *About*: where the person is, the
+  battery, asking for position and battery with how the device answers, or the chat's text
+  before and after messages. The page ends in the field to write in and its *Send* button
+  (writing, below). A person whose device is gone, removed from
   the radio or hidden ([Contacts](#contacts)), keeps the page with the messages; its head says
   how to get the contact back.
 * *Contacts*: buttons to *Gateway*, *Settings* and *Help* at the top; *People and devices*,
@@ -752,7 +758,11 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   the settings, while the switches still keep who would be asked. A list whose rows all hide
   shows no empty frame.
 * *Map*: the contacts with a position and their traces of the last 24 hours
-  ([Traces on the map](#traces-on-the-map)), and below it *Where everyone is*, in words.
+  ([Traces on the map](#traces-on-the-map)), and below it *Where everyone is*, in words. A
+  contact whose position is not current has no marker there, as on Home Assistant's own Map
+  panel, but keeps its trace, which ends in a dot where it was last, until that is more than 24
+  hours ago; the map's help says so, a marker for where a device is now and a dot for each
+  position of its line.
 * *Gateway*: *Health*, each part of the gateway with its state, those that need a look named
   first, the messages on their way and those waiting over a minute, counted as the first line of
   *Overview* counts them, and the airtime left of the hour's budget; *Radio*, its name, model,
@@ -779,7 +789,11 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
 
 It uses only the gateway's entities and the cards of Home Assistant, no custom card. Its texts
 follow `homeassistant.language`; entity IDs, reason codes and names from the mesh stay as they
-are. A card that finds the contacts' devices in Home Assistant's registry, which tells no card
+are. Its numbers follow the language too: German writes 0,4 s and 3,9 V, every language a whole
+number without `.0`; a number in a message or a name stays as it was written. The number format of your
+Home Assistant profile does not reach these cards, whose templates know neither the viewer's
+language nor that format ([platform-notes.md](platform-notes.md#home-assistant-dashboards)). A
+card that finds the contacts' devices in Home Assistant's registry, which tells no card
 of a change, renders again each minute: a contact that gets its device, or a tracker, shows
 within a minute. Every name and text from the mesh shows as text: no name or message can add a link or load
 an image ([platform-notes.md](platform-notes.md#home-assistant-dashboards)).
@@ -829,7 +843,7 @@ tap on a link does nothing.
 **Writing.** A chat's page ends in a field *Write to …* and a tile *Return, then Send*: type,
 tap Return (↵), then *Send*. Return, or leaving the field, keeps the text at the gateway; only
 *Send* sends it, once. The field is shared by everyone in the home who uses Home Assistant, and
-a text left in it is cleared after 15 minutes. A *Send* the gateway refuses says why under the
+a text left in it is cleared after 15 minutes. A *Send* the gateway refuses says why above the
 thread, also when the field held no text. The field and the button are entities of a gateway of
 version 2.1; with an earlier gateway, the page says so instead. A channel that only automations
 write to (`homeassistant.hidden_targets`) has no field, nor have two targets whose aliases differ

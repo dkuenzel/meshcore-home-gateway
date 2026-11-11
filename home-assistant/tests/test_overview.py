@@ -177,12 +177,14 @@ async def test_the_status_line_says_how_the_gateway_is(  # noqa: PLR0915 - situa
     assert (await situation("radio disconnected", "error", "Radio disconnected.")).endswith(tell)
     await fire(hass, topics.state, health())
     await situation("all fine", "success", "All fine.")
-    gateway_, settings, help_ = (said(config, text) for text in ("Gateway", "Settings", "Help"))
+    map_, gateway_, settings, help_ = (
+        said(config, text) for text in ("Map", "Gateway", "Settings", "Help")
+    )
     lines = render(hass, status).split("\n")
     assert len(lines) == 3
-    assert lines[1] == (  # the way to the pages without a tab, outside the fold
-        f'<div><a href="./gateway">{gateway_}</a> · <a href="./settings">{settings}</a> · '
-        f'<a href="./help">{help_}</a></div>'
+    assert lines[1] == (  # the way to the pages without a tab, outside the fold, the map first
+        f'<div><a href="./map">{map_}</a> · <a href="./gateway">{gateway_}</a> · '
+        f'<a href="./settings">{settings}</a> · <a href="./help">{help_}</a></div>'
     )
     assert lines[2].startswith("<details><summary>")
     # the queue sensor counts the messages behind the one being sent: never the status (M22)
@@ -360,6 +362,65 @@ async def test_each_problem_card_shows_while_its_problem_exists(  # noqa: PLR091
     assert after.endswith('<a href="./contacts">Contacts</a>')
     await fire(hass, topics.contacts, index())
     assert [n for n, c in found.items() if render(hass, c)] == []
+    assert problems(caplog) == []
+
+
+# the advert-position card: what to do, and what the gateway goes by (owner feedback on 2.1.0)
+CHECK_SHARING = (
+    "On that device, make sure in the MeshCore app that sharing the location in adverts is off, "
+    "then send an advert near this home's radio."
+)
+NOT_NEEDED = (
+    "The household's map does not need it: the gateway asks for positions privately (Ask for "
+    "position and battery)."
+)
+GOES_BY = (
+    "The gateway reads each advert. Until it has read a device's newest advert, for example one "
+    "sent while the gateway was stopped for an update or a restart, it goes by the position this "
+    "home's radio still remembers for that device: from an older advert, or written by another "
+    "app. The radio keeps that position after sharing is switched off."
+)
+GOES = "The card goes once the gateway has read an advert without a position."
+# the radio's record keeps the old position: an advert the gateway misses later brings it back
+COMES_BACK = (
+    "It can come back after an update or a restart, as long as this home's radio remembers the "
+    "old position."
+)
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+async def test_the_advert_position_card_says_what_the_gateway_goes_by(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    language: str,
+) -> None:
+    """The warning stays certain, as ADR 0025 errs to warn. What to do covers a device that
+    still shares and one whose newest advert the gateway has not read (an advert made while it
+    was stopped, the owner's case after an update): make sure the setting is off, then send an
+    advert near the radio. What this means says what the gateway goes by until then, when the
+    card goes, and that it can come back while the radio remembers the old position."""
+    config = speaking(language, monkeypatch)
+    loaded, topics = await household_of(
+        hass, hass_ws_client, config, tmp_path, ALICE_NODE, Node(BOB, "Bob", COMPANION)
+    )
+    advert = problem_cards(loaded)["advert_position"]
+    await fire(
+        hass, topics.contacts, index(advert_carries_position=[BOB], advert_carries_position_total=1)
+    )
+    lines = render(hass, advert).split("\n")
+    verdict = said(config, "{names} broadcast their position to everyone in range.", names="Bob")
+    assert first(lines[0]) == ("warning", verdict, said(config, CHECK_SHARING))
+    paragraphs = "".join(
+        f"<p>{' '.join(said(config, text) for text in texts)}</p>"
+        for texts in ((NOT_NEEDED,), (GOES_BY,), (GOES, COMES_BACK))
+    )
+    summary = said(config, "What this means")
+    assert lines[1:] == [f"<details><summary>{summary}</summary>{paragraphs}</details>"]
     assert problems(caplog) == []
 
 

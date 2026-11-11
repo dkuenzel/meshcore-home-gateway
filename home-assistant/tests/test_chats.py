@@ -1,5 +1,5 @@
-"""The generated dashboard's chats against the real Home Assistant: a chat's page (its head, its
-thread, the refused line under it, why writing is not possible, and its About), All chats and Latest
+"""The generated dashboard's chats against the real Home Assistant: a chat's page (its head, the
+refused line, its thread, why writing is not possible, and its About), All chats and Latest
 messages on Chats, and Latest chats on Overview (docs/home-assistant.md, Dashboard).
 
 The household and the helpers are those of test_dashboard.py. The cards read the gateway's message
@@ -338,8 +338,8 @@ async def test_the_delivery_code_is_cut_only_where_and_while_the_gateway_adds_on
     while the configuration says confirm_nonce is on. With it off, a household's own text that
     ends like a code shows whole, in a chat, Latest messages, Latest chats and All chats; on its
     way, also with it on. Without the setting (the gateway offline: Home Assistant drops the
-    configuration's attributes) the cards cut it as before. The refused line's events, which
-    are final at once, never carry a code: they show the text whole."""
+    configuration's attributes) the cards cut it as before. The refused line quotes no text
+    (#143)."""
     config = make_config()
     loaded = await chats_of(hass, hass_ws_client, tmp_path, config)
     alice = thread(loaded, "alice")
@@ -368,7 +368,9 @@ async def test_the_delivery_code_is_cut_only_where_and_while_the_gateway_adds_on
     refused = refused_line(loaded, "alice")
     event = DeliveryEvent("r1", "operator", DeliveryState.DUPLICATE, text=own)
     await fire(hass, topics_of(config).delivery, delivery_payload(event))
-    assert f"<br>{own}</ha-alert>" in render(hass, refused)
+    line = render(hass, refused)
+    assert "Not sent again" in line
+    assert "Gate code" not in line  # #143: the line quotes no text
     assert problems(caplog) == []
 
 
@@ -442,7 +444,7 @@ async def test_a_channel_page_holds_every_alias_on_its_channel(
     assert problems(caplog) == []
 
 
-# --- the refused line under the thread ------------------------------------------------------------
+# --- the refused line above the thread ------------------------------------------------------------
 
 
 async def test_the_refused_line_says_why_a_send_of_this_chat_was_refused(
@@ -453,10 +455,11 @@ async def test_the_refused_line_says_why_a_send_of_this_chat_was_refused(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """§3.4: under the thread, not in the footer (H-27), a refusal of this chat's Send in words,
-    which a household user sees: too long, the same text again, no text at all (HC 1); not
-    another chat's refusal, not one followed by a message of this chat, and nothing at all
-    otherwise."""
+    """§3.4: above the thread, not in the footer (H-27) and not under the thread, where the footer
+    covered it (#143), a refusal of this chat's Send in words, which a household user sees: too
+    long, the same text again, no text at all (HC 1); never the refused text, which the field
+    keeps and, sent twice, the thread shows; not another chat's refusal, not one followed by a
+    message of this chat, and nothing at all otherwise."""
     config = make_config()
     loaded = await chats_of(hass, hass_ws_client, tmp_path)
     viewer = await household_viewer(hass, hass_ws_client)
@@ -479,7 +482,11 @@ async def test_the_refused_line_says_why_a_send_of_this_chat_was_refused(
     line = await refusal("operator", DeliveryState.DUPLICATE, text="Back <b>soon</b>")
     assert line == (
         '<div><ha-alert alert-type="warning"><b>Not sent again: the same text went to this chat '
-        "a moment ago.</b><br>Back &lt;b&gt;soon&lt;/b&gt;</ha-alert></div>"
+        "a moment ago.</b></ha-alert></div>"
+    )
+    line = await refusal(ALICE, DeliveryState.REJECTED, reason="queue_full", text="Back soon")
+    assert line == (
+        '<div><ha-alert alert-type="warning"><b>Not sent: queue full.</b></ha-alert></div>'
     )
     line = await refusal("operator", DeliveryState.REJECTED, reason="empty")
     assert "<b>Nothing was sent: the gateway had no text. Tap Return (↵) in the field" in line

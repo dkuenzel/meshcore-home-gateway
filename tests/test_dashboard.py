@@ -33,7 +33,7 @@ from meshcore_home_gateway.outbox import Delivery
 from meshcore_home_gateway.protocol.codes import NodeType
 from meshcore_home_gateway.state import ContactDeviceRecords, JsonStateFile
 from tests import dashboard_rules as rules
-from tests.i18n_helpers import compiled, pseudo, speaking
+from tests.i18n_helpers import PSEUDO_MARK, compiled, pseudo, speaking
 from tests.test_contact_devices import (
     ALICE,
     BOB,
@@ -58,6 +58,15 @@ MACRO = (
     r"\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064"
     r"\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}"
     r"{%- endmacro -%}"
+)
+# what every card that prints a number defines after m(): the number in the dashboard's language,
+# its decimal mark in place of the point, a whole one without ".0" (#145), rounded to `digits`
+# places when given; anything else as m() prints it (rule 22)
+NUM = (
+    "{%- macro num(v, digits=none) -%}{%- set f = v | float if v | is_number else none -%}"
+    "{%- set f = f | round(digits) if f is not none and digits is not none else f -%}"
+    "{%- if f is none -%}{{ m(v) }}{%- elif f % 1 == 0 -%}{{ m(f | int | string) }}"
+    "{%- else -%}{{ m(f | string | replace('.', '@decimal@')) }}{%- endif -%}{%- endmacro -%}"
 )
 Speaker = Callable[[str, Mapping[str, str]], str]
 
@@ -86,9 +95,16 @@ def config(node_id: str = "radio1", more: str = "") -> Config:
     )
 
 
-def render(template: str, text: Speaker = ENGLISH, trackers: list[str] | None = None) -> str:
+def render(
+    template: str, text: Speaker = ENGLISH, trackers: list[str] | None = None, decimal: str = "."
+) -> str:
     return dashboard.render(
-        template, node_id="radio-1", version="1.2.3", trackers=trackers or [], text=text
+        template,
+        node_id="radio-1",
+        version="1.2.3",
+        trackers=trackers or [],
+        text=text,
+        decimal=decimal,
     )
 
 
@@ -197,6 +213,7 @@ def test_the_pseudo_language_passes_the_guard(
     assert "‹For your administrator: Home Assistant has no entity of node radio1. " in text
     english, _ = dashboard.dashboard(config(), tmp_path)
     assert "‹" not in english
+    text = text.replace(f"replace('.', '{PSEUDO_MARK}')", "replace('.', '.')")  # num()
     assert re.sub(r"[‹›]", "", text) == re.sub(r"[‹›]", "", english)  # menus: Settings › …
 
 
@@ -208,6 +225,55 @@ def test_no_translation_makes_a_marker_or_a_placeholder() -> None:
     texts = {"gw": "gw", "Mesh": "_", "Overview": '@gw@ _("x")'}
     out = render(template, translated(texts))
     assert out == 'content: |-\n  @gw@ _("x") Overview\n'
+
+
+def test_the_decimal_mark_goes_where_num_writes_a_point() -> None:
+    """@decimal@ becomes the dashboard's decimal mark, the point of English unless the caller
+    gives the language's (i18n.DECIMAL_MARKS, #145)."""
+    template = "content: |-\n  {{ v | string | replace('.', '@decimal@') }}\n"
+    assert render(template) == "content: |-\n  {{ v | string | replace('.', '.') }}\n"
+    german = render(template, decimal=",")
+    assert german == "content: |-\n  {{ v | string | replace('.', ',') }}\n"
+    for mark in (*i18n.DECIMAL_MARKS.values(), PSEUDO_MARK):
+        assert f"replace('.', '{mark}')" in render(shipped(), decimal=mark)
+
+
+@pytest.mark.parametrize(
+    "mark", ["'", '"', "\\", "@", "<", "{", "a", "5", " ", "\u00a0", "\u200e", "", ".,"]
+)
+def test_a_decimal_mark_that_is_no_punctuation_or_breaks_the_template_is_refused(
+    mark: str,
+) -> None:
+    """The mark stands inside a quoted Jinja string: one punctuation character, no quote,
+    backslash or what a card would read as code (unsafe())."""
+    with pytest.raises(TemplateError, match="decimal mark"):
+        render("content: |-\n  {{ '@decimal@' }}\n", decimal=mark)
+
+
+@pytest.mark.real_catalogs
+@pytest.mark.parametrize("language", ["en", "de"])
+def test_the_dashboard_writes_numbers_with_its_languages_decimal_mark(
+    language: str, tmp_path: Path
+) -> None:
+    """Each card's num() puts the language's decimal mark in place of the point: German writes
+    0,4 (#145); the mark comes from locale data, not from a translator."""
+    text, _ = dashboard.dashboard(
+        config(more=f'[homeassistant]\nlanguage = "{language}"\n'), tmp_path
+    )
+    mark = i18n.DECIMAL_MARKS[language]
+    defined = text.count("{%- macro num(v, digits=none) -%}")
+    assert defined >= 6  # the cards that print a number, and a chat's About on each chat page
+    assert text.count(f"replace('.', '{mark}')") == defined
+    assert "@decimal@" not in text
+
+
+def test_a_language_the_tests_offer_writes_its_own_decimal_mark(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    speaking(monkeypatch, pseudo())
+    text, _ = dashboard.dashboard(config(more='[homeassistant]\nlanguage = "xx"\n'), tmp_path)
+    assert f"replace('.', '{PSEUDO_MARK}')" in text
+    assert "replace('.', '.')" not in text
 
 
 @pytest.mark.real_catalogs
@@ -693,7 +759,7 @@ _BLOCK = re.compile(r"^(\s*(?:- )?)[\w-]+: \|-?$")
 _TAG = re.compile(r"\{\{.*?\}\}|\{%.*?%\}|\{#.*?#\}")
 _PRINT = re.compile(r"\{\{\s*(.*?)\s*\}\}")
 _SET = re.compile(r"\{%-?\s*set (\w+) = (.*?)\s*-?%\}")
-_MACRO_START = re.compile(r"\{%-?\s*macro (\w+)\((\w+)\)\s*-?%\}")
+_MACRO_START = re.compile(r"\{%-?\s*macro (\w+)\((\w+)(?:, \w+=\w+)*\)\s*-?%\}")
 _ESCAPE = re.compile(r"\|\s*(?:e|escape|forceescape)\b")
 _INTEGER = re.compile(
     r".*\|\s*(?:int|count)(?:\(\s*-?\d*\s*\))?|\[?\s*(\w+)\s*//\s*\d+(?:\s*,\s*\d+\s*\]\s*\|\s*max)?"
@@ -709,6 +775,7 @@ _PLACEHOLDERS = {
     "@chats@",
     "@models@",
     "@guide@",
+    "@decimal@",
 }
 _JINJA_NOTE = re.compile(r"\{#-?\s*Translators:.*-?#\}")
 _CLASS = re.compile(r"\{#- problem: \w+ -#\}")  # a problem card's class (rule 9)
@@ -933,6 +1000,12 @@ def _card_findings(block: Block) -> list[str]:  # noqa: PLR0912
     return found
 
 
+def _lines(template: str) -> Iterator[tuple[int, str]]:
+    """Every line of the cards' contents, by number, without indentation."""
+    for block in blocks(template.split("\n")):
+        yield from block.lines
+
+
 def test_the_shipped_template_keeps_its_rules() -> None:
     template = shipped()
     assert rule_findings(template) == []
@@ -942,8 +1015,27 @@ def test_the_shipped_template_keeps_its_rules() -> None:
         for _, t in block.lines
         for name in re.findall(r"macro (\w+)\(", t)
     }
-    assert {"m", "mt", "when", "mark", "why", "problem", "place", "telemetry", "what"} <= names
+    assert {
+        "m",
+        "mt",
+        "num",
+        "when",
+        "mark",
+        "why",
+        "problem",
+        "place",
+        "telemetry",
+        "what",
+    } <= names
+    assert {line for _, line in _lines(template) if rules.NUM_MACRO.search(line)} == {NUM}
     assert template.count(MACRO) == 42
+    assert template.count(NUM) == 7
+    # the number fields of rule 22: those the template sets through num()
+    assert {
+        name
+        for name, value in re.findall(r"set (\w+) = (.*?)\s*-?%\}", template)
+        if value.startswith("num(")
+    } == rules.NUMBERS
     assert len(list(dashboard.MARKER.finditer(template))) > 70
 
 
@@ -1718,6 +1810,34 @@ def test_the_shipped_template_keeps_the_rules_of_2_1() -> None:
     assert rules.findings(shipped()) == []
 
 
+def test_the_refused_line_under_the_thread_breaks_rules_8_and_18() -> None:
+    """#143: under the thread, the footer, which sticks to the bottom of the screen, covered the
+    refused line until the page was scrolled. Moved back there on the made dashboard, the line is
+    not above the thread (rule 18), and it has no help of its own (rule 8)."""
+    template = shipped()
+    loaded = rules.load(rules.rendered(template))
+    [view] = [v for v in loaded["views"] if v["path"] == "chat-family"]
+    [section] = view["sections"]
+    listed = section["cards"]
+    [line] = [card for card in listed if rules.is_refused_line(card)]
+    listed.remove(line)
+    [thread] = [n for n, card in enumerate(listed) if rules.is_thread(card)]
+    listed.insert(thread + 1, line)
+    assert rules.rule_18(template, None, loaded, rules.HOUSEHOLD) == [
+        "rule 18: chat-family: the refused line is not above the thread"
+    ]
+    assert rules.rule_8(template, None, loaded, rules.HOUSEHOLD) == [
+        "rule 8: chat-family: a markdown card without help"
+    ]
+    # the thread first and the line last: no card is above the thread, the last one is not
+    listed.remove(line)
+    del listed[:thread]
+    listed.append(line)
+    assert rules.rule_18(template, None, loaded, rules.HOUSEHOLD) == [
+        "rule 18: chat-family: the refused line is not above the thread"
+    ]
+
+
 def test_the_views_are_three_tabs_and_pages_without_a_tab() -> None:
     """Overview, Chats and Contacts show their titles alone; Map, Gateway, Settings, Help and a
     page per chat open from links; no page has a fixed way back."""
@@ -1818,6 +1938,12 @@ FIELD = (
     '          - type: entities\n            entities:\n              - entity: "@chats.write@"\n'
 )
 IN_FOOTER = "          - type: markdown\n            content: x\n"
+# the first two links of the row under Overview's status line, and the row
+MAP_LINK, GATEWAY_LINK = '<a href="./map">_("Map")</a>', '<a href="./gateway">_("Gateway")</a>'
+ROW = (
+    f'<div>{MAP_LINK} · {GATEWAY_LINK} · <a href="./settings">_("Settings")</a> · '
+    '<a href="./help">_("Help")</a></div>'
+)
 BROKEN = [
     # rule 2: a mapping over a closed list
     (
@@ -1974,6 +2100,32 @@ BROKEN = [
     (card("{%- macro problem(v) -%}", "{%- endmacro -%}"), "rule 9: 2 status cards"),
     # rule 11: a GitHub alert
     (card("> [!NOTE]", '> _("Help")'), "rule 11: "),
+    # rule 12: the row under Overview's status line without the map, with the map last, twice
+    (
+        ["@@", f"{MAP_LINK} · {GATEWAY_LINK}", GATEWAY_LINK],
+        "rule 12: the links under overview's status line are ['gateway', 'settings', 'help']",
+    ),
+    (
+        ["@@", f"{MAP_LINK} · {GATEWAY_LINK}", GATEWAY_LINK.replace("</a>", f"</a> · {MAP_LINK}")],
+        "rule 12: the links under overview's status line are ['gateway', 'map', 'settings',",
+    ),
+    (
+        ["@@", f"<div>{MAP_LINK} · ", f"<div>{MAP_LINK}</div>\n              <div>{MAP_LINK} · "],
+        "rule 12: 2 rows of links under overview's status line",
+    ),
+    # rule 12: the row in a condition that never holds, or in a fold over several lines
+    (
+        ["@@", ROW, f"{{%- if false %}}\n              {ROW}\n              {{%- endif %}}"],
+        "rule 12: the row of links under overview's status line is inside",
+    ),
+    (
+        [
+            "@@",
+            ROW,
+            f'<details><summary>_("Help")</summary>\n              {ROW}\n              </details>',
+        ],
+        "rule 12: the row of links under overview's status line is inside",
+    ),
     # rule 13: a message's text through m(), a card without mt(), two forms of m()
     (
         card(
@@ -2008,7 +2160,7 @@ BROKEN = [
     # rule 17: a guide section named, Home Assistant's menus in a household line
     (card('<div>_("See A second gateway in the guide.")</div>'), "rule 17: 'See A second gateway"),
     (card('<div>_("Open Settings › Devices & services.")</div>'), "rule 17: 'Open Settings"),
-    # rule 18: the refused line shows while empty, is not under the thread, or is in the
+    # rule 18: the refused line shows while empty, is not above the thread, or is in the
     # footer again, where it pushed the Send tile below a phone's screen (H-27)
     (
         [
@@ -2023,7 +2175,7 @@ BROKEN = [
     ),
     (
         ["@@", "{%- set e = 'event.@gw@_delivery' -%}", "{%- set e = 'event.@gw@_message' -%}"],
-        "rule 18: chat-family: the refused line is not under the thread",
+        "rule 18: chat-family: the refused line is not above the thread",
     ),
     (
         ["@@", f"        cards:\n{FIELD}", f"        cards:\n{IN_FOOTER}{FIELD}"],
@@ -2046,7 +2198,92 @@ BROKEN = [
         ],
         "rule 20: chat-family has a back_path",
     ),
+    # rule 22: two forms of num(), num() without its macro, a number formatted with '%.', a
+    # number with a fraction through m(): a value of Home Assistant, and one whose key names a
+    # unit
+    (
+        card(
+            MACRO, NUM.replace("f % 1 == 0", "f == f | int"), "<div>{{ num(states('s.x')) }}</div>"
+        ),
+        "rule 22: 2 forms of num()",
+    ),
+    (
+        card(
+            MACRO,
+            "{% macro num(v) -%}{{ m(v) }}{%- endmacro -%}",
+            "<div>{{ num(states('sensor.x')) }}</div>",
+        ),
+        "rule 22: 2 forms of num()",
+    ),
+    (card(MACRO, "<div>{{ num(states('sensor.x')) }}</div>"), "num() without its macro"),
+    (
+        card(MACRO, "<div>{{ m('%.1f' | format(states('sensor.x') | float(0))) }}</div>"),
+        "a number formatted with '%.'",
+    ),
+    (
+        card(
+            MACRO, "{%- set v = state_attr('sensor.x', 'lag') -%}", "<div>{{ m(v | string) }}</div>"
+        ),
+        "m(v | string) of a number",
+    ),
+    (
+        card(MACRO, "<div>{{ m(state_attr('binary_sensor.@gw@_radio', 'frequency_mhz')) }}</div>"),
+        "frequency_mhz through m(), not num()",
+    ),
+    # rule 22: a number field printed as it is, or not set in its card
+    (
+        card(MACRO, NUM, "{%- set volts = m(states('sensor.x')) -%}", "<div>{{ volts }}</div>"),
+        "the number {volts} not set through num()",
+    ),
+    (card(MACRO, NUM, '<div>_("{volts} V")</div>'), "the number {volts} not set through num()"),
+    (
+        card(
+            MACRO,
+            NUM,
+            "{%- set volts = num(states('sensor.x'), 1) -%}",
+            "{%- set volts = m(states('sensor.y')) -%}",
+            '<div>_("{volts} V")</div>',
+        ),
+        "the number {volts} not set through num()",
+    ),
+    # rule 22: a number field set through m() from a variable: a contact's battery, the lag
+    (
+        ["@@", "{%- set volts = num(r.battery, 1) -%}", "{%- set volts = m(r.battery) -%}"],
+        "the number {volts} not set through num()",
+    ),
+    (
+        [
+            "@@",
+            "{%- set slow = num(lag if lag is number else none, 1) -%}",
+            "{%- set slow = m(lag) -%}",
+        ],
+        "the number {slow} not set through num()",
+    ),
 ]
+
+
+@pytest.mark.parametrize(
+    ("text", "depth"),
+    [
+        ("{#- Translators: the <details> below -#}\n{%- if x %}a{% endif %}\n<!-- {% if -->", 0),
+        ("{%- macro m(x) -%}{{ x }}{%- endmacro -%}\n{%- for e in y if e -%}\n{%- endfor -%}", 0),
+        ("{%- if x -%}\n{%- elif y -%}\n{%- else -%}", 1),
+        ("<details><summary>a</summary>\n{%- for e in y %}", 2),
+        ("{#- the row is hidden:\n", 1),
+        ("{#- a comment\nover two lines -#}", 0),
+        ("<!-- the row is hidden:\n", 1),
+        ("{#- a comment that names\n{% if %} over two lines -#}", 0),
+        ("<!-- a comment that names\n<details> over two lines -->", 0),
+        ("<!-- a comment closed as HTML allows --!>", 0),
+        ("<!-- the row is hidden, not by --!\n", 1),
+    ],
+)
+def test_rule_12_counts_the_blocks_open_before_the_row(text: str, depth: int) -> None:
+    """Rule 12: the row under Overview's status line stands at the top level of its card, outside
+    every {% if %}, {% for %}, macro, <details> and comment that is still open; what a closed
+    comment names opens nothing, HTML's comment also ends at --!>, and an elif or else opens no
+    block."""
+    assert rules._depth(text) == depth
 
 
 @pytest.mark.real_catalogs
@@ -2077,6 +2314,13 @@ def test_each_rule_finds_its_break(change: list[str], finding: str) -> None:
         card('<div>_("Help")</div>', HELPED),
         card('<table role="presentation" width="100%"><tr><td>_("Help")</td></tr></table>', HELPED),
         card("{#- problem: taken_over -#}", '_("Help")', HELPED),
+        card(
+            MACRO,
+            NUM,
+            "{%- set n = states('sensor.x') | int(0) -%}",
+            "<div>{{ m(n | string) }} {{ num(states('sensor.y'), 1) }}</div>",
+            HELPED,
+        ),
         [  # a tile's help in the text-only card after it (design D-10)
             "          - type: tile",
             "            entity: sensor.@gw@_nodes",
@@ -2087,7 +2331,8 @@ def test_each_rule_finds_its_break(change: list[str], finding: str) -> None:
 def test_what_a_rule_allows_adds_no_finding(change: list[str]) -> None:
     """A link to the guide's anchor of this version, the menus in a line for the administrator,
     a card with its help, a table of presentation, a problem card of a class that the status
-    line tests before its problems, such as a takeover (rule 9)."""
+    line tests before its problems, such as a takeover (rule 9), a whole number through m() and
+    a number through num() (rule 22)."""
     assert added(into_help(*change)) == []
 
 
@@ -2734,6 +2979,18 @@ HELP_TOPICS = (
     "Who sees what",
     "For your administrator",
 )
+
+
+def test_help_says_what_the_gateway_goes_by_for_a_position_broadcast_to_everyone() -> None:
+    """The second place that states the warning as certain (owner feedback on 2.1.0): Help's
+    words for Overview's first line say, as the card does, that the gateway goes by the position
+    the radio remembers until it has read the device's newest advert."""
+    said = " ".join(rules.texts(view_of("help")))
+    assert (
+        "<li><b>a position broadcast to everyone</b>: A person's device tells everyone in range "
+        "where it is. Until the gateway has read the device's newest advert, it goes by the "
+        "position this home's radio still remembers for it.</li>"
+    ) in said
 
 
 def test_help_names_every_page_and_every_control() -> None:

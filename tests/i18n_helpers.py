@@ -29,6 +29,9 @@ TEMPLATE = (
     / "meshcore-home-gateway.pot"
 )
 GERMANIC = "nplurals=2; plural=(n != 1);"
+# the decimal mark of a language a test offers: the Arabic decimal separator, which no shipped
+# language writes, so a number that did not pass through the dashboard's num() shows by its point
+PSEUDO_MARK = "\u066b"
 
 
 def compiled(
@@ -123,13 +126,19 @@ def _english(entry: Entry) -> tuple[str, ...]:
 def speaking(
     monkeypatch: pytest.MonkeyPatch, translator: i18n.Translator | None = None
 ) -> i18n.Translator:
-    """Offer `translator` (the pseudo-language by default) as a language of this version."""
+    """Offer `translator` (the pseudo-language by default) as a language of this version, with
+    its decimal mark (PSEUDO_MARK)."""
     offered = translator or pseudo()
     original = i18n.translator
     monkeypatch.setattr(
         i18n,
         "LANGUAGES",
         MappingProxyType({**i18n.LANGUAGES, offered.language: "Pseudo"}),
+    )
+    monkeypatch.setattr(
+        i18n,
+        "DECIMAL_MARKS",
+        MappingProxyType({**i18n.DECIMAL_MARKS, offered.language: PSEUDO_MARK}),
     )
 
     def translator_of(language: str) -> i18n.Translator:

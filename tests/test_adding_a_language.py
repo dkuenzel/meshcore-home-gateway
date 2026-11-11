@@ -161,10 +161,12 @@ def test_a_language_needs_its_catalogs_its_line_and_what_the_tools_write(tmp_pat
         (template,) = (copy / folder).glob("*.pot")
         catalog = translated(template.read_text(encoding="utf-8"))
         (copy / folder / f"{LANGUAGE}.po").write_text(catalog, encoding="utf-8")
-    languages = copy / "src" / "meshcore_home_gateway" / "i18n.py"  # step 3
+    languages = copy / "src" / "meshcore_home_gateway" / "i18n.py"  # step 3, and its mark
     text = languages.read_text(encoding="utf-8")
     assert text.count('{"en": "English"') == 1
     text = text.replace('{"en": "English"', f'{{"en": "English", "{LANGUAGE}": "{NAME}"', 1)
+    assert text.count('{"en": "."') == 1
+    text = text.replace('{"en": "."', f'{{"en": ".", "{LANGUAGE}": ","', 1)
     languages.write_text(text, encoding="utf-8")
     reference = copy / "docs" / "configuration.md"  # step 7: a choice of language
     text = reference.read_text(encoding="utf-8")
