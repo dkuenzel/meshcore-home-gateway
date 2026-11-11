@@ -1891,11 +1891,20 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   full thread it stood at 589 to 638 px and the footer's top at 606 px, so 32 of its 49 px were
   behind the field on first paint, on both versions, and 10 px in a later run with another full
   thread (#143). On a phone the line then ended 8 px above the footer at 360x800, but that
-  thread had 3 open rows; six short ones, which a thread also opens, were not measured.
-  *Here:* the footer holds only the field and the tile, and since 2.1.1 the refused line stands
-  right above the thread, where its place depends on neither the thread's length nor the
-  screen; while it shows, the thread starts lower
-  ([development.md](development.md#translations), rule 18). *Check:* `grep -n max-height
+  thread had 3 open rows. With six open rows of 60 characters (as many as a thread opens, within
+  its 360 characters) the footer covers the newest row itself on a 360x800 phone, on both
+  versions, with the dashboard of 2.1.0 as with that of 2.1.1 (English; 2.1.1's also German):
+  the row's bottom stood 20 px below the footer's top, 61 px when two of the rows were not
+  delivered (their reason takes a line), and 64 and 106 px when the thread also said that older
+  messages are no longer kept. At 390x844 it ended 2 to 47 px above the footer, 8 px below in
+  the last case; from 412x915 up, at least 28 px above. *Here:* the footer holds only the field and the tile, and since 2.1.1 the refused line
+  stands right above the thread, where its place depends on neither the thread's length nor the
+  screen ([development.md](development.md#translations), rule 18). Measured in 2.1.1 at 360x800
+  to 1920x1080, English and German, both versions, with those six rows and with three long ones:
+  the line's top at 143 to 165 px, below the toolbar (56 px), its bottom at 183 to 246 px, above
+  the footer's top (574 to 886 px), and *Send* 32 px above the bottom of the screen. While the
+  line shows, the thread starts 60 to 101 px lower, so on a phone more of its newest rows stand
+  behind the field until the page is scrolled. *Check:* `grep -n max-height
   src/panels/lovelace/views/hui-view-footer.ts` in the frontend's source.
 * **Core strips what a template renders, so a Markdown card whose content renders only spaces or
   line breaks counts as empty; markup without text, an HTML entity such as `&nbsp;` and a

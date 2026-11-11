@@ -258,7 +258,9 @@ Assistant, [testing.md](../testing.md#the-dashboard-in-a-browser)).
   can stand behind the footer, and the Confirmation's "under the thread (rule 18)". Under the
   thread, the footer, which sticks to the bottom of the screen, covered the line until the page
   was scrolled; above it, its place depends on neither the thread's length nor the screen. Bad,
-  because while the line shows, the thread starts lower by its height, and on a phone its newest
-  rows may stand behind the field until the page is scrolled. The line no longer quotes the text:
-  the field keeps a refused draft, and a text sent twice is in the thread. Rule 18 checks the
-  place ([platform-notes.md](../platform-notes.md#home-assistant-dashboards)).
+  because while the line shows, the thread starts lower by its height (60 to 101 px), and on a
+  phone more of its newest rows stand behind the field until the page is scrolled; on a 360x800
+  phone the field covers the newest of six short rows also without the line, as in 2.1.0. The
+  line no longer quotes the text: the field keeps a refused draft, and a text sent twice is in
+  the thread. Rule 18 checks the place
+  ([platform-notes.md](../platform-notes.md#home-assistant-dashboards)).
