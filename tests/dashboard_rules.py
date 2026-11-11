@@ -124,7 +124,9 @@ QUOTES: dict[str, tuple[str, ...]] = {
         "Other people's radios that this home's radio heard in the last 7 days. Add one under Add "
         "a contact."
     ): ("Add a contact",),
-    "Tap a dot for its name. Where everyone is, below, says it in words.": ("Where everyone is",),
+    "Tap a marker or a dot for its name. Where everyone is, below, says it in words.": (
+        "Where everyone is",
+    ),
     "Where everyone is, below, lists everyone with a position now.": ("Where everyone is",),
     "Someone missing: see Where everyone is.": ("Where everyone is",),
     ("Ask for position and battery on Contacts turns it on or off for each person."): (

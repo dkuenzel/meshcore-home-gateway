@@ -229,9 +229,12 @@ async def test_the_dashboards_map_keeps_the_trail_of_an_expired_tracker(
     assert points(found) == expected  # the trail, ending where she was last
     assert found[-1]["s"] == "unavailable"
     fold = card(shown, "How to read the map")["content"]
-    assert (
-        "<li>A device whose position is not current shows only its line, which ends in a dot "
-        "where it was last, until that is more than 24 hours ago.</li>"
+    assert (  # a marker where a device is now, a dot for each position of its line
+        "<li>Each marker with the first letters of a name is where a device is now; the line "
+        "behind it, with a dot for each position, shows where it went in the last 24 hours.</li>"
+        "<li>A device whose position is not current has no marker, only its line, whose last dot "
+        "is where it was last, until that is more than 24 hours ago.</li>"
+        "<li>Tap a marker or a dot for its name."
     ) in fold
     assert problems(caplog) == []
 

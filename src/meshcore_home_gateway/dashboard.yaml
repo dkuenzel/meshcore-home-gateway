@@ -1440,7 +1440,7 @@ views:
           - type: markdown
             text_only: true
             content: |-
-              <details><summary>_("How to read the map")</summary><ul><li>_("Each dot is a device's last known position; the line behind it shows where it went in the last 24 hours.")</li><li>_("A device whose position is not current shows only its line, which ends in a dot where it was last, until that is more than 24 hours ago.")</li><li>_("Tap a dot for its name. Where everyone is, below, says it in words.")</li></ul></details>
+              <details><summary>_("How to read the map")</summary><ul><li>_("Each marker with the first letters of a name is where a device is now; the line behind it, with a dot for each position, shows where it went in the last 24 hours.")</li><li>_("A device whose position is not current has no marker, only its line, whose last dot is where it was last, until that is more than 24 hours ago.")</li><li>_("Tap a marker or a dot for its name. Where everyone is, below, says it in words.")</li></ul></details>
 # @else
           - type: markdown
             text_only: true

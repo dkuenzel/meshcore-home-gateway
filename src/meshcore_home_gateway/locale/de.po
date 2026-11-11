@@ -1781,8 +1781,8 @@ msgstr "Einem Dashboard einer anderen Version können neue Karten fehlen, oder e
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "A device whose position is not current shows only its line, which ends in a dot where it was last, until that is more than 24 hours ago."
-msgstr "Ein Gerät, dessen Position nicht aktuell ist, zeigt nur seine Linie, die in einem Punkt dort endet, wo es zuletzt war, bis das mehr als 24 Stunden her ist."
+msgid "A device whose position is not current has no marker, only its line, whose last dot is where it was last, until that is more than 24 hours ago."
+msgstr "Ein Gerät, dessen Position nicht aktuell ist, hat keine Markierung, nur seine Linie, deren letzter Punkt zeigt, wo es zuletzt war, bis das mehr als 24 Stunden her ist."
 
 #. security text (docs/translations.md): what a tick proves and what it does not; a confirmation that came too soon may be forged
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2423,16 +2423,16 @@ msgctxt "dashboard"
 msgid "Duty cycle"
 msgstr "Duty-Cycle"
 
-#: src/meshcore_home_gateway/dashboard.yaml
-msgctxt "dashboard"
-msgid "Each dot is a device's last known position; the line behind it shows where it went in the last 24 hours."
-msgstr "Jeder Punkt ist die letzte bekannte Position eines Geräts; die Linie dahinter zeigt, wo es in den letzten 24 Stunden war."
-
 #. the settings of the contacts in Home Assistant; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Each has its own entities in Home Assistant."
 msgstr "Jeder hat eigene Entitäten in Home Assistant."
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Each marker with the first letters of a name is where a device is now; the line behind it, with a dot for each position, shows where it went in the last 24 hours."
+msgstr "Jede Markierung mit den Anfangsbuchstaben eines Namens zeigt, wo ein Gerät jetzt ist; die Linie dahinter, mit einem Punkt für jede Position, zeigt, wo es in den letzten 24 Stunden war."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -3814,8 +3814,8 @@ msgstr "Ein solcher Kontakt kann aus der Ferne die Einstellungen des Funkgeräts
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "Tap a dot for its name. Where everyone is, below, says it in words."
-msgstr "Tippe auf einen Punkt, um seinen Namen zu sehen. „Wo alle sind“ unten sagt es in Worten."
+msgid "Tap a marker or a dot for its name. Where everyone is, below, says it in words."
+msgstr "Tippe auf eine Markierung oder einen Punkt, um den Namen zu sehen. „Wo alle sind“ unten sagt es in Worten."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"

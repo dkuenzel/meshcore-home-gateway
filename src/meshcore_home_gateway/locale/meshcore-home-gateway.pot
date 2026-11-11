@@ -1779,7 +1779,7 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "A device whose position is not current shows only its line, which ends in a dot where it was last, until that is more than 24 hours ago."
+msgid "A device whose position is not current has no marker, only its line, whose last dot is where it was last, until that is more than 24 hours ago."
 msgstr ""
 
 #. security text (docs/translations.md): what a tick proves and what it does not; a confirmation that came too soon may be forged
@@ -2421,15 +2421,15 @@ msgctxt "dashboard"
 msgid "Duty cycle"
 msgstr ""
 
-#: src/meshcore_home_gateway/dashboard.yaml
-msgctxt "dashboard"
-msgid "Each dot is a device's last known position; the line behind it shows where it went in the last 24 hours."
-msgstr ""
-
 #. the settings of the contacts in Home Assistant; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Each has its own entities in Home Assistant."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Each marker with the first letters of a name is where a device is now; the line behind it, with a dot for each position, shows where it went in the last 24 hours."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -3812,7 +3812,7 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "Tap a dot for its name. Where everyone is, below, says it in words."
+msgid "Tap a marker or a dot for its name. Where everyone is, below, says it in words."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
