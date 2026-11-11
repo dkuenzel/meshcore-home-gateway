@@ -8,6 +8,13 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Fixed
+
+- With `[homie] enabled`, a node ID with `_` gets a warning at every start, in `check-config`
+  and in `doctor`: the Homie device writes `_` as `-`, so `radio_1` and `radio-1` share the
+  device `homie/meshcore-radio-1`, whose topic the broker's ACL must grant with `-`
+  ([mqtt-api.md](docs/mqtt-api.md#homie-homiehomie_device)) (#134).
+
 ## [2.1.0] - 2026-11-09
 
 The household's chat, its problems and its settings on the generated dashboard, and German. It

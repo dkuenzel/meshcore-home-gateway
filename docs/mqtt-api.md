@@ -1032,7 +1032,11 @@ documents above (`state` and `contacts/<key>`): it shows nothing they do not. It
 unit tests; openHAB's side is maintained by those who use it, as releases are checked with Home
 Assistant ([ADR 0030](decisions/0030-release-checked-by-ci-self-test-and-use.md)).
 `<homie_device>` is `meshcore-<node_id>` with `_` as `-` (`meshcore-radio1`): Homie's IDs are
-lower-case letters, digits and `-`.
+lower-case letters, digits and `-`. So node IDs that differ only in `_` and `-` share one device:
+`radio_1` and `radio-1` both publish `homie/meshcore-radio-1`. With `[homie]` on, the service
+warns about a node ID with `_` at every start, and so do `check-config` and `doctor`: give no
+other gateway on the broker the node ID with `-`, and grant the device's topic with `-` in the
+broker's ACL.
 
 Homie wants the device's `$state` as the last will of its connection, and a connection has one
 last will, which the gateway's carries for `availability`. So the device has a connection of its

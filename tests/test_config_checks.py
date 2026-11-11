@@ -8,10 +8,14 @@ from pathlib import Path
 
 import pytest
 
-from meshcore_home_gateway.config import parse_config
+from meshcore_home_gateway.cli import EX_OK
+from meshcore_home_gateway.cli import main as cli_main
+from meshcore_home_gateway.cli.doctor import WARNING, Finding, configuration_findings
+from meshcore_home_gateway.config import Config, parse_config
 from meshcore_home_gateway.config_checks import (
     alias_pairs,
     broker_warnings,
+    homie_device,
     ignored_codes,
     start_warnings,
 )
@@ -75,6 +79,78 @@ def test_target_aliases_that_differ_only_in_dash_and_underscore_are_warned_about
     apart = make_config(extra="[targets.a-b]\nchannel = 1\n[targets.a-c]\nchannel = 2")
     assert alias_pairs(apart) == []
     assert alias_pairs(make_config()) == []
+
+
+def _homie(node_id: str, *, enabled: bool = True) -> Config:
+    config = make_config(extra=f"[homie]\nenabled = {str(enabled).lower()}")
+    return dataclasses.replace(config, mqtt=dataclasses.replace(config.mqtt, node_id=node_id))
+
+
+HOMIE_WARNING = (
+    "mqtt.node_id radio_1 with homie.enabled: Homie IDs have no '_', so the Homie device is "
+    "homie/meshcore-radio-1, the same as for node_id radio-1: no other gateway on this broker "
+    "may have that node ID, and the broker's ACL must grant homie/meshcore-radio-1/#"
+)
+
+
+def test_an_underscore_in_the_node_id_is_warned_about_while_homie_is_on() -> None:
+    """#134: the Homie device's ID writes `_` as `-`, so `radio_1` and `radio-1` share one
+    device, and the broker's ACL must name it with `-`. Warned about at every start, like the
+    target aliases that differ only in them; without Homie or without `_`, nothing."""
+    config = _homie("radio_1")
+    (warning,) = homie_device(config)
+    assert str(warning) == HOMIE_WARNING
+    assert warning in start_warnings(config)
+    (two,) = homie_device(_homie("radio_a_1"))
+    assert str(two).split(", the same")[1] == (
+        " as for node_id radio-a-1: no other gateway on this broker may have that node ID, and "
+        "the broker's ACL must grant homie/meshcore-radio-a-1/#"
+    )
+    assert homie_device(_homie("radio_1", enabled=False)) == []
+    assert homie_device(_homie("radio-1")) == []
+    assert homie_device(make_config()) == []
+
+
+def test_doctor_lists_the_homie_warning(tmp_path: Path) -> None:
+    """#134: `doctor` lists every start warning, this one too."""
+    findings = configuration_findings(_homie("radio_1"), tmp_path / "config.toml")
+    assert Finding(WARNING, HOMIE_WARNING) in findings
+
+
+def test_the_homie_warning_is_logged_at_the_start(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """#134: logged at every start, in English."""
+    caplog.set_level(logging.WARNING)
+
+    async def main() -> None:
+        async with running(_homie("radio_1"), EmulatedRadio(), tmp_path):
+            pass
+
+    scenario(main)
+    assert HOMIE_WARNING in caplog.text
+
+
+def test_check_config_prints_the_homie_warning_in_german(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#134: `check-config` prints it in the command line's language."""
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[radio]\ntransport = "serial"\ndevice = "/dev/ttyUSB0"\n'
+        '[mqtt]\nhost = "127.0.0.1"\nnode_id = "radio_1"\nusername = "gw"\n'
+        "[homie]\nenabled = true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LANGUAGE", "de")
+    assert cli_main(["check-config", "--config", str(path)]) == EX_OK
+    german = (
+        "meshcore-home-gateway: Warnung: mqtt.node_id radio_1 mit homie.enabled: Homie-IDs "
+        "haben kein '_', daher ist das Homie-Gerät homie/meshcore-radio-1 dasselbe wie bei "
+        "node_id radio-1: kein anderes Gateway an diesem Broker darf diese Knoten-ID haben, und "
+        "die ACL des Brokers muss homie/meshcore-radio-1/# erlauben"
+    )
+    assert capsys.readouterr().err.splitlines() == [german]
 
 
 def test_the_secrets_of_keys_that_are_no_senders_are_warned_about() -> None:
