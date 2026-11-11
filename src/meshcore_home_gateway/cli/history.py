@@ -46,6 +46,7 @@ TABLES: dict[str, tuple[str, tuple[tuple[str, bool], ...]]] = {
             ("queued_at", True),
             ("suspect", False),
             ("reason", False),
+            ("nonce", False),  # since 2.2
         ),
     ),
     "positions": (
@@ -64,7 +65,7 @@ TABLES: dict[str, tuple[str, tuple[tuple[str, bool], ...]]] = {
         (("contact_key", False), ("at", True), ("quantity", False), ("value", False)),
     ),
 }
-FLAGS = frozenset({"suspect"})  # stored as 1 or 0: exported as true or false
+FLAGS = frozenset({"suspect", "nonce"})  # stored as 1 or 0: exported as true or false
 
 
 def _history_export(args: argparse.Namespace) -> int:

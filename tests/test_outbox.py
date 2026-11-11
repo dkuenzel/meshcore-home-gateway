@@ -1108,7 +1108,8 @@ def test_a_kept_message_hides_its_suffix_after_confirm_nonce_was_switched_off(
     """#87: whether a kept message ends with a suffix is the gateway's record of how it was
     sent, not the setting of the next start. Sent again as it was, with the suffix, its
     acknowledgement still counts, so the suffix stays off the bus until the delivery ended,
-    also when the next start has `confirm_nonce` off."""
+    also when the next start has `confirm_nonce` off. The history says that the gateway added
+    it (#142): the dashboard cuts it by that, not by the setting of now."""
     monkeypatch.setattr(outbox_module, "STOP_OUTBOX_S", 0.2)
     first = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
     second = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
@@ -1136,6 +1137,9 @@ def test_a_kept_message_hides_its_suffix_after_confirm_nonce_was_switched_off(
             second.acknowledge(expected_ack(int(NOW), 1, sent, SELF_KEY))
             confirmed = await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
             assert confirmed["text"] == sent
+            history = await bus.wait_for("radio1/history", lambda h: bool(h["messages"]))
+            (entry,) = history["messages"]
+            assert (entry["text"], entry["nonce"]) == (sent, True)
 
     scenario(main)
 
@@ -1145,7 +1149,7 @@ def test_a_kept_text_that_ends_like_the_suffix_stays_whole_after_confirm_nonce_w
 ) -> None:
     """#87: a household's text kept by a stop without `confirm_nonce` got no suffix: a start
     with the setting on shows it whole, though it ends in ` #` and 8 hex digits, and takes the
-    whole text as its duplicate."""
+    whole text as its duplicate. The history says that the gateway added none (#142)."""
     monkeypatch.setattr(outbox_module, "STOP_OUTBOX_S", 0.2)
     first = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
     second = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
@@ -1165,6 +1169,12 @@ def test_a_kept_text_that_ends_like_the_suffix_stays_whole_after_confirm_nonce_w
             bus.send("alice", text)
             duplicate = await bus.wait_for("/delivery", lambda d: d["event_type"] == "duplicate")
             assert duplicate["text"] == text
+            second.acknowledge(expected_ack(int(NOW), 1, text, SELF_KEY))
+            confirmed = await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            assert confirmed["text"] == text
+            history = await bus.wait_for("radio1/history", lambda h: bool(h["messages"]))
+            (entry,) = history["messages"]
+            assert (entry["text"], entry["nonce"]) == (text, False)
 
     scenario(main)
 

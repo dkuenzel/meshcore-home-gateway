@@ -162,9 +162,10 @@ acknowledgement with the secret the two radios share; the gateway can narrow it:
   longest wait, four attempts of 60 s, a forger succeeds about once in 160,000 messages. The
   suffix is the only secret of the code, so it stays off the broker until no acknowledgement
   counts any more: `queued`, `sent` and `pending` show the text without it, the final event and
-  `history` with it. A reader of the gateway's topics with a board in range cannot compute the
-  code before then; whoever reads the gateway's state directory can, while a stop keeps the
-  message there.
+  `history` with it; since 2.2 each entry of `history` says with `nonce` whether it got the
+  suffix ([History](#history-history)). A reader of the gateway's topics with a board in range
+  cannot compute the code before then; whoever reads the gateway's state directory can, while a
+  stop keeps the message there.
 * **`suspect`** is `true` in a `confirmed` event whose round trip is shorter than a genuine
   acknowledgement takes over the path the radio stored: the message on every hop through the
   repeaters and the acknowledgement on one, at the radio's modulation, without preamble so that
@@ -619,12 +620,12 @@ kept in the gateway's history database, so they survive a restart ([ADR 0016](de
                "contact_key": "a1b2…", "channel_index": null, "name": "Alice",
                "text": "Back soon", "state": "confirmed", "hops": null, "snr_db": null,
                "target": "alice", "id": "1a2b3c4d", "queued_at": "2026-10-18T09:00:57+00:00",
-               "suspect": false, "reason": null},
+               "suspect": false, "reason": null, "nonce": false},
               {"at": "2026-10-18T09:00:02+00:00", "direction": "in", "kind": "channel",
                "contact_key": null, "channel_index": 0, "name": "Carol", "text": "On my way",
                "state": null, "hops": 1, "snr_db": 6.25,
                "target": "family", "id": null, "queued_at": null, "suspect": null,
-               "reason": null}]}
+               "reason": null, "nonce": null}]}
 ```
 
 `at` is the gateway's clock: for an incoming message when it took the message from the radio,
@@ -654,6 +655,12 @@ message from an earlier version):
 | `queued_at` | outgoing: when the gateway accepted the request, also for a message kept across a stop; `at` is when it became final |
 | `suspect` | outgoing, `confirmed`: the acknowledgement came sooner than the path allows, as in its delivery event ([what `confirmed` proves](#what-confirmed-proves)) |
 | `reason` | outgoing, `failed` or `expired`: why, as in its delivery event |
+
+Since 2.2 every entry also has `nonce`, after the others (#142):
+
+| Key | Meaning |
+| --- | --- |
+| `nonce` | outgoing: `true` when the gateway ended `text` with the random suffix of `[messages] confirm_nonce` (` #` and 8 hex digits), `false` when it did not: a channel message, a direct message sent while the setting was off, or a household's own text that only ends like a suffix. It says how the message was sent, also for one kept across a stop that changed the setting, not what the setting is now. `null` for an incoming message, and for an outgoing one that an earlier version kept: the gateway does not guess it from the text afterwards. To show a message without the suffix, cut it where `nonce` is `true` |
 
 ## Messages on their way: `pending`
 

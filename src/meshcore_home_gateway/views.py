@@ -552,6 +552,9 @@ class HistoryEntry:
     queued_at: float | None = None  # out: when the gateway accepted it (wall clock)
     suspect: bool | None = None  # out, confirmed: its acknowledgement may be forged (SEC-001)
     reason: str | None = None  # out: why it failed or expired
+    # since 2.2, last: out, whether the gateway added confirm_nonce's code to `text` (#142); None
+    # for a received message and one an earlier version kept (no backfill)
+    nonce: bool | None = None
 
 
 def history_entry(entry: HistoryEntry) -> dict[str, Any]:
@@ -571,6 +574,7 @@ def history_entry(entry: HistoryEntry) -> dict[str, Any]:
         "queued_at": iso(entry.queued_at),
         "suspect": entry.suspect,
         "reason": entry.reason,
+        "nonce": entry.nonce,
     }
 
 

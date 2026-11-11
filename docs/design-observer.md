@@ -83,7 +83,11 @@ flowchart LR
   in the state file. The table gets the columns `target`, `delivery_id` (it has an `id`),
   `queued_at`, `suspect` and `reason` after a look at its columns, in version 2 as the table
   `reading` was: 2.0 names its columns in every statement, so a downgrade leaves them empty and
-  keeps the history.
+  keeps the history. Since 2.2 a sent entry also says whether the gateway added
+  `confirm_nonce`'s suffix to its text (`nonce`, #142): the outbox keeps it with each message
+  (`Outgoing.nonce`, in the state file across a stop) and gives it to the delivery's events, not
+  on the `delivery` topic, as the acceptance time; the table gets the column `nonce` the same
+  way, empty in the rows of earlier versions.
 * **The settings in effect** go to the `config` document: `config_view` takes them from the
   configuration by an allowlist, and the bridge hands them over at the start and again at each
   radio connect, as a channel text's room depends on the radio's name. The targets are a list in

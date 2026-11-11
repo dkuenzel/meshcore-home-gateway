@@ -23,6 +23,13 @@ format, the command line and Home Assistant discovery are public interfaces
   the last document; an empty retained message clears it, such as
   `mosquitto_pub -r -n -t meshcore/radio1/refused_commands`
   ([mqtt-api.md](docs/mqtt-api.md#refused-commands-refused_commands)).
+- The key `nonce` in each entry of the `history` document and the column `nonce` at the end of
+  `history export --table messages`: `true` when the gateway ended a sent message with the
+  random suffix of `[messages] confirm_nonce`, `false` when it did not, by how the message was
+  sent, also across a stop that changed the setting (#142). It is `null` (empty in CSV) for a
+  received message and for a message 2.1 sent: the gateway does not guess it afterwards. The
+  history database gets the column at the first start; after a downgrade, 2.1 leaves it empty in
+  the rows it adds ([mqtt-api.md](docs/mqtt-api.md#history-history)).
 
 ### Fixed
 

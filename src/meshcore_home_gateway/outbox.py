@@ -345,7 +345,7 @@ class Delivery:
             event = DeliveryEvent(event_id, alias, exc.state, reason=exc.reason)
             self._deliver_refusal(event)
             return exc.state
-        state, reason, queued_at = DeliveryState.QUEUED, None, None
+        state, reason, queued_at, nonce = DeliveryState.QUEUED, None, None, None
         key, now = (target.alias, text), self._mono()
         if deduplicate and self._dedup.is_duplicate(key, now):
             state = DeliveryState.DUPLICATE
@@ -373,10 +373,16 @@ class Delivery:
             except asyncio.QueueFull:
                 if deduplicate:  # not taken, so a retry must not count as duplicate
                     self._dedup.forget(key)
-                state, reason, queued_at = DeliveryState.REJECTED, "queue_full", None
+                state, reason, queued_at, nonce = DeliveryState.REJECTED, "queue_full", None, None
         # the suffix stays the radios' until the delivery ends (#87): `text` is without it
         event = DeliveryEvent(
-            event_id, target.alias, state, text=text, reason=reason, queued_at=queued_at
+            event_id,
+            target.alias,
+            state,
+            text=text,
+            reason=reason,
+            queued_at=queued_at,
+            nonce=nonce,
         )
         if state is DeliveryState.QUEUED:
             self._deliver_event(event)
@@ -753,6 +759,7 @@ class Delivery:
             airtime_ms=None if airtime_s is None else round(airtime_s * 1000),
             suspect=suspect,
             queued_at=item.queued_at,
+            nonce=item.nonce,
         )
 
     def _nonce(self, target: Target) -> bool:
@@ -918,6 +925,7 @@ class Delivery:
                     attempt=saved.sent,
                     reason="unknown_target",
                     queued_at=saved.queued_at,
+                    nonce=saved.nonce,
                 )
                 self._deliver_event(event)
                 continue

@@ -267,7 +267,7 @@ def test_history_newest_first_and_bounded_with_hostile_texts() -> None:
     assert json.loads(encode(document))["messages"][0]["text"] == HOSTILE * 20  # data, unchanged
 
 
-HISTORY_KEYS = [  # the keys of 2.0, then those of 2.1 at the end
+HISTORY_KEYS = [  # the keys of 2.0, then those of 2.1, then that of 2.2 at the end
     "at",
     "direction",
     "kind",
@@ -283,6 +283,7 @@ HISTORY_KEYS = [  # the keys of 2.0, then those of 2.1 at the end
     "queued_at",
     "suspect",
     "reason",
+    "nonce",
 ]
 
 
@@ -310,6 +311,7 @@ def test_a_history_entry_has_every_key_with_null_where_unknown() -> None:
         "queued_at": None,
         "suspect": None,
         "reason": None,
+        "nonce": None,
     }
     sent = HistoryEntry(
         T + 30,
@@ -323,6 +325,7 @@ def test_a_history_entry_has_every_key_with_null_where_unknown() -> None:
         id="1a2b3c4d",
         queued_at=T + 2.75,
         suspect=True,
+        nonce=True,
     )
     assert history_entry(sent) | {"at": None} == dict.fromkeys(HISTORY_KEYS) | {
         "direction": "out",
@@ -334,6 +337,7 @@ def test_a_history_entry_has_every_key_with_null_where_unknown() -> None:
         "id": "1a2b3c4d",
         "queued_at": "2027-01-15T08:00:02+00:00",  # as `at`: UTC, whole seconds
         "suspect": True,
+        "nonce": True,
     }
     failed = HistoryEntry(
         T,
@@ -349,6 +353,21 @@ def test_a_history_entry_has_every_key_with_null_where_unknown() -> None:
     assert history_entry(failed)["reason"] == "channel_not_configured"
     assert history_entry(failed)["suspect"] is None
     assert history_document([])["messages"] == []
+
+
+def test_a_history_entry_says_whether_the_gateway_added_the_delivery_code() -> None:
+    """#142: `nonce` is true for a message the gateway sent with confirm_nonce's code, false for
+    one it sent without, whatever the setting is now; null for a received message and for one
+    of a history from before 2.2, which never said (no backfill)."""
+    sent = HistoryEntry(T, "out", "contact", "Door open #0a1b2c3d", KEY, state="confirmed")
+    flags = [
+        history_entry(sent)["nonce"],
+        history_entry(dataclasses.replace(sent, nonce=True))["nonce"],
+        history_entry(dataclasses.replace(sent, nonce=False))["nonce"],
+        history_entry(HistoryEntry(T, "in", "contact", "Hi", KEY))["nonce"],
+    ]
+    assert flags == [None, True, False, None]
+    assert list(history_entry(sent))[-1] == "nonce"  # added after the keys of 2.1
 
 
 def _worst_entries(text_bytes: int, *, received: bool) -> list[HistoryEntry]:
@@ -386,6 +405,7 @@ def _worst_entries(text_bytes: int, *, received: bool) -> list[HistoryEntry]:
             queued_at=T + i - 600,
             suspect=None,
             reason="exceeds_airtime_burst",
+            nonce=False,  # a byte longer than true
         )
         for i in range(50)
     ]

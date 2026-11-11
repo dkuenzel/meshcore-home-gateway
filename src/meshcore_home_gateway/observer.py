@@ -481,6 +481,7 @@ class Observer:
                 queued_at=event.queued_at,
                 suspect=event.suspect,
                 reason=event.reason,
+                nonce=event.nonce,
             )
         )
 

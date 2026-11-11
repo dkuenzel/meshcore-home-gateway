@@ -140,6 +140,32 @@ def test_the_keys_of_2_1_survive_a_restart(tmp_path: Path) -> None:
     assert stored == ("real", "integer")
 
 
+def test_whether_the_gateway_added_the_delivery_code_survives_a_restart(tmp_path: Path) -> None:
+    """#142: `nonce`, true or false on a sent message, null on a received one, kept as a truth
+    value as `suspect` is."""
+    path = tmp_path / "history.sqlite3"
+    history = opened(path)
+    entries = [
+        HistoryEntry(T, "in", "contact", "Hi #0a1b2c3d", contact_key=KEY),
+        HistoryEntry(
+            T + 1, "out", "contact", "Door open #1a2b3c4d", KEY, state="confirmed", nonce=True
+        ),
+        HistoryEntry(
+            T + 2, "out", "contact", "Code ends #0a1b2c3d", KEY, state="confirmed", nonce=False
+        ),
+        HistoryEntry(T + 3, "out", "channel", "Gate open", channel_index=0, nonce=False),
+    ]
+    for entry in entries:
+        history.add_message(entry)
+    history.close()
+    again = opened(path)
+    assert again.recent_messages(10) == entries[::-1]
+    assert [m.nonce for m in again.recent_messages(10)] == [False, False, True, None]
+    assert [type(m.nonce) for m in again.recent_messages(10)][:3] == [bool] * 3
+    stored = again._db.execute("SELECT typeof(nonce) FROM message ORDER BY at").fetchall()
+    assert stored == [("null",), ("integer",), ("integer",), ("integer",)]
+
+
 # the message table and the statements of 2.0 (history.py at 2.0.0), which a downgrade runs
 MESSAGE_2_0 = (
     "CREATE TABLE message (id INTEGER PRIMARY KEY, at REAL NOT NULL, direction TEXT NOT NULL, "
@@ -191,8 +217,8 @@ def test_a_2_0_history_gets_the_new_columns_and_2_0_still_reads_it(tmp_path: Pat
         )
     )
     history.close()
-    added = ["target", "delivery_id", "queued_at", "suspect", "reason"]
-    assert columns(path)[-5:] == added
+    added = ["target", "delivery_id", "queued_at", "suspect", "reason", "nonce"]
+    assert columns(path)[-6:] == added
     version, objects = schema(path)
     assert version == 2
     opened(path).close()  # a second start changes nothing
@@ -205,6 +231,74 @@ def test_a_2_0_history_gets_the_new_columns_and_2_0_still_reads_it(tmp_path: Pat
     db.close()
     assert [(row[0], row[3]) for row in rows] == [(T + 2, "Back"), (T + 1, "Gate open"), (T, "Hi")]
     assert [m.target for m in opened(path).recent_messages(5)] == [None, "alerts", None]
+
+
+# the statements of 2.1 (history.py at 2.1.0): its columns, without `nonce` (#142)
+INSERT_2_1 = (
+    "INSERT INTO message (at, direction, kind, contact_key, channel_index, name, text, "
+    "state, hops, snr_db, target, delivery_id, queued_at, suspect, reason) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+SELECT_2_1 = (
+    "SELECT at, direction, kind, text, contact_key, channel_index, name, state, hops, snr_db, "
+    "target, delivery_id, queued_at, suspect, reason FROM message "
+    "ORDER BY at DESC, id DESC LIMIT ? OFFSET ?"
+)
+COLUMNS_2_1 = (  # what 2.1 added to the table of 2.0
+    "ALTER TABLE message ADD COLUMN target TEXT",
+    "ALTER TABLE message ADD COLUMN delivery_id TEXT",
+    "ALTER TABLE message ADD COLUMN queued_at REAL",
+    "ALTER TABLE message ADD COLUMN suspect INTEGER",
+    "ALTER TABLE message ADD COLUMN reason TEXT",
+)
+
+
+def test_a_2_1_history_gets_the_nonce_column_and_2_1_still_reads_it(tmp_path: Path) -> None:
+    """#142: `nonce` is added as the columns of 2.1 were, without a new schema version. A
+    message 2.1 kept says nothing about the delivery code: null, not guessed from its text or
+    the setting (no backfill). 2.1 names its columns, so after a downgrade it reads and writes
+    the file as before, and leaves `nonce` empty."""
+    path = tmp_path / "history.sqlite3"
+    db = sqlite3.connect(path)
+    db.execute(MESSAGE_2_0)
+    for statement in COLUMNS_2_1:
+        db.execute(statement)
+    row = (T, "out", "contact", KEY, None, "Alice", "Hi #1a2b3c4d", "confirmed", None, None)
+    db.execute(INSERT_2_1, (*row, "alice", "5e6f7a8b", T - 2, 0, None))
+    db.execute("PRAGMA user_version = 2")
+    db.commit()
+    db.close()
+    history = opened(path)
+    (kept,) = history.recent_messages(5)
+    assert (kept.text, kept.id, kept.suspect, kept.nonce) == (
+        "Hi #1a2b3c4d",
+        "5e6f7a8b",
+        False,
+        None,
+    )
+    history.add_message(
+        HistoryEntry(T + 1, "out", "contact", "Back #0a1b2c3d", KEY, state="confirmed", nonce=True)
+    )
+    history.close()
+    assert columns(path)[-2:] == ["reason", "nonce"]
+    version, objects = schema(path)
+    assert version == 2
+    opened(path).close()  # a second start changes nothing
+    assert schema(path) == (version, objects)
+
+    db = sqlite3.connect(path)  # the downgrade: 2.1's statements on this file
+    db.execute(
+        INSERT_2_1, (T + 2, "in", "channel", None, 0, "Carol", "Back", None, 1, 6.25, *[None] * 5)
+    )
+    db.commit()
+    rows = list(db.execute(SELECT_2_1, (5, 0)))
+    db.close()
+    assert [(r[0], r[3]) for r in rows] == [
+        (T + 2, "Back"),
+        (T + 1, "Back #0a1b2c3d"),
+        (T, "Hi #1a2b3c4d"),
+    ]
+    assert [m.nonce for m in opened(path).recent_messages(5)] == [None, True, None]
 
 
 def test_positions_traces_and_the_newest_fix(tmp_path: Path) -> None:
