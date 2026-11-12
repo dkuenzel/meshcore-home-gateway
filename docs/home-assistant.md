@@ -274,7 +274,10 @@ sending; clear it before the next one.
 
 **Remove.** *Remove from radio* on the contact's device page (*Configuration*). It is
 `unavailable` for a contact target or command sender (protected), with management off or on
-untested firmware, and while the radio or the gateway is away. After a removal the radio drops the node's direct messages, messages queued to
+untested firmware, and while the radio or the gateway is away. When none can be removed, the
+dashboard's *Remove a contact* says so instead of a row. A protected contact is replaced in the
+configuration: its target's `contact` takes the new key ([configuration.md](configuration.md)),
+and after the restart the old key can be removed. After a removal the radio drops the node's direct messages, messages queued to
 it fail with `unknown_contact`, and its device goes; while it counts as heard, it is offered again
 in *Add heard node*, and adding it back restores the device with its name, area and labels.
 *Delete* on the device page is something else: it hides the contact in Home Assistant only
