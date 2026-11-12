@@ -8,7 +8,7 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
-## [2.1.1rc2] - 2026-11-11
+## [2.1.1rc2] - 2026-11-12
 
 The release candidate of 2.1.1: the program of 2.1.1rc1, and the gateway also sets back a radio
 clock that MeshCore's firmware made jump 28 hours ahead, and one whose contact times it stamped
