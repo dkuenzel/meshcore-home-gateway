@@ -8,6 +8,23 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-11-13
+
+Fixes of the dashboard found in the maintainer's first use of 2.1.0, and of the radio's clock
+after MeshCore's jump. It ships the program of 2.1.1rc2, which the maintainer used before this
+release: the update, sending messages and positions on the map. CI, the Home Assistant contract
+tests on 2026.10.2 and 2026.11.0, the tests against the real firmware and the browser check of
+2.1.1rc1 checked it.
+
+For the administrator: make the dashboard again after the update; nothing else changes. With
+`[homie] enabled`, a node ID with `_` gets a warning at every start (#134).
+
+Known limits of the dashboard: on a 360x800 phone, the newest message of a full chat stands
+behind the field until the page is scrolled (#149). While no contact can be removed, as when
+every contact is a chat's target or a command sender, *Remove a contact* shows its heading
+alone. The sections of 2.1.1rc2 and 2.1.1rc1 in [CHANGELOG.md](CHANGELOG.md) list every change
+since 2.1.0.
+
 ## [2.1.1rc2] - 2026-11-12
 
 The release candidate of 2.1.1: the program of 2.1.1rc1, and the gateway also sets back a radio
