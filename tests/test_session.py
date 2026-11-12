@@ -328,11 +328,20 @@ def test_a_radio_clock_ahead_is_set_back_by_a_restart() -> None:
     [
         (AHEAD_S, START_TIME - 60, False, "once no message is being delivered, at most once a day"),
         (3601, START_TIME - 60, True, "more than an hour"),
-        (AHEAD_S, START_TIME + 99, True, "a restart starts it at its newest contact time"),
+        # beside the jumps of MeshCore's nRF52 clock, or more of them than seen in the field
+        (round(session_module.CLOCK_JUMP_S) + 700, START_TIME - 60, True, "more than an hour"),
+        (round(9 * session_module.CLOCK_JUMP_S), START_TIME - 60, True, "more than an hour"),
         (AHEAD_S, None, True, "without contacts a restart does not set it back"),
         (60, START_TIME - 60, True, None),  # a minute: not worth a word
     ],
-    ids=["not-now", "more-than-an-hour", "contact-changed-just-now", "no-contacts", "a-minute"],
+    ids=[
+        "not-now",
+        "more-than-an-hour",
+        "beside-a-jump",
+        "nine-jumps",
+        "no-contacts",
+        "a-minute",
+    ],
 )
 def test_a_radio_clock_ahead_stays_when_a_restart_would_not_set_it_back(
     caplog: pytest.LogCaptureFixture,
@@ -353,6 +362,98 @@ def test_a_radio_clock_ahead_stays_when_a_restart_would_not_set_it_back(
     else:
         (warning,) = warnings
         assert f"{ahead} s ahead of the host's and not set back ({reason}" in warning
+
+
+def test_contact_times_the_clock_stamped_ahead_are_set_back_before_the_restart() -> None:
+    """The radio stamps a contact with its own clock at every advert and message it takes
+    (BaseChatMesh.cpp:198, 240, 294), so a clock ahead stamps contact times ahead, and a restart
+    starts the clock at the newest (MeshCore #3050). Those times go back by as much as the clock
+    is ahead first; the rest of each record is written as read."""
+    now = START_TIME + 100
+    stamped = now - 10 + AHEAD_S  # ten seconds ago, by the radio's clock
+    radio = EmulatedRadio(
+        clock=now + AHEAD_S, contacts=[replace(ALICE, last_modified=stamped), BOB]
+    )
+    before = radio.contacts[0].record()
+
+    async def main() -> None:
+        ended, offset = await connect(radio, now)
+        assert isinstance(ended, RadioRestartedError)
+        assert offset == AHEAD_S
+        assert radio.clock == now - 9  # the newest contact time plus a second: behind
+        assert await connect(radio, now + 5) == (None, 0)
+
+    asyncio.run(main())
+    (written,) = [p for p in radio.received if p[0] == Command.ADD_UPDATE_CONTACT]
+    assert written == bytes([Command.ADD_UPDATE_CONTACT]) + before[1:144] + (now - 10).to_bytes(
+        4, "little"
+    )
+    assert radio.received.index(written) < radio.received.index(bytes([Command.REBOOT]) + b"reboot")
+    assert [c.last_modified for c in radio.contacts] == [now - 10, BOB.last_modified]
+    assert radio.reboots == 1
+
+
+def test_the_clock_a_restart_starts_at_a_time_written_back_is_set_forward_at_once() -> None:
+    """A contact stamped this very second: the time written back leaves the clock the restart
+    starts at it, plus a second, more than CLOCK_SET_THRESHOLD_S behind, so the next connect,
+    however soon, sets it forward (a firmware test once found it 2 s behind and left there)."""
+    now = START_TIME + 100
+    stamped = replace(ALICE, last_modified=now + AHEAD_S)
+    radio = EmulatedRadio(clock=now + AHEAD_S, contacts=[stamped])
+
+    async def main() -> None:
+        ended, _ = await connect(radio, now)
+        assert isinstance(ended, RadioRestartedError)
+        assert await connect(radio, now) == (None, 0)
+
+    asyncio.run(main())
+    assert radio.clock == now
+
+
+def test_a_contact_time_that_is_not_set_back_keeps_the_radio_from_its_restart(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING)
+    now = START_TIME + 100
+    radio = EmulatedRadio(
+        clock=now + AHEAD_S,
+        contacts=[replace(ALICE, last_modified=now + AHEAD_S - 10)],
+        errors={Command.ADD_UPDATE_CONTACT: 2},
+    )
+    assert asyncio.run(connect(radio, now)) == (None, AHEAD_S)
+    assert radio.reboots == 0
+    warnings = [r.getMessage() for r in caplog.records if r.getMessage().startswith("radio clock")]
+    (warning,) = warnings
+    assert "not set back (a contact time ahead was not set back: set a contact time" in warning
+
+
+@pytest.mark.parametrize("jumps", [1, 3, 8])
+def test_a_radio_clock_ahead_by_jumps_of_meshcores_nrf52_clock_is_set_back(
+    caplog: pytest.LogCaptureFixture, jumps: int
+) -> None:
+    """On nRF52 without a clock chip MeshCore's clock jumps 100,663.296 s ahead every 48.5 days
+    of uptime (MeshCore #3565). Whole jumps are no wrong host clock, so the restart's hour does
+    not hold: the sooner the clock is back, the fewer nodes keep its times ahead. The contact
+    times it stamped since go back first."""
+    caplog.set_level(logging.WARNING)
+    now = START_TIME + 100
+    ahead = round(jumps * session_module.CLOCK_JUMP_S) + 45  # it was 45 s ahead before
+    contacts = [replace(ALICE, last_modified=now + ahead - 30), BOB]  # BOB: before the jump
+    radio = EmulatedRadio(clock=now + ahead, contacts=contacts)
+
+    async def main() -> None:
+        ended, offset = await connect(radio, now)
+        assert isinstance(ended, RadioRestartedError)
+        assert offset == ahead
+        assert radio.clock == now - 29
+        assert await connect(radio, now + 5) == (None, 0)
+
+    asyncio.run(main())
+    assert radio.clock == now + 5
+    assert radio.reboots == 1
+    warnings = [r.getMessage() for r in caplog.records if r.getMessage().startswith("radio clock")]
+    assert f"{ahead} s ahead of the host's, {jumps} times the jump MeshCore's clock" in warnings[0]
+    assert warnings[1].endswith("restarting the radio to set it back")
 
 
 DAY_S = 86_400

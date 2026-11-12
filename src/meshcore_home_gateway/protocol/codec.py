@@ -159,6 +159,18 @@ def add_update_contact(record: ContactRecord, flags: int) -> bytes:
     return bytes([Command.ADD_UPDATE_CONTACT]) + raw[:33] + bytes([flags]) + raw[34:143]
 
 
+def contact_time(record: ContactRecord, last_modified: int) -> bytes:
+    """A contact record as the radio sent it, with another last-modified time, which the command
+    takes as its last field (MyMesh.cpp:194-215, 1328-1340)."""
+    if len(record.raw) != CONTACT_RECORD_BYTES:
+        raise ValueError("contact_time needs a record read from the radio")
+    return (
+        bytes([Command.ADD_UPDATE_CONTACT])
+        + record.raw[:143]
+        + _u32(last_modified, "last-modified time")
+    )
+
+
 def radio_name(name: str) -> str:
     """The name as the radio keeps it: at most MAX_NAME_BYTES of UTF-8, cut between characters
     as a reader sees them."""

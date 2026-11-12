@@ -79,6 +79,11 @@ CLOCK_RESTART_MAX_S = 3600
 # The step forward that follows a restart is judged for a connect this much later: the radio is
 # back within seconds, a connect that fails waits longer.
 RESTART_RECONNECT_S = 3600
+# On nRF52 without a clock chip MeshCore's clock jumps this far ahead every 48.5 days of uptime
+# (ArduinoHelpers.h:15-19, MeshCore #3565); whole jumps are set back at any size.
+CLOCK_JUMP_S = 100_663.296
+CLOCK_JUMP_TOLERANCE_S = 600  # the offset before the jump, and the drift since
+CLOCK_JUMPS_MAX = 8
 # No release of the gateway is older than this: a clock before it was never set. A radio without
 # a clock chip starts at 2024-05-15, or at the newest time it wrote to a contact
 # (ArduinoHelpers.h:11, BaseChatMesh.cpp:60-70). Raised at every release (docs/development.md).
@@ -557,6 +562,10 @@ class CompanionSession:
         if ahead is None or ahead <= CLOCK_AHEAD_WARNING_S:
             return
         refused = self._restart_refused(ahead) if restart else "the radio is only read"
+        if refused is None:
+            await self.sync_messages()  # the radio keeps waiting messages in memory only
+            await self.refresh_contacts()  # the restart starts the clock at their newest time
+            refused = self._restart_time_refused() or await self._set_contact_times_back()
         if refused is not None:
             if not quiet:
                 log.warning(
@@ -566,7 +575,13 @@ class CompanionSession:
                     refused,
                 )
             return
-        await self.sync_messages()  # the radio keeps waiting messages in memory only
+        if _jumped(ahead):
+            log.warning(
+                "radio clock is %d s ahead of the host's, %d times the jump MeshCore's clock "
+                "makes on nRF52 boards without a clock chip every 48.5 days of uptime",
+                ahead,
+                round(ahead / CLOCK_JUMP_S),
+            )
         log.warning(
             "radio clock is %d s ahead of the host's: restarting the radio to set it back", ahead
         )
@@ -581,7 +596,7 @@ class CompanionSession:
         """Why the radio is not restarted to set its clock back now, or None."""
         if not self._set_clock:
             return "set_clock = false"
-        if ahead > CLOCK_RESTART_MAX_S:
+        if ahead > CLOCK_RESTART_MAX_S and not _jumped(ahead):
             return (
                 "more than an hour: nodes and repeaters would ignore it that long after a restart"
             )
@@ -594,18 +609,16 @@ class CompanionSession:
 
     def _restart_time_refused(self) -> str | None:
         """Why the time a restart starts the clock at does not help, or None. That time is the
-        newest contact time plus a second; it must be behind the host's, and the next connect
-        must move it forward from there, which `_clock_refused` may refuse: the radio would stay
-        behind (#86)."""
-        newest = max((record.last_modified for record in self.contact_records.values()), default=0)
+        newest contact time plus a second, once the times the clock stamped ahead are set back
+        (`_contact_time`), and the next connect must move it forward from there, which
+        `_clock_refused` may refuse: the radio would stay behind (#86)."""
+        now = int(self._wall())
+        newest = max(
+            (self._contact_time(r.last_modified, now) for r in self.contact_records.values()),
+            default=0,
+        )
         if not newest:
             return "without contacts a restart does not set it back"
-        now = int(self._wall())
-        if newest + 1 > now - CLOCK_SET_THRESHOLD_S:
-            return (
-                f"a restart starts it at its newest contact time, {_iso(newest)}; "
-                "checked again every minute"
-            )
         # the time the restart sets, judged now and for a connect up to an hour later; not an
         # hour earlier time, which may be before this release, where no limit holds
         stuck = self._clock_refused(now, newest + 1) or self._clock_refused(
@@ -616,6 +629,33 @@ class CompanionSession:
                 f"a restart would leave it at its newest contact time, {_iso(newest)}, and the "
                 f"next connect would not move it forward: {stuck}"
             )
+        return None
+
+    def _contact_time(self, last_modified: int, now: int) -> int:
+        """A contact time as a restart should find it: one the clock stamped ahead goes back by as
+        much as the clock is ahead, and so far behind the host's time that the clock the restart
+        starts at it, plus a second, is more than CLOCK_SET_THRESHOLD_S behind (MeshCore #3050)."""
+        latest = now - CLOCK_SET_THRESHOLD_S - 2
+        if last_modified <= latest:
+            return last_modified
+        return min(last_modified - (self.clock_offset_s or 0), latest)
+
+    async def _set_contact_times_back(self) -> str | None:
+        """Write the contact times the clock stamped ahead back (`_contact_time`); why not, or
+        None. The restart saves them before it starts the clock at the newest."""
+        now, written = int(self._wall()), 0
+        for record in list(self.contact_records.values()):
+            corrected = self._contact_time(record.last_modified, now)
+            if corrected == record.last_modified:
+                continue
+            try:
+                request = codec.contact_time(record, corrected)
+                await self._expect_ok("set a contact time back", request)
+            except CommandFailedError as exc:
+                return f"a contact time ahead was not set back: {exc}"
+            written += 1
+        if written:
+            log.info("radio: %d contact times the clock stamped ahead set back", written)
         return None
 
     def _clock_refused(self, now: int, radio_time: int) -> str | None:
@@ -914,3 +954,10 @@ async def _after_a_stall(*tasks: asyncio.Task[Any]) -> set[asyncio.Task[Any]]:
 
 def _iso(timestamp: int) -> str:
     return datetime.datetime.fromtimestamp(timestamp, datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _jumped(ahead: int) -> bool:
+    """Whether a clock `ahead` s ahead is off by whole jumps of MeshCore's nRF52 clock."""
+    jumps = round(ahead / CLOCK_JUMP_S)
+    off = abs(ahead - jumps * CLOCK_JUMP_S)
+    return 1 <= jumps <= CLOCK_JUMPS_MAX and off <= CLOCK_JUMP_TOLERANCE_S

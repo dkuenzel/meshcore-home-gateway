@@ -18,7 +18,7 @@ from meshcore_home_gateway.core import profile as policy
 from meshcore_home_gateway.core.profile import Applied, Desired, Mode
 from meshcore_home_gateway.ports import RadioError, RadioEvent, RadioPort
 from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import Command, ContactFlag
+from meshcore_home_gateway.protocol.codes import Command, ContactFlag, Response
 from meshcore_home_gateway.radio.profile import RadioProfile
 from meshcore_home_gateway.radio.session import CompanionSession
 from meshcore_home_gateway.state import JsonStateFile, ProfileRecords
@@ -262,6 +262,23 @@ def test_a_contact_is_written_back_with_other_flags_only() -> None:
     new = codec.new_contact(bytes.fromhex("b2" * 32), "operator", ContactFlag.FAVOURITE)
     assert len(new) == len(frame) == 144
     assert (new[33], new[34], new[35]) == (1, ContactFlag.FAVOURITE, 0xFF)
+
+
+def test_a_contact_time_is_written_back_with_the_record_as_read() -> None:
+    """The command's last field is the record's time (MyMesh.cpp:194-215): the record as read
+    goes back with another one."""
+    contact = EmulatedContact(bytes.fromhex("a1" * 32), "Alice", flags=0x10, out_path_len=1)
+    record = codec.decode(contact.record())
+    assert isinstance(record, codec.ContactRecord)
+    frame = codec.contact_time(record, 1_800_000_123)
+    assert frame == bytes([Command.ADD_UPDATE_CONTACT]) + contact.record()[1:144] + struct.pack(
+        "<I", 1_800_000_123
+    )
+    assert codec.decode(bytes([Response.CONTACT]) + frame[1:]) == replace(
+        record, last_modified=1_800_000_123, raw=frame[1:]
+    )
+    with pytest.raises(ValueError, match="contact_time needs a record"):
+        codec.contact_time(replace(record, raw=b""), 0)
 
 
 def test_a_new_contact_frame_has_the_type_and_signed_time_and_no_position() -> None:

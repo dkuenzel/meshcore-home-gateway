@@ -139,9 +139,9 @@ def gateway_findings(availability: Any, state: Any, contacts: Any) -> list[Findi
     offset = state.get("radio_clock_offset_s")
     if isinstance(offset, int | float) and offset > CLOCK_OFF_S:
         clock = tr(
-            "the radio's clock is {seconds} s ahead of the host's: up to an hour ahead, the "
-            "gateway restarts the radio to set it back once no message is being delivered "
-            "(docs/deployment.md, Troubleshooting)",
+            "the radio's clock is {seconds} s ahead of the host's: up to an hour ahead, or by "
+            "whole jumps of MeshCore's nRF52 clock, the gateway restarts the radio to set it back "
+            "once no message is being delivered (docs/deployment.md, Troubleshooting)",
             seconds=offset,
         )
         findings.append(Finding(WARNING, clock))

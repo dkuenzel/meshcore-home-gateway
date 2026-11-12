@@ -94,7 +94,7 @@ Golden frames built from these layouts are in [`tests/test_codec.py`](../tests/t
 | 58 | `SET_AUTOADD_CONFIG` | the auto-add flags; the optional hop limit byte is left out (`MyMesh.cpp:2023-2029`) | `OK` |
 | 21 | `SET_TUNING_PARAMS` | uint32 receive delay × 1000, uint32 airtime factor × 1000 (`MyMesh.cpp:1470-1480`); the gateway writes the receive delay back as read | `OK` |
 | 8 | `SET_ADVERT_NAME` | the name, at most 31 bytes are kept (`MyMesh.cpp:1259-1265`) | `OK` |
-| 9 | `ADD_UPDATE_CONTACT` | the contact layout of `CONTACT` without the last-modified time, 144 bytes with the code (`MyMesh.cpp:194-217, 1328-1348`) | `OK` / `ERR 3` |
+| 9 | `ADD_UPDATE_CONTACT` | the contact layout of `CONTACT` without the last-modified time, 144 bytes with the code, which the radio then sets to its clock; with it, 148 bytes, to set a contact time the clock stamped ahead back (`MyMesh.cpp:194-217, 1328-1348`) | `OK` / `ERR 3` |
 | 15 | `REMOVE_CONTACT` | full 32-byte public key (`MyMesh.cpp:1349-1358`) | `OK` / `ERR 2` |
 
 Answers `OK` (0) and `ERR` (1, followed by the error code) are generic (`MyMesh.cpp:153-163`).
@@ -344,15 +344,21 @@ fail when one does not:
   the chip (`AutoDiscoverRTCClock.cpp:85-101`). The last-modified time is the radio's own clock
   when a message, advert or path of that contact arrived (`BaseChatMesh.cpp:119,198,240,294,357`):
   a radio that lay unused restarts as far behind. A restart (`REBOOT`) therefore sets a clock
-  ahead back, to that time. The radio stamps its adverts (`Mesh.cpp:404-420`), logins and
-  requests (`BaseChatMesh.cpp:608,642`) with its clock; a node drops a contact's advert that is
-  not newer than the last one it stored (`BaseChatMesh.cpp:131-136`), and a repeater a login or
-  request not newer than the client's last (`simple_repeater/MyMesh.cpp:114,676`). A clock set
-  back is therefore ignored by those nodes until real time passes the times it sent before: for
-  a few minutes harmless, for days not. The contacts' last-modified times, which decide the
-  contact that a full table overwrites, carry the clock's time too. The gateway writes the host's
-  time only when it is plausible, and restarts the radio for a clock at most an hour ahead
-  (design §6.1).
+  ahead back, to that time, unless the clock stamped a contact while ahead (MeshCore #3050). A
+  client can write a contact's last-modified time: `ADD_UPDATE_CONTACT` takes it as an optional
+  last field, else the radio takes its clock (`MyMesh.cpp:194-215,1328-1340`). On nRF52 boards
+  without a clock chip the clock jumps 100,663.296 s (27 h 58 min) ahead every 48.5 days of
+  uptime, where `millis()` wraps at 2³² ticks of 1/1024 s rather than at 2³² ms
+  (`ArduinoHelpers.h:15-19`; MeshCore #3565, not fixed in `companion-v1.18.0`). The radio stamps
+  its adverts (`Mesh.cpp:404-420`), logins and requests (`BaseChatMesh.cpp:608,642`) with its
+  clock; a node drops a contact's advert that is not newer than the last one it stored
+  (`BaseChatMesh.cpp:131-136`), and a repeater a login or request not newer than the client's
+  last (`simple_repeater/MyMesh.cpp:114,676`). A clock set back is therefore ignored by those
+  nodes until real time passes the times it sent before: for a few minutes harmless, for days
+  not. The contacts' last-modified times, which decide the contact that a full table overwrites,
+  carry the clock's time too. The gateway writes the host's time only when it is plausible, and
+  restarts the radio for a clock at most an hour ahead, or whole jumps ahead, after it wrote back
+  the contact times the clock stamped ahead (design §6.1).
 * **One command at a time.** The radio reads one frame per main-loop pass and answers it before the
   next (`MyMesh.cpp:2388-2391`). The gateway sends one command, waits up to 5 s for an answer with
   one of the expected codes, routes push frames separately and drops anything else.
