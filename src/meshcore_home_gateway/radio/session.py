@@ -633,8 +633,9 @@ class CompanionSession:
 
     def _contact_time(self, last_modified: int, now: int) -> int:
         """A contact time as a restart should find it: one the clock stamped ahead goes back by as
-        much as the clock is ahead, and behind the host's time (MeshCore #3050)."""
-        latest = now - CLOCK_SET_THRESHOLD_S - 1
+        much as the clock is ahead, and so far behind the host's time that the clock the restart
+        starts at it, plus a second, is more than CLOCK_SET_THRESHOLD_S behind (MeshCore #3050)."""
+        latest = now - CLOCK_SET_THRESHOLD_S - 2
         if last_modified <= latest:
             return last_modified
         return min(last_modified - (self.clock_offset_s or 0), latest)

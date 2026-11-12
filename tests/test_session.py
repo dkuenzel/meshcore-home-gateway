@@ -393,6 +393,23 @@ def test_contact_times_the_clock_stamped_ahead_are_set_back_before_the_restart()
     assert radio.reboots == 1
 
 
+def test_the_clock_a_restart_starts_at_a_time_written_back_is_set_forward_at_once() -> None:
+    """A contact stamped this very second: the time written back leaves the clock the restart
+    starts at it, plus a second, more than CLOCK_SET_THRESHOLD_S behind, so the next connect,
+    however soon, sets it forward (a firmware test once found it 2 s behind and left there)."""
+    now = START_TIME + 100
+    stamped = replace(ALICE, last_modified=now + AHEAD_S)
+    radio = EmulatedRadio(clock=now + AHEAD_S, contacts=[stamped])
+
+    async def main() -> None:
+        ended, _ = await connect(radio, now)
+        assert isinstance(ended, RadioRestartedError)
+        assert await connect(radio, now) == (None, 0)
+
+    asyncio.run(main())
+    assert radio.clock == now
+
+
 def test_a_contact_time_that_is_not_set_back_keeps_the_radio_from_its_restart(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

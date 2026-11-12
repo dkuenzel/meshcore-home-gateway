@@ -335,7 +335,8 @@ sequenceDiagram
   plus a second, also back, and the next connect sets it forward. The radio stamps a contact with
   its clock at every advert and message it takes, so before the restart the session reads the
   contacts again and writes back each time the clock stamped ahead, as far back as the clock is
-  ahead and at least 3 s behind the host's (MeshCore #3050); a write refused stops the restart. It
+  ahead and at least 4 s behind the host's, so that the next connect sets it forward
+  (MeshCore #3050); a write refused stops the restart. It
   restarts only when the bounds above let the next connect, within an hour, set the clock forward
   from that time (else the restart would leave it days behind, #86), after taking the radio's
   messages, when no message is queued or being delivered, and at most once a day (the bridge's
