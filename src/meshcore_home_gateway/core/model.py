@@ -107,6 +107,9 @@ class DeliveryEvent:
     suspect: bool | None = None
     # the wall clock when the gateway accepted the message, for the history; not on the topic
     queued_at: float | None = None
+    # the gateway added confirm_nonce's code to the text it sends (#142), for the history; None
+    # for an event of a request it did not queue; not on the topic
+    nonce: bool | None = None
 
 
 _NAME_PREFIX_MAX = 32

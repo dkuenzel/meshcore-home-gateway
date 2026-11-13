@@ -713,6 +713,7 @@
     "hops",
     "kind",
     "name",
+    "nonce",
     "queued_at",
     "reason",
     "snr_db",
@@ -758,6 +759,7 @@
     "hops",
     "kind",
     "name",
+    "nonce",
     "queued_at",
     "reason",
     "snr_db",
@@ -1877,6 +1879,12 @@
      "platform": "sensor",
      "state_class": "total_increasing"
     },
+    "refused_commands": {
+     "attributes": "<document refused_commands>",
+     "device_class": "timestamp",
+     "entity_id": "sensor.<device>_refused_commands",
+     "platform": "sensor"
+    },
     "remote_cli": {
      "attributes": [
       "contacts",
@@ -2201,6 +2209,7 @@
     "messages[].id",
     "messages[].kind",
     "messages[].name",
+    "messages[].nonce",
     "messages[].queued_at",
     "messages[].reason",
     "messages[].snr_db",
@@ -2284,6 +2293,16 @@
     "target",
     "text",
     "text_type"
+   ],
+   "refused_commands": [
+    "commands",
+    "commands[].at",
+    "commands[].reason",
+    "commands[].sender_key",
+    "commands[].sender_name",
+    "commands[].sender_prefix",
+    "total",
+    "truncated"
    ],
    "rx": [
     "length",
@@ -2506,6 +2525,11 @@
     "payload": "json",
     "qos": 1,
     "retained": false
+   },
+   "<base_topic>/<node_id>/refused_commands": {
+    "payload": "json",
+    "qos": 1,
+    "retained": true
    },
    "<base_topic>/<node_id>/rx": {
     "payload": "json",
@@ -2797,6 +2821,9 @@
    "<base_topic>/<node_id>/pending": {
     "qos": 1
    },
+   "<base_topic>/<node_id>/refused_commands": {
+    "qos": 1
+   },
    "<base_topic>/<node_id>/send/+": {
     "qos": 1
    },
@@ -2907,6 +2934,21 @@
     "cli_data",
     "plain",
     "signed_plain"
+   ],
+   "refused_commands:commands.reason": [
+    "broker_unavailable",
+    "code_invalid",
+    "code_locked",
+    "code_missing",
+    "code_reused",
+    "from_the_future",
+    "replay",
+    "sender_ambiguous",
+    "sender_not_allowed",
+    "sender_unknown",
+    "sender_unverified",
+    "state_unwritable",
+    "too_old"
    ],
    "setting:event_type": [
     "drift",

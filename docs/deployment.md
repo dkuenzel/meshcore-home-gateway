@@ -409,6 +409,22 @@ pct stop 105 && pct destroy 105
   Check the configuration with the old version first (`pct exec 105 -- python3 -I
   /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-<old version>.pyz check-config`):
   settings added later are refused by older versions.
+* **Roll back to 2.1** from 2.2 leaves the retained topic `refused_commands` on the broker, which
+  2.1 neither publishes nor clears. Once 2.1 runs, clear it with an empty retained message, as
+  the changelog of 2.2 gives it; for node `radio1`, with the broker's address and a user that may
+  write it (`-h`, `-u`, `-P`):
+
+  ```sh
+  mosquitto_pub -r -n -t meshcore/radio1/refused_commands
+  ```
+
+  Then make the dashboard again with 2.1's `meshcore-home-gateway dashboard` and paste it
+  ([home-assistant.md](home-assistant.md#dashboard)): the dashboard of 2.2 reads the refusals
+  from *Refused commands*, which 2.1 removes from Home Assistant as it removes every entity its
+  discovery no longer has. The refusals stay in the state file, where 2.2 finds them again. The
+  history database keeps working; 2.1 leaves the column `nonce` empty in the rows it adds, and
+  the dashboard of 2.2 shows those as it shows a message of 2.1: it cuts their delivery code by
+  the setting of `confirm_nonce` of the time it shows them.
 * **Roll back to 2.0** from 2.1 leaves three kinds of retained topics on the broker that 2.0
   neither publishes nor clears: `pending`, `config` and the drafts of Home Assistant's chats,
   `homeassistant/draft/<kind>/<chat>`, which the stop of 2.1 empties but leaves retained. Once 2.0
@@ -619,7 +635,8 @@ updates wait for.
     and for a sender with a code secret the time step of its last accepted code (without it, a
     code seen in the last 90 seconds would serve once more) and the times of its wrong codes
     within the last hour (`command_code_failures`; without them a restored system gives a
-    guesser up to 5 new guesses);
+    guesser up to 5 new guesses); the latest five refused commands (`command_refusals`, without
+    their words: what `refused_commands` publishes);
     the Home Assistant components last announced; the contacts whose documents are published;
     the last document of each companion whose answers are current, with its position and
     readings, so that they still expire after a restart without the radio (kept in its latest

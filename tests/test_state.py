@@ -9,7 +9,12 @@ from typing import Any
 
 import pytest
 
-from meshcore_home_gateway.core.commands import CODE_FAILURE_LIMIT, CODE_FAILURE_WINDOW_S
+from meshcore_home_gateway.core.commands import (
+    CODE_FAILURE_LIMIT,
+    CODE_FAILURE_WINDOW_S,
+    REFUSALS_KEPT,
+    Refusal,
+)
 from meshcore_home_gateway.core.mesh import AdvertCheck
 from meshcore_home_gateway.core.telemetry import Saved, SavedContact
 from meshcore_home_gateway.state import (
@@ -217,6 +222,80 @@ def test_a_sender_reaches_the_limit_again_each_time_a_wrong_code_left_the_window
     later = now + CODE_FAILURE_WINDOW_S
     again = [ledger.code_failure(sender, later + n) for n in range(CODE_FAILURE_LIMIT)]
     assert again == [True] * CODE_FAILURE_LIMIT
+
+
+def test_ledger_keeps_the_latest_refused_commands_across_a_restart(tmp_path: Path) -> None:
+    """#141: the latest REFUSALS_KEPT refused commands, the newest first, written by the next
+    flush (the status tick, the stop) rather than at once: a crash may lose the newest."""
+    path = tmp_path / "state.json"
+    store = JsonStateFile(path)
+    ledger = CommandLedger(store)
+    assert ledger.refused == ()
+    refusals = [
+        Refusal(1_800_000_000.0 + n, "code_invalid", "aa" * 6, "aa" * 32, f"Alice {n}")
+        for n in range(REFUSALS_KEPT + 2)
+    ]
+    for refusal in refusals:
+        ledger.refusal(refusal)
+    assert ledger.refused == tuple(reversed(refusals))[:REFUSALS_KEPT]
+    assert not path.exists()  # not at once
+    assert store.flush()
+    reloaded = CommandLedger(JsonStateFile(path))
+    assert reloaded.refused == ledger.refused
+    unknown = Refusal(1_800_000_100.5, "sender_unknown", "cc" * 6)
+    reloaded.refusal(unknown)
+    reloaded.record("aa" * 32, 100)  # saved at once, with the refusals put before
+    assert CommandLedger(JsonStateFile(path)).refused[:2] == (unknown, refusals[-1])
+
+
+def test_ledger_cleans_the_names_a_run_without_clean_received_kept(tmp_path: Path) -> None:
+    """A run with `clean_received` off kept a refused sender's name as it came; with the
+    setting on the next run cleans the kept names at its start, as the inbox cleans a new one's,
+    and stores them so at once. A missing name stays missing, the rest stays as it was, and
+    names that are clean already leave the file as it is."""
+    path = tmp_path / "state.json"
+    store = JsonStateFile(path)
+    ledger = CommandLedger(store)
+    raw = Refusal(2.0, "sender_not_allowed", "c3" * 6, "c3" * 32, "Mal\x1b[2J\u202elory")
+    for refusal in (Refusal(1.0, "sender_unknown", "d4" * 6), raw):
+        ledger.refusal(refusal)
+    assert store.flush()
+    restarted = CommandLedger(JsonStateFile(path))
+    restarted.clean_names()
+    cleaned = (dataclasses.replace(raw, sender_name="Mal[2Jlory"), ledger.refused[1])
+    assert restarted.refused == cleaned
+    assert CommandLedger(JsonStateFile(path)).refused == cleaned  # stored at once
+    before = path.stat().st_mtime_ns
+    os.utime(path, ns=(before - 10**9, before - 10**9))
+    CommandLedger(JsonStateFile(path)).clean_names()
+    assert path.stat().st_mtime_ns == before - 10**9  # nothing to clean: not written
+
+
+def test_ledger_skips_malformed_refused_commands(tmp_path: Path) -> None:
+    path = tmp_path / "state.json"
+    good = {"at": 5, "reason": "replay", "sender_prefix": "aa" * 6, "sender_key": None}
+    entries = [
+        good | {"sender_name": "Alice"},
+        good | {"at": "5"},
+        good | {"at": float("nan")},
+        good | {"at": True},
+        good | {"reason": None},
+        good | {"sender_prefix": 1},
+        good | {"sender_key": 2},
+        good | {"sender_name": ["x"]},
+        {"at": 5},
+        "x",
+        *([good] * REFUSALS_KEPT),
+    ]
+    path.write_text(json.dumps({"command_refusals": entries}), encoding="utf-8")
+    refused = CommandLedger(JsonStateFile(path)).refused
+    assert refused[0] == Refusal(5.0, "replay", "aa" * 6, None, "Alice")
+    assert refused[1:] == (Refusal(5.0, "replay", "aa" * 6),) * (REFUSALS_KEPT - 1)
+    path.write_text(json.dumps({"command_refusals": [{"at": 1, "reason": "x"}]}), "utf-8")
+    assert CommandLedger(JsonStateFile(path)).refused == (Refusal(1.0, "x", None),)
+    for other in ({"command_refusals": {"x": 1}}, {"command_refusals": None}):
+        path.write_text(json.dumps(other), encoding="utf-8")
+        assert CommandLedger(JsonStateFile(path)).refused == ()
 
 
 def test_ledger_ignores_malformed_content(tmp_path: Path) -> None:

@@ -90,18 +90,20 @@ _ADDED = (
 )
 # columns added the same way, after a look at the table: older versions name their columns in
 # every statement, so they leave these empty. `delivery_id`: the message table has an `id`.
+# Since 2.1 the first five; since 2.2 `nonce` (#142), empty in the rows of 2.1 (no backfill).
 _ADDED_COLUMNS = (
     ("message", "target", "TEXT"),
     ("message", "delivery_id", "TEXT"),
     ("message", "queued_at", "REAL"),
     ("message", "suspect", "INTEGER"),
     ("message", "reason", "TEXT"),
+    ("message", "nonce", "INTEGER"),
 )
 
 
 _RECENT_MESSAGES = (
     "SELECT at, direction, kind, text, contact_key, channel_index, name, state, hops, snr_db, "
-    "target, delivery_id, queued_at, suspect, reason FROM message "
+    "target, delivery_id, queued_at, suspect, reason, nonce FROM message "
     "ORDER BY at DESC, id DESC LIMIT ? OFFSET ?"
 )
 _MESSAGES_BEYOND_CAP = (
@@ -201,8 +203,8 @@ class History:
     def add_message(self, entry: HistoryEntry) -> None:
         self._write(
             "INSERT INTO message (at, direction, kind, contact_key, channel_index, name, text, "
-            "state, hops, snr_db, target, delivery_id, queued_at, suspect, reason) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "state, hops, snr_db, target, delivery_id, queued_at, suspect, reason, nonce) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 entry.at,
                 entry.direction,
@@ -219,6 +221,7 @@ class History:
                 entry.queued_at,
                 entry.suspect,
                 entry.reason,
+                entry.nonce,
             ),
         )
 
@@ -479,7 +482,11 @@ class History:
 def _message(row: tuple[Any, ...]) -> HistoryEntry:
     entry = HistoryEntry(*row)
     # SQLite keeps a truth value as 1 or 0
-    return entry if entry.suspect is None else replace(entry, suspect=bool(entry.suspect))
+    return replace(
+        entry,
+        suspect=None if entry.suspect is None else bool(entry.suspect),
+        nonce=None if entry.nonce is None else bool(entry.nonce),
+    )
 
 
 def _named(values: Mapping[str, float]) -> lpp.Named:

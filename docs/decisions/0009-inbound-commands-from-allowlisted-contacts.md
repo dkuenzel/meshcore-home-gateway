@@ -165,3 +165,9 @@ command. The hardware checklist repeats the restart case.
   it in its time window, whatever reached the gateway; whoever reads a command before the gateway
   does, such as a host posing as the radio over TCP, can send another text with its code, once,
   within about 90 seconds ([design §7.4](../design.md#74-residual-risks)).
+* Amended on 2026-11-11 (#141): the gateway keeps the latest five refused commands (when, the
+  reason, the sender's prefix, key and name) in its state file and publishes them as the retained
+  document `refused_commands`, read in Home Assistant as *Refused commands*, so that a refusal no
+  longer leaves the dashboard with the next message. They never carry the command's word, its
+  arguments or its code: only the household's automations need to know the words, as in `config`.
+  A refusal that the rate of received messages leaves out is not kept either.

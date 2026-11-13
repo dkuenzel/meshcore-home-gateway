@@ -95,6 +95,10 @@ NAMES = BREAKS + [attack.encode()[:31].decode(errors="ignore") for attack in ATT
 TEXTS = BREAKS + ATTACKS
 KEYS = [f"{0x30 + i:02x}" * 32 for i in range(len(NAMES))]
 BOB, ZED = "d5" * 32, "e7" * 32
+# names that show nothing (core.contacts.shows_a_name): a zero-width space, a Hangul filler,
+# spaces, the braille blank and a tag character, beyond the BMP, which the template's class
+# names with a \U escape that only Jinja's string unescape makes one
+SHOWS_NOTHING = ["\u200b", "\u3164", "   ", "\u2800", "\U000e0001"]
 HOME = Position(52.37, 9.73)
 LANGUAGES = [*i18n.LANGUAGES, "xx"]  # every language the gateway ships, and the pseudo-language
 XX = "‹{language}: {text}›"  # ": " in every text: unquoted as a YAML value, a mapping

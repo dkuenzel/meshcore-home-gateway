@@ -18,6 +18,7 @@ from meshcore_home_gateway.core.commands import (
     WRONG_CODES,
     Command,
     CommandDecision,
+    Refusal,
     Rejection,
     command_word,
     evaluate_command,
@@ -247,7 +248,28 @@ class Inbox:
                 qos=0,
             )
         if decision is not None:
+            self._refused(decision, message, sender)
             self._answer(decision, command)
+
+    def _refused(
+        self, decision: CommandDecision, message: InboundMessage, sender: Contact | None
+    ) -> None:
+        """A refusal published on `received` is kept with the latest (#141), and the
+        `refused_commands` document goes out: who sent it, when and why, never its word, which
+        only the household's automations need to know. The sender's name as `_sender` gives it:
+        with `clean_received` cleaned as the text is (SEC-017, #137)."""
+        if decision.rejection is None:  # accepted
+            return
+        name = sender.name if sender is not None else None
+        refusal = Refusal(
+            message.received_at,
+            decision.rejection.value,
+            message.sender_prefix,
+            sender.public_key if sender is not None else None,
+            name,
+        )
+        self._ledger.refusal(refusal)
+        observe(self._observer.refused, self._ledger.refused)
 
     def _sender(self, message: InboundMessage, session: RadioPort) -> Contact | None:
         """The contact the message's key prefix names, if exactly one; with `[messages]

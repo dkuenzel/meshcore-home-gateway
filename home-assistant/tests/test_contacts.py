@@ -42,6 +42,7 @@ from test_dashboard import (
     BOB,
     CONFIGURATION,
     NONE,
+    SHOWS_NOTHING,
     ZED,
     card,
     cards,
@@ -769,6 +770,50 @@ async def test_the_result_of_adding_says_what_happened_under_the_field(
     await fire(hass, topics.availability, "offline")  # not "No contact event yet."
     gone = "<div>The gateway is offline: this shows again when it is back.</div>\n"
     assert render(hass, result).startswith(first + gone + "<details>")
+    assert problems(caplog) == []
+
+
+@pytest.mark.parametrize("name", [*SHOWS_NOTHING, "Carol"])
+async def test_the_result_of_adding_names_the_key_when_a_name_shows_nothing(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    name: str,
+) -> None:
+    """A contact event whose name shows nothing, made only of invisible characters such as a
+    zero-width space or drawn as nothing such as a Hangul filler, names the contact by its
+    prefix under the field, as Latest of each kind on the page Gateway does: in a refusal, in
+    an addition and in the line that asks for a chat page, never by an empty bold name. A
+    stranger so named is offered in Add heard node by its key (heard_nodes "full"). A name
+    that shows stays."""
+    config = make_config()
+    loaded, _ = await household_page(hass, hass_ws_client, config, tmp_path, ALICE_NODE)
+    result = card(cards(loaded, "contacts"), RESULT)
+    topics = topics_of(config)
+    shown = name if name == "Carol" else ZED[:12]
+    refused = contact_event(
+        "refused",
+        ZED,
+        name=name,
+        node_type=COMPANION,
+        request="add",
+        request_id="r1",
+        reason="look_alike",
+    )
+    await fire(hass, topics.contact_event, refused)
+    assert f'<ha-alert alert-type="warning"><b>{shown}</b> request refused (' in render(
+        hass, result
+    )
+    await fire(
+        hass, topics.contact_event, contact_event("added", ZED, name=name, node_type=COMPANION)
+    )
+    said = render(hass, result)
+    assert f"<div><b>{shown}</b> added to the radio · " in said, said
+    asks = f"<div>To write to {shown} here, your administrator makes the dashboard again.</div>"
+    assert asks in said, said
     assert problems(caplog) == []
 
 

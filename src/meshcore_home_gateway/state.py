@@ -1,11 +1,11 @@
 """Small persistent state in one JSON file, held in memory and written atomically.
 
-It holds the newest accepted command timestamp per sender (replay protection, ADR 0009) and the
-times of its recent wrong codes, the Home Assistant components of the last discovery document
-and the contact devices announced (docs/home-assistant.md), the contacts whose retained
-documents were published, the documents of the companions whose answers are current
-(ADR 0024), the last checked advert of each companion (ADR 0018), the radio profile's memory
-(ADR 0020) and the telemetry schedule (ADR 0018). The contacts the household excluded from
+It holds the newest accepted command timestamp per sender (replay protection, ADR 0009), the
+times of its recent wrong codes and the latest refused commands, the Home Assistant components
+of the last discovery document and the contact devices announced (docs/home-assistant.md), the
+contacts whose retained documents were published, the documents of the companions whose answers
+are current (ADR 0024), the last checked advert of each companion (ADR 0018), the radio profile's
+memory (ADR 0020) and the telemetry schedule (ADR 0018). The contacts the household excluded from
 telemetry have a file of their own (TelemetryExclusions).
 """
 
@@ -19,7 +19,7 @@ import os
 import tempfile
 import time
 from collections.abc import Callable, Collection, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, TypeGuard
@@ -27,6 +27,8 @@ from typing import Any, TypeGuard
 from meshcore_home_gateway.core import telemetry
 from meshcore_home_gateway.core.commands import (
     CODE_FAILURE_LIMIT,
+    REFUSALS_KEPT,
+    Refusal,
     codes_locked,
     recent_code_failures,
 )
@@ -34,6 +36,7 @@ from meshcore_home_gateway.core.contacts import is_key
 from meshcore_home_gateway.core.mesh import AdvertCheck
 from meshcore_home_gateway.core.profile import Applied, Attempt, Value
 from meshcore_home_gateway.core.telemetry import Saved, SavedContact
+from meshcore_home_gateway.core.text import clean_name
 
 log = logging.getLogger(__name__)
 
@@ -163,11 +166,13 @@ class JsonStateFile:
 class CommandLedger:
     """Newest accepted sender timestamp per sender key, and the time step of the newest accepted
     code of a sender with a code secret; both only ever move forward. Also the times of each
-    sender's recent wrong codes (#79), so that a restart gives no new guesses."""
+    sender's recent wrong codes (#79), so that a restart gives no new guesses, and the latest
+    refused commands (#141), so that a restart still shows them."""
 
     _KEY = "command_timestamps"
     _CODES = "command_code_steps"
     _FAILURES = "command_code_failures"
+    _REFUSED = "command_refusals"
 
     def __init__(self, store: JsonStateFile) -> None:
         self._store = store
@@ -175,6 +180,7 @@ class CommandLedger:
         self._last = _int_map(data.get(self._KEY))
         self._steps = _int_map(data.get(self._CODES))
         self._failures = _times_map(data.get(self._FAILURES))
+        self._refused = _refusals(data.get(self._REFUSED))
 
     def last(self, sender_key: str) -> int | None:
         return self._last.get(sender_key)
@@ -211,6 +217,30 @@ class CommandLedger:
         self._store.put(self._FAILURES, {key: list(times) for key, times in failures.items()})
         self._store.flush()
         return not codes_locked(before, now) and codes_locked(failures[sender_key], now)
+
+    @property
+    def refused(self) -> tuple[Refusal, ...]:
+        """The latest refused commands, the newest first, at most REFUSALS_KEPT."""
+        return self._refused
+
+    def refusal(self, refusal: Refusal) -> None:
+        """A refused command, the newest. The next flush writes it (the status tick, the stop):
+        a crash may lose it, which costs only what a front end shows."""
+        self._refused = (refusal, *self._refused)[:REFUSALS_KEPT]
+        self._store.put(self._REFUSED, [_refusal_entry(r) for r in self._refused])
+
+    def clean_names(self) -> None:
+        """With `[messages] clean_received`, at the start: the senders' names that a run with it
+        off kept as they came, cleaned as the inbox cleans a new refusal's. Stored at once when
+        one changed, as the observer stores a cleaned document of the last run."""
+        cleaned = tuple(
+            r if r.sender_name is None else replace(r, sender_name=clean_name(r.sender_name))
+            for r in self._refused
+        )
+        if cleaned != self._refused:
+            self._refused = cleaned
+            self._store.put(self._REFUSED, [_refusal_entry(r) for r in cleaned])
+            self._store.flush()
 
     def record(self, sender_key: str, timestamp: int, code_step: int | None = None) -> None:
         """Store the timestamp (and the code's time step) durably; memory follows only after a
@@ -1120,6 +1150,36 @@ def _times_map(raw: object) -> dict[str, tuple[int, ...]]:
         if isinstance(value, list)
     }
     return {key: value for key, value in times.items() if value}
+
+
+def _refusal_entry(refusal: Refusal) -> dict[str, Any]:
+    return {
+        "at": refusal.at,
+        "reason": refusal.reason,
+        "sender_prefix": refusal.sender_prefix,
+        "sender_key": refusal.sender_key,
+        "sender_name": refusal.sender_name,
+    }
+
+
+def _refusals(raw: object) -> tuple[Refusal, ...]:
+    """The refused commands of the state file, the newest first; an entry of another shape is
+    left out."""
+    refusals = []
+    for entry in raw if isinstance(raw, list) else ():
+        if not isinstance(entry, dict):
+            continue
+        at, reason, prefix = entry.get("at"), entry.get("reason"), entry.get("sender_prefix")
+        key, name = entry.get("sender_key"), entry.get("sender_name")
+        if (
+            _finite(at)
+            and isinstance(reason, str)
+            and isinstance(prefix, str | None)
+            and isinstance(key, str | None)
+            and isinstance(name, str | None)
+        ):
+            refusals.append(Refusal(float(at), reason, prefix, key, name))
+    return tuple(refusals[:REFUSALS_KEPT])
 
 
 def _string_map(raw: object) -> dict[str, str]:

@@ -74,6 +74,7 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | `sensor.meshcore_home_gateway_radio1_pending_messages` | count | *Messages on their way*: the messages the gateway accepted and has not delivered or given up yet, the one being sent included; the `pending` document as attributes `messages` (oldest first, with `step` `queued` or `sent` and their keys as in [mqtt-api.md](mqtt-api.md#messages-on-their-way-pending)), `total` and `truncated`. A message `queued` for more than a minute waits for the radio or for airtime. It stays available while the gateway is offline |
 | `sensor.meshcore_home_gateway_radio1_configuration` | timestamp, diagnostic | *Configuration*: when the gateway started; the settings in effect as attributes (`targets` with each one's `room`, `messages`, `contacts`, `telemetry`, `homeassistant`, `radio`, `airtime`, `history`, `commands`), as in [mqtt-api.md](mqtt-api.md#configuration-config): never a host, password, key or command word. Read only: Home Assistant cannot change them |
 | `event.meshcore_home_gateway_radio1_command` | event: the configured words | accepted commands (only with `commands.words`) |
+| `sensor.meshcore_home_gateway_radio1_refused_commands` | timestamp | *Refused commands*: the time of the newest command the gateway refused, `unknown` while there is none; the `refused_commands` document as attributes `commands` (the latest 5, newest first, with `at`, `sender_key`, `sender_prefix`, `sender_name` and `reason` as in [mqtt-api.md](mqtt-api.md#refused-commands-refused_commands), never the command's word), `total` and `truncated`. Only with `commands.words`; it stays available while the gateway is offline (#141) |
 | `notify.meshcore_home_gateway_radio1_send_<alias>` | notify, one per target | sends the message text to that target; `-` in an alias becomes `_`, so two aliases that differ only there get the same IDs, the later ones ending in `_2` (the gateway warns, [configuration.md](configuration.md#targetsalias)) |
 | `text.meshcore_home_gateway_radio1_write_<alias>` | text, one per target not in `hidden_targets` | *Write to …*: the draft of a message to that target, which the gateway keeps until it is sent ([below](#writing-and-sending)); `max` is the room of a text to the target in bytes |
 | `button.meshcore_home_gateway_radio1_write_<alias>_send` | button, one per target not in `hidden_targets` | *Send what is written to …*: sends that draft |
@@ -105,7 +106,7 @@ more than that. Node IDs and aliases that Home Assistant would shorten further (
 `_`, two of them in a row) are refused by the configuration check.
 
 All entities share the gateway's availability topic and turn `unavailable` when it is offline,
-except *Message history* and *Messages on their way*, which stay readable;
+except *Message history*, *Messages on their way* and *Refused commands*, which stay readable;
 the controls that change the radio's contacts also while the radio is not connected or contact
 management is off (also on untested firmware). The state values come from retained documents, so they are back right after a
 restart of either side.
@@ -415,7 +416,7 @@ advert no longer carries it.
 | a day without an answer | `no_answer` (asked less and less, up to every 6 hours), or `no_path` when the radio lost its path |
 | comes back | asked at least every 30 minutes (or its interval, if longer): `answering`, all available, event `answered` |
 | the radio unplugged | *Telemetry status* `paused` with `no_radio` at once; an hour after its last answer `away`, its tracker and sensors `unavailable`; no event |
-| the gateway restarts | every gateway entity but *Message history* and *Messages on their way* `unavailable` for the seconds the restart takes; then the states come back from its state file and the readings from its history: nothing expires; if the radio does not come back, as for the radio unplugged |
+| the gateway restarts | every gateway entity but *Message history*, *Messages on their way* and *Refused commands* `unavailable` for the seconds the restart takes; then the states come back from its state file and the readings from its history: nothing expires; if the radio does not come back, as for the radio unplugged |
 | *Telemetry* switched off | at once `excluded`, its telemetry sensors `unavailable`; event *Contact* `excluded` |
 | *Telemetry* switched on | `waiting`, asked at once (as the airtime lanes allow); values with its next answer; event *Contact* `included`, then `answered` |
 
@@ -728,20 +729,24 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   *Where everyone is* lists the contacts with a position, in words, and links to the map.
 * *Chats*: *All chats*, every chat page with its kind and newest message, those only automations
   write to last, then the contacts with a device that have no chat page yet and the channels
-  heard that have none; and *Latest messages*, all messages together as a thread.
+  heard that have none; and *Latest messages*, all messages together as a thread. A sender
+  whose name shows nothing, as a channel message may claim, is *?* here and on a chat's page,
+  as one without a name.
 * A chat's page shows the chat's messages, under the line that says why the gateway refused a
   message to the chat, while there is one: received on the left, sent from this home on the
   right with their time and ✓ (sent) or ✓✓ (delivered, which the person's radio confirmed);
   a message not delivered, not sent or maybe forged in yellow, with the reason in words; one on
   its way in italics. The newest six stay open, fewer when they are long, the older ones in a
   fold. The delivery code that `[messages] confirm_nonce` adds to every direct message is
-  hidden: the gateway publishes it only in the final delivery event and the history (#87), so
-  the cards cut ` #` and 8 hex digits from the history's sent direct messages while
-  *Configuration* says the setting is on; with it off, a text of the household's that ends that
-  way shows whole. The cards follow the setting of now, the gateway that of the time a message
-  was sent: after a change, the messages sent before it, also one kept on its way across the
-  restart that changed it, show the other way until they leave the history. While the gateway
-  is offline, Home Assistant drops *Configuration*'s attributes and the cards cut it as before.
+  hidden: the gateway publishes it only in the final delivery event and the history (#87), and
+  since 2.2 each sent message of the history says whether the gateway added it (`nonce`, #142).
+  The cards cut ` #` and 8 hex digits where it did, whatever the setting is now, and nowhere
+  else: a text of the household's that ends that way shows whole, also one sent while the
+  setting was off and still in the history after it was switched on. A message sent by 2.1 does
+  not say; for it the cards follow the setting of now, as 2.1 did: they cut while
+  *Configuration* says the setting is on, or while the gateway is offline and Home Assistant has
+  dropped *Configuration*'s attributes, so such a message can show the other way until it leaves
+  the history.
   The thread's help links to *Help*, which explains each reason. The line that says why a
   message was refused stands above the thread, where the field does not cover it; it does not
   repeat the text, which stays in the field, and a text sent twice is in the thread. Under the
@@ -759,7 +764,8 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   *Sensors*, the readings of the contacts that report some; *Ask for position and battery*, a
   switch for each person, and for each sensor asked for readings (`[telemetry] ask_types`);
   *Add or remove*: *Add at once: pick a node heard nearby* and *Add by key or contact link*
-  (paste it, then tap Return), the result of the last request below them,
+  (paste it, then tap Return), the result of the last request below them, which names a node
+  whose name shows nothing by the first 12 digits of its key,
   the QR code of the gateway under *Let someone add this home*
   ([above](#adding-and-removing-contacts)), a *Remove* for each contact, which asks first, and
   *Hidden contacts* with *Show again*; and *Nodes heard nearby*, the nodes you can add. While the
@@ -780,12 +786,20 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   firmware and radio settings, how the gateway reaches it, its background noise and battery and
   a day of airtime; *Radio settings*, what the managed profile wants and what the radio has,
   with who may ask the radio for its battery, position and readings as the radio acts on it;
-  *Latest of each kind*, the newest contact, telemetry, setting, node and command event; a
-  command the gateway refused after the newest accepted one shows in its place, with the reason
-  in words, such as *too many wrong codes* for `code_locked`, but only until the next message
-  arrives, of any kind, a channel message too: Home Assistant has the refusal only as the
-  attribute `command` of the newest message (`event.meshcore_home_gateway_radio1_message`).
-  The gateway's log warns of a sender refused for too many wrong codes. While
+  *Latest of each kind*, the newest contact, telemetry, setting, node and command event, each
+  node by its name, or by the first digits of its key where the name shows nothing, as where it
+  has none: 12 in the rows *Contact* and *Position and battery*, 8 in *New node* and *Command*;
+  a command the gateway refused after the newest accepted one shows in its place, with its
+  sender and the reason in words, such as *too many wrong codes* for `code_locked`, until the
+  gateway accepts a command after it. It comes from *Refused commands*, which leaves out the
+  command's word; a message that is no command no longer hides it, as it did in 2.1, which read
+  the refusal from the newest message (#141). The
+  gateway gives both times in whole seconds: of a refusal and an accepted command within one
+  second, the row shows the one Home Assistant got later, except after a restart of Home
+  Assistant or after it got the broker back (a broker restart, a reload of the MQTT
+  integration), which set the refusal's time of arrival anew: then the refusal shows until a
+  command is accepted again. The gateway's log warns of a sender refused for too many wrong
+  codes. While
   the gateway is offline, these cards say so instead of values: Home Assistant keeps no
   attributes of an unavailable entity, so they would read as never reported.
 * *Settings*: what your administrator set, read only, from the gateway's *Configuration*:
@@ -1351,7 +1365,10 @@ such as a second gateway's `mesh_2`, is taken already, any other needs its own t
 *Send* buttons hold no text and stay recorded. *Configuration* holds no message; it shows every
 user the settings, the names, prefixes and suffixes of the hidden targets included, and the
 recorder stores it at each start and radio connect: add
-`sensor.meshcore_home_gateway_*_configuration` to keep it out too.
+`sensor.meshcore_home_gateway_*_configuration` to keep it out too. *Refused commands* holds no
+text and no command word, but who sent each of the latest refused commands and why, which the
+recorder stores again with every refusal: add `sensor.meshcore_home_gateway_*_refused_commands*`
+to keep it out too.
 
 The contacts' trackers store their positions in the history too, which a map card with
 `hours_to_show` draws as their traces ([Traces on the map](#traces-on-the-map)): a companion that

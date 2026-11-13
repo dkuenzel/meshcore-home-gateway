@@ -32,6 +32,7 @@ and no closed lists of values: this page stays normative.
 | `nodes` | gateway → | yes | JSON: nodes heard but not added |
 | `history` | gateway → | yes | JSON: the latest messages in and out |
 | `pending` | gateway → | yes | JSON: the messages on their way, accepted and not final yet |
+| `refused_commands` | gateway → | yes | JSON: the latest commands the gateway refused, without their words ([refused commands](#refused-commands-refused_commands)) |
 | `settings` | gateway → | yes | JSON: the managed radio profile at the last connect |
 | `config` | gateway → | yes | JSON: the settings of the configuration in effect, by an allowlist ([configuration](#configuration-config)) |
 | `contact` | gateway → | no | JSON, `event_type` = `added`, `removed`, `hidden`, `shown`, `excluded`, `included`, `refused`, `failed` or `position_in_advert` |
@@ -161,9 +162,10 @@ acknowledgement with the secret the two radios share; the gateway can narrow it:
   longest wait, four attempts of 60 s, a forger succeeds about once in 160,000 messages. The
   suffix is the only secret of the code, so it stays off the broker until no acknowledgement
   counts any more: `queued`, `sent` and `pending` show the text without it, the final event and
-  `history` with it. A reader of the gateway's topics with a board in range cannot compute the
-  code before then; whoever reads the gateway's state directory can, while a stop keeps the
-  message there.
+  `history` with it; since 2.2 each entry of `history` says with `nonce` whether it got the
+  suffix ([History](#history-history)). A reader of the gateway's topics with a board in range
+  cannot compute the code before then; whoever reads the gateway's state directory can, while a
+  stop keeps the message there.
 * **`suspect`** is `true` in a `confirmed` event whose round trip is shorter than a genuine
   acknowledgement takes over the path the radio stored: the message on every hop through the
   repeaters and the acknowledgement on one, at the radio's modulation, without preamble so that
@@ -202,11 +204,11 @@ terminal, a file or a page must not take for instructions
 drops them from texts before publishing, and so from the name a channel message claims
 ([configuration.md](configuration.md#messages)); commands are judged on the text as it came.
 Since 2.2 it also cleans the names of contacts and heard nodes, on one line, where the gateway
-takes them from the radio: in `sender_name`, `command` events, `history`, `pending`, the
-contacts' documents, `nodes`, the `node`, `contact` and `telemetry` events, the device names in
-Home Assistant and Homie (#137). Messages the history kept before keep their names. Without it,
-a contact's name stays as its adverts gave it; the command line prints such characters escaped in
-JSON and as spaces in lists and CSV (#114).
+takes them from the radio: in `sender_name`, `command` events, `refused_commands`, `history`,
+`pending`, the contacts' documents, `nodes`, the `node`, `contact` and `telemetry` events, the
+device names in Home Assistant and Homie (#137). Messages the history kept before keep their
+names. Without it, a contact's name stays as its adverts gave it; the command line prints such
+characters escaped in JSON and as spaces in lists and CSV (#114).
 
 ```json
 {"event_type": "contact", "text": "status please", "text_type": "plain",
@@ -251,8 +253,9 @@ in `commands.senders`, newer than the last accepted command of that sender and w
  "sent_at": "2026-10-18T09:00:00+00:00", "received_at": "2026-10-18T09:00:02+00:00"}
 ```
 
-Treat `args` as untrusted input. Rejected attempts appear only on `received`, with
-`command.accepted` false and one of these reasons:
+Treat `args` as untrusted input. Rejected attempts never reach `command`: they appear on
+`received`, with `command.accepted` false and one of these reasons, and the latest of them,
+without their words, in [`refused_commands`](#refused-commands-refused_commands):
 
 | `command.reason` | Meaning |
 | --- | --- |
@@ -284,6 +287,41 @@ command, and with `all` also `rejected: <reason>` for the reasons from `state_un
 the table above, never for those of a sender it did not identify
 ([configuration.md](configuration.md#commands)). An answer is a message to the sender's key: it
 has `delivery` events with the key as `target`, as one to `contacts/<key>/send`.
+
+## Refused commands: `refused_commands`
+
+Since 2.2, the latest five commands the gateway refused, the newest first (#141): each refusal
+that `received` publishes, also of a sender the gateway could not identify. A refusal that the
+rate of received messages leaves out ([received messages](#received-messages-received)) is
+neither published nor kept. The document never has the command's word, its arguments or its
+code: only the household's automations need to know the words, as in
+[`config`](#configuration-config). The gateway keeps the refusals in its state file, so they
+survive a restart; it writes the file at least once a minute and at the stop, so a crash can
+lose the newest. The document goes out at the start, at every connect to the broker and after each
+refusal; a message that is no command and an accepted command leave it as it is. It is published
+also without command words, then with what an earlier run refused, or none.
+
+```json
+{"total": 2, "truncated": false,
+ "commands": [{"at": "2026-10-18T09:00:32+00:00", "sender_key": null,
+               "sender_prefix": "c3d4e5f6a7b8", "sender_name": null,
+               "reason": "sender_unknown"},
+              {"at": "2026-10-18T09:00:02+00:00", "sender_key": "a1b2…",
+               "sender_prefix": "a1b2c3d4e5f6", "sender_name": "Alice",
+               "reason": "code_invalid"}]}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `at` | the gateway's clock when it took the message from the radio, as `received_at` of its `received` event |
+| `sender_key`, `sender_prefix`, `sender_name` | as in its `received` event: the full key and name of the one contact with the prefix, else `null`; with `[messages] clean_received` the name cleaned, on one line, where the gateway takes it from the radio, and at the start in the refusals a run with it off kept ([received messages](#received-messages-received)) |
+| `reason` | why, one of the reasons of [`command`](#commands-command); expect new ones |
+
+`total` counts the refusals kept (at most five); the whole document stays within 15 KiB, which
+five refusals never reach, and `truncated` is `true` when the oldest were left out. A gateway
+before 2.2 neither publishes nor clears it: after a downgrade, an empty retained message clears
+it, such as `mosquitto_pub -r -n -t meshcore/radio1/refused_commands`
+([deployment.md](deployment.md#update-reconfigure-remove)).
 
 ## State: `state`
 
@@ -586,12 +624,12 @@ kept in the gateway's history database, so they survive a restart ([ADR 0016](de
                "contact_key": "a1b2…", "channel_index": null, "name": "Alice",
                "text": "Back soon", "state": "confirmed", "hops": null, "snr_db": null,
                "target": "alice", "id": "1a2b3c4d", "queued_at": "2026-10-18T09:00:57+00:00",
-               "suspect": false, "reason": null},
+               "suspect": false, "reason": null, "nonce": false},
               {"at": "2026-10-18T09:00:02+00:00", "direction": "in", "kind": "channel",
                "contact_key": null, "channel_index": 0, "name": "Carol", "text": "On my way",
                "state": null, "hops": 1, "snr_db": 6.25,
                "target": "family", "id": null, "queued_at": null, "suspect": null,
-               "reason": null}]}
+               "reason": null, "nonce": null}]}
 ```
 
 `at` is the gateway's clock: for an incoming message when it took the message from the radio,
@@ -623,6 +661,12 @@ message from an earlier version):
 | `queued_at` | outgoing: when the gateway accepted the request, also for a message kept across a stop; `at` is when it became final |
 | `suspect` | outgoing, `confirmed`: the acknowledgement came sooner than the path allows, as in its delivery event ([what `confirmed` proves](#what-confirmed-proves)) |
 | `reason` | outgoing, `failed` or `expired`: why, as in its delivery event |
+
+Since 2.2 every entry also has `nonce`, after the others (#142):
+
+| Key | Meaning |
+| --- | --- |
+| `nonce` | outgoing: `true` when the gateway ended `text` with the random suffix of `[messages] confirm_nonce` (` #` and 8 hex digits), `false` when it did not: a channel message, a direct message sent while the setting was off, or a household's own text that only ends like a suffix. It says how the message was sent, also for one kept across a stop that changed the setting, not what the setting is now. `null` for an incoming message, and for an outgoing one that an earlier version kept: the gateway does not guess it from the text afterwards. To show a message without the suffix, cut it where `nonce` is `true` |
 
 ## Messages on their way: `pending`
 

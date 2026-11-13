@@ -1010,9 +1010,9 @@ def test_history_export_csv_has_a_header_and_safe_texts(
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == (
         "at,direction,kind,contact_key,channel_index,name,text,state,hops,snr_db,"
-        "target,delivery_id,queued_at,suspect,reason"
+        "target,delivery_id,queued_at,suspect,reason,nonce"
     )
-    assert lines[1] == f"2023-11-14T22:13:20+00:00,in,contact,{KEY},,Alice,hi [2J,,,,,,,,"
+    assert lines[1] == f"2023-11-14T22:13:20+00:00,in,contact,{KEY},,Alice,hi [2J,,,,,,,,,"
     argv = ["history", "export", "--table", "readings", "--format", "csv"]
     assert main([*argv, "--state-dir", str(directory)]) == EX_OK
     assert capsys.readouterr().out.splitlines()[1:] == [
@@ -1020,11 +1020,12 @@ def test_history_export_csv_has_a_header_and_safe_texts(
     ]
 
 
-def test_history_export_has_the_keys_of_2_1_at_the_end(
+def test_history_export_has_the_keys_of_2_1_after_those_of_2_0(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The target, the delivery id, the acceptance time (as a time, like `at`), whether the
-    acknowledgement was suspect, and why a message failed, in JSON lines and in CSV."""
+    acknowledgement was suspect, and why a message failed, in JSON lines and in CSV; the key of
+    2.2 after them."""
     directory = tmp_path / "state"
     directory.mkdir()
     history = History.open(directory / "history.sqlite3")
@@ -1051,7 +1052,8 @@ def test_history_export_has_the_keys_of_2_1_at_the_end(
     argv = ["history", "export", "--state-dir", str(directory)]
     assert main(argv) == EX_OK
     rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert list(rows[0])[-5:] == ["target", "delivery_id", "queued_at", "suspect", "reason"]
+    keys = ["target", "delivery_id", "queued_at", "suspect", "reason", "nonce"]
+    assert list(rows[0])[-6:] == keys
     assert [(r["queued_at"], r["suspect"], r["reason"]) for r in rows] == [
         ("2023-11-14T22:13:10+00:00", True, None),
         ("2023-11-14T22:14:10+00:00", False, None),
@@ -1060,11 +1062,46 @@ def test_history_export_has_the_keys_of_2_1_at_the_end(
     assert {(r["target"], r["delivery_id"]) for r in rows} == {("alice", "1a2b3c4d")}
     assert main([*argv, "--format", "csv"]) == EX_OK
     lines = capsys.readouterr().out.splitlines()
-    assert [line.split(",")[-5:] for line in lines[1:]] == [
+    assert [line.split(",")[-6:-1] for line in lines[1:]] == [
         ["alice", "1a2b3c4d", "2023-11-14T22:13:10+00:00", "true", ""],
         ["alice", "1a2b3c4d", "2023-11-14T22:14:10+00:00", "false", ""],
         ["alice", "1a2b3c4d", "2023-11-14T22:15:10+00:00", "", "queue_ttl"],
     ]
+
+
+def test_history_export_says_whether_the_gateway_added_the_delivery_code(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """#142: `nonce` last, true or false on a sent message, as `suspect`; empty on a received one
+    and on a row of 2.1, also in a history the service has not given the column yet."""
+    directory = tmp_path / "state"
+    directory.mkdir()
+    history = History.open(directory / "history.sqlite3")
+    assert history is not None
+    for at, nonce in ((0.0, True), (60.0, False), (120.0, None)):
+        history.add_message(
+            HistoryEntry(1_700_000_000.0 + at, "out", "contact", "Hi", KEY, nonce=nonce)
+        )
+    history.add_message(HistoryEntry(1_700_000_200.0, "in", "contact", "Hi #0a1b2c3d", KEY))
+    history.close()
+    argv = ["history", "export", "--state-dir", str(directory)]
+    assert main(argv) == EX_OK
+    rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [(list(r)[-1], r["nonce"]) for r in rows] == [
+        ("nonce", True),
+        ("nonce", False),
+        ("nonce", None),
+        ("nonce", None),
+    ]
+    assert main([*argv, "--format", "csv"]) == EX_OK
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].endswith(",reason,nonce")
+    assert [line.rsplit(",", 1)[1] for line in lines[1:]] == ["true", "false", "", ""]
+    with contextlib.closing(sqlite3.connect(directory / "history.sqlite3")) as db:
+        db.execute("ALTER TABLE message DROP COLUMN nonce")  # as 2.1 left it
+    assert main(argv) == EX_OK
+    rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [r["nonce"] for r in rows] == [None] * 4
 
 
 def test_history_export_csv_shows_a_formula_as_text(

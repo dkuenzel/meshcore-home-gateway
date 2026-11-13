@@ -143,6 +143,7 @@ def test_connection_subscribes_and_announces_availability() -> None:
                         "history",
                         "nodes",
                         "pending",
+                        "refused_commands",
                         "settings",
                         "state",
                         "stats",
@@ -576,7 +577,7 @@ def test_a_refused_subscription_is_named(caplog: pytest.LogCaptureFixture) -> No
         granted, refused = (ReasonCode(PacketTypes.SUBACK, identifier=c) for c in (1, 0x80))
         fake.on_subscribe(fake, None, 6, [refused] * 15, None)  # another subscription's answer
         assert "refused the subscription" not in caplog.text
-        fake.on_subscribe(fake, None, 7, [granted] * 5 + [refused] * 10 + [granted], None)
+        fake.on_subscribe(fake, None, 7, [granted] * 5 + [refused] * 11 + [granted], None)
         assert (
             "refused the subscription to meshcore/radio1/availability, meshcore/radio1/config, "
             "meshcore/radio1/contacts,"
