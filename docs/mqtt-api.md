@@ -1123,8 +1123,8 @@ default where the file sets none.
               "max_attempts": 3},
  "contacts": {"manage": true, "heard_nodes": "full"},
  "telemetry": {"enabled": true, "ask": "household", "ask_types": ["chat"]},
- "homeassistant": {"controls": true, "hidden_targets": 0, "contact_entity_prefix": "mesh",
-                   "language": "en", "contact_devices": 50},
+ "homeassistant": {"controls": true, "radio_controls": true, "hidden_targets": 0,
+                   "contact_entity_prefix": "mesh", "language": "en", "contact_devices": 50},
  "radio": {"transport": "serial", "tcp_unauthenticated": false, "set_clock": true,
            "profile": {"manage": "auto"}},
  "airtime": {"budget_s_per_hour": 36.0, "burst_s": 10.0},
@@ -1143,7 +1143,7 @@ default where the file sets none.
 | `targets.items[].hidden` | in `[homeassistant] hidden_targets`: no entities in Home Assistant, only automations write to it |
 | `targets.items[].room` | the bytes a text to it has beside the prefix and suffix, as the gateway sends it: the `max` of its draft in Home Assistant; for a channel before the radio's name is known, the room of the shortest name |
 | `messages`, `contacts`, `telemetry`, `airtime`, `history` | the settings of these sections, lists sorted (`messages.flood_after` and `alert_targets` aside: the latter is each target's `alert`) |
-| `homeassistant` | `controls`, `contact_entity_prefix`, `language`, `contact_devices`; `hidden_targets` is how many targets are hidden |
+| `homeassistant` | `controls`, `radio_controls`, `contact_entity_prefix`, `language`, `contact_devices`; `hidden_targets` is how many targets are hidden |
 | `radio` | `transport` (`serial` is USB), `tcp_unauthenticated`, `set_clock`, and `profile.manage` (`auto`, `observe` or `always`) |
 | `commands` | `senders`: how many senders may send commands; `codes`: whether `codes_file` is set, so that the senders with a code secret need codes (and, while the gateway ignores a secret in it, the senders without one cannot command: [configuration.md](configuration.md#commands)); `reply` |
 

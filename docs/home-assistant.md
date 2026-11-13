@@ -815,9 +815,10 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   advert: sent, with its time and the name it carried; a press within the 10 minutes, when the
   last went and from when the next one may go; or why not, in words, and whether it may have
   gone out ([advert nearby](#advert-nearby)); with `radio_controls` or `controls` off a blue line
-  says so instead. Its help names the first digits of the radio's key to compare with, and, while
-  the button can be pressed, that everyone here can send it. Then a *Remove* for each contact, which asks first, and
-  *Hidden contacts* with *Show again*; and *Nodes heard nearby*, the nodes you can add. While the
+  says so instead. Its help names the first digits of the radio's key to compare with, and,
+  unless `radio_controls` or `controls` is off, that everyone here can send it. Then a *Remove*
+  for each contact, which asks first, and *Hidden contacts* with *Show again*; and
+  *Nodes heard nearby*, the nodes you can add. While the
   controls cannot act, a line above them says why: the gateway offline or the radio disconnected
   (in red, as on *Overview*), `controls = false`, contact management off, the radio not reported
   yet, or firmware the gateway is not tested with; above the switches also asking turned off in
