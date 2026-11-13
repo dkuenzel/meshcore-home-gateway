@@ -231,8 +231,8 @@ class CommandLedger:
 
     def clean_names(self) -> None:
         """With `[messages] clean_received`, at the start: the senders' names that a run with it
-        off kept as they came, cleaned as the inbox cleans a new refusal's (#137). Stored at once
-        when one changed, as the observer stores a cleaned document of the last run."""
+        off kept as they came, cleaned as the inbox cleans a new refusal's. Stored at once when
+        one changed, as the observer stores a cleaned document of the last run."""
         cleaned = tuple(
             r if r.sender_name is None else replace(r, sender_name=clean_name(r.sender_name))
             for r in self._refused

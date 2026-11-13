@@ -249,10 +249,10 @@ def test_ledger_keeps_the_latest_refused_commands_across_a_restart(tmp_path: Pat
 
 
 def test_ledger_cleans_the_names_a_run_without_clean_received_kept(tmp_path: Path) -> None:
-    """#137, #141: a run with `clean_received` off kept a refused sender's name as it came; with
-    the setting on the next run cleans the kept names at its start, as the inbox cleans a new
-    one's, and stores them so at once. A missing name stays missing, the rest stays as it was,
-    and names that are clean already leave the file as it is."""
+    """A run with `clean_received` off kept a refused sender's name as it came; with the
+    setting on the next run cleans the kept names at its start, as the inbox cleans a new one's,
+    and stores them so at once. A missing name stays missing, the rest stays as it was, and
+    names that are clean already leave the file as it is."""
     path = tmp_path / "state.json"
     store = JsonStateFile(path)
     ledger = CommandLedger(store)

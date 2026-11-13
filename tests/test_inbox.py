@@ -1247,9 +1247,9 @@ def test_a_refused_senders_name_is_kept_cleaned_only_when_asked(
 def test_a_refused_senders_name_kept_by_a_run_without_cleaning_is_cleaned_when_asked(
     tmp_path: Path, clean: bool
 ) -> None:
-    """#137, #141: a run with `clean_received` off kept a refused sender's name as it came. A
-    later run with the setting on publishes it cleaned from the start, and its state file keeps
-    it so; one with it off keeps it as it came."""
+    """A run with `clean_received` off kept a refused sender's name as it came. A later run
+    with the setting on publishes it cleaned from the start, and its state file keeps it so; one
+    with it off keeps it as it came."""
     raw = "Mal\x1b[2J\u202elory"
     forger = EmulatedContact(bytes.fromhex("c3" * 32), raw)
     radio = EmulatedRadio(contacts=[ALICE, forger])
