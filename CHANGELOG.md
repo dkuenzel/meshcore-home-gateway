@@ -50,9 +50,10 @@ Assistant's user needs `topic write <base_topic>/<node_id>/advert/send` for *Sen
   `controls = false` does too; `advert/send` on MQTT and the command line keep working.
 - Dashboard: on *Contacts*, under the QR code of *Let someone add this home*, the row *Advert to
   radios nearby* with *Send* while the button can be pressed, and a line that says for 10
-  minutes what became of the last advert (sent with its time and name, or why not, in words,
-  and when the next one may go); its help names the first digits of the radio's key to compare
-  with. *Settings* shows *Advert button in Home Assistant*; *Help* names the row and explains
+  minutes what became of the last advert (sent with its time and name; within the 10 minutes,
+  when the last went and when the next one may go; or why not, in words, and whether it may
+  have gone out); its help names the first digits of the radio's key to compare with, and that
+  everyone here can send it only while they can. *Settings* shows *Advert button in Home Assistant*; *Help* names the row and explains
   each reason in *Why no advert was sent*. German texts.
 
 ### Changed

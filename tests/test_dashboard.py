@@ -2807,10 +2807,11 @@ def test_the_advert_line_reads_the_event_and_names_every_reason() -> None:
     assert content.split("\n")[-1].startswith("<details><summary>What the advert does</summary>")
     assert f"set e = 'event.{rules.GW}_advert'" in content
     assert "now() - at < timedelta(minutes=10)" in content.replace("clock", "now()")
-    for reason in SELF_ADVERT_REASONS:
+    for reason in [*SELF_ADVERT_REASONS, "table_full"]:
         assert f"v == '{reason}'" in content, reason
     assert "{%- else -%}<code>{{ m(v) }}</code>" in content
-    assert "Everyone who uses Home Assistant here can send it." in content
+    # who can send it, only while they can: not under the line that says it is off
+    assert "{% if not off %}<li>Everyone who uses Home Assistant here can send it.</li>" in content
     assert "A node with this name and another key is someone else." in content
 
 
@@ -2822,9 +2823,13 @@ def test_help_says_why_no_advert_was_sent_and_names_the_row() -> None:
     (fold,) = [t for t in rules.texts(view_of("help")) if "Why no advert was sent" in t]
     _, line = _advert_cards(view_of("contacts"))
     words = re.findall(r"-%\}([^{]+)\n", line["content"].split("macro cause(v)")[1])
-    assert len(words) == len(SELF_ADVERT_REASONS)
+    assert len(words) == len(SELF_ADVERT_REASONS) + 1  # and the radio's table_full
     for word in words:
         assert f"<b>{word}</b>" in fold, word
+    busy, soon = "<b>another advert is being sent</b>", "<b>only one advert every 10 minutes</b>"
+    assert f"{busy}: Another press is being handled" in fold  # no next time after busy
+    assert f"{soon}: The radio sends at most one advert every 10 minutes" in fold
+    assert "<b>the radio was busy</b>: The radio had no room for it just then." in fold
 
 
 def test_settings_show_whether_the_advert_button_can_be_pressed() -> None:

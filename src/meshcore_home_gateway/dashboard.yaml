@@ -1266,7 +1266,8 @@ views:
               - type: button
                 entity: button.@gw@_send_advert
                 # Translators: the label of the row that makes this home's radio send its advert
-                # once, which only the radios in direct range hear
+                # once, which only the radios in direct range hear; at most 23 letters, or it is
+                # cut beside Send on a phone
                 name: _("Advert to radios nearby")
                 icon: mdi:broadcast
                 # Translators: the label of the button that sends the advert, as a chat's Send
@@ -1280,7 +1281,7 @@ views:
             text_only: true
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
-              {#- the reasons of mqtt-api.md, Advert nearby (views.SELF_ADVERT_REASONS); the radio's own refusals, and one added later, stay codes -#}
+              {#- the reasons of mqtt-api.md, Advert nearby (views.SELF_ADVERT_REASONS), and the radio's table_full in words; its other refusals, and one added later, stay codes -#}
               {%- macro cause(v) -%}
               {#- Translators: why the gateway sent no advert, after No advert sent -#}
               {%- if v == 'too_large' -%}_("request too large")
@@ -1301,18 +1302,20 @@ views:
               {%- elif v == 'clock_ahead' -%}_("the radio's clock is ahead")
               {%- elif v == 'outcome_unknown' -%}_("the radio did not answer")
               {%- elif v == 'internal_error' -%}_("internal error: see the log")
+              {%- elif v == 'table_full' -%}_("the radio was busy")
               {%- else -%}<code>{{ m(v) }}</code>
               {%- endif -%}
               {%- endmacro -%}
               {%- set e = 'event.@gw@_advert' -%}
               {%- set ha = state_attr('sensor.@gw@_configuration', 'homeassistant') -%}
+              {%- set off = ha is mapping and (ha.get('radio_controls') == false or ha.get('controls') == false) -%}
               {%- set step = state_attr(e, 'event_type') -%}{%- set code = state_attr(e, 'reason') -%}
               {%- set at = states(e) | as_datetime(default=none) -%}
               {%- set later = (state_attr(e, 'next_at') or '') | as_datetime(default=none) -%}
               {#- now(): the line goes 10 minutes after the event, also when nothing else changes -#}
               {%- set clock = now() -%}
               {%- set key = m((state_attr('binary_sensor.@gw@_radio', 'public_key') or '')[:8]) -%}
-              {%- if ha is mapping and (ha.get('radio_controls') == false or ha.get('controls') == false) %}
+              {%- if off %}
               <div><ha-alert alert-type="info">_("Your administrator turned the advert off for Home Assistant; the QR code above still works.")</ha-alert></div>
               {%- elif at is not none and clock - at < timedelta(minutes=10) and step in ['sent', 'refused', 'failed'] %}
               {%- set time = m((at | as_local).strftime('%H:%M')) -%}
@@ -1320,15 +1323,21 @@ views:
               {%- set called = m(state_attr(e, 'name') or '?') -%}
               {#- Translators: time is a clock time such as 10:31; called is this home's radio's name as the advert carried it #}
               <div><ha-alert alert-type="success">_("Advert sent at {time} with the name {called}.")</ha-alert></div>
+              {%- elif code == 'too_soon' and later is not none %}
+              {#- after an advert that went out, or may have: when it went, not a warning -#}
+              {%- set last = m(((later - timedelta(minutes=10)) | as_local).strftime('%H:%M')) -%}
+              {%- set next = m((later | as_local).strftime('%H:%M')) -%}
+              {#- Translators: last and next are clock times such as 10:31 and 10:41 #}
+              <div><ha-alert alert-type="info">_("Only one advert every 10 minutes: the last one was at {last}.") _("The next one is possible from {next}.")</ha-alert></div>
               {%- else %}
               {%- set reason = cause(code) -%}
-              {%- set next = m((later | as_local).strftime('%H:%M') if later is not none else '') -%}
-              {#- Translators: reason says why, such as only one advert every 10 minutes; next is a clock time such as 10:41 #}
-              <div><ha-alert alert-type="warning"><b>{% if step == 'failed' %}_("The advert may not have gone out: {reason}."){% else %}_("No advert sent: {reason}."){% endif %}</b>{% if code == 'too_soon' and next %} _("The next one is possible from {next}."){% endif %}</ha-alert></div>
+              {#- only a lost answer or a bug leaves open whether it went out: with its own refusal the radio built none -#}
+              {#- Translators: reason says why, such as the radio did not answer #}
+              <div><ha-alert alert-type="warning"><b>{% if step == 'failed' and code in ['outcome_unknown', 'internal_error'] %}_("The advert may not have gone out: {reason}."){% else %}_("No advert sent: {reason}."){% endif %}</b></ha-alert></div>
               {%- endif %}
               {%- endif %}
-              {#- Translators: security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key #}
-              <details><summary>_("What the advert does")</summary><ul><li>_("The radio tells the radios in direct range its name and key, once. Repeaters do not pass it on.")</li><li>_("Someone nearby can then add this home in the MeshCore app without the QR code: the app lists it among the nodes it heard.")</li>{% if key %}<li>_("In the app, this home's radio has a key that starts with {key}. A node with this name and another key is someone else.")</li>{% endif %}<li>_("After the radio got a new name, the advert shows it to the radios nearby that have this home as a contact.")</li><li>_("It never carries a position. It goes out at most once every 10 minutes, and its airtime counts against this home's hourly budget.")</li><li>_("Everyone who uses Home Assistant here can send it.")</li><li>_("The line above says what happened in the last 10 minutes.") _("Help explains each word.") <a href="./help">_("Help")</a></li></ul></details>
+              {#- Translators: security texts (docs/translations.md): the items on the key, on the position and on who can send it (shown only while Home Assistant's users can); key is the first 8 hex digits of this home's radio's key #}
+              <details><summary>_("What the advert does")</summary><ul><li>_("The radio tells the radios in direct range its name and key, once. Repeaters do not pass it on.")</li><li>_("Someone nearby can then add this home in the MeshCore app without the QR code: the app lists it among the nodes it heard.")</li>{% if key %}<li>_("In the app, this home's radio has a key that starts with {key}. A node with this name and another key is someone else.")</li>{% endif %}<li>_("After the radio got a new name, the advert shows it to the radios nearby that have this home as a contact.")</li><li>_("It never carries a position. It goes out at most once every 10 minutes, and its airtime counts against this home's hourly budget.")</li>{% if not off %}<li>_("Everyone who uses Home Assistant here can send it.")</li>{% endif %}<li>_("The line above says what happened in the last 10 minutes.") _("Help explains each word.") <a href="./help">_("Help")</a></li></ul></details>
           - type: heading
             heading: _("Remove a contact")
             heading_style: subtitle
@@ -2127,7 +2136,7 @@ views:
               {%- set a = state_attr(c, 'homeassistant') -%}{%- set k = state_attr(c, 'contacts') -%}
               {%- if a is mapping and k is mapping -%}
               {%- set devices = a.get('contact_devices') | int(0) -%}
-              {#- Translators: the settings of the contacts in Home Assistant; devices is a whole number #}
+              {#- Translators: the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number #}
               <table><tr><th>_("Setting")</th><th>_("In this home")</th><th>_("What it means")</th></tr><tr><td>_("Contact controls in Home Assistant")</td><td>{% if a.get('controls') == false %}_("off: your administrator manages contacts outside Home Assistant"){% else %}_("on"){% endif %}</td><td>_("The switches and buttons on Contacts.") <code>[homeassistant]</code> <code>controls</code></td></tr><tr><td>_("Advert button in Home Assistant")</td><td>{% if a.get('radio_controls') == false or a.get('controls') == false %}_("off"){% elif a.get('radio_controls') == true %}_("on"){% else %}–{% endif %}</td><td>_("On: everyone who uses Home Assistant here can make the radio send its advert to the radios nearby (Contacts).") <code>[homeassistant]</code> <code>radio_controls</code></td></tr><tr><td>_("Contacts managed by the gateway")</td><td>{% if k.get('manage') == false %}_("off"){% else %}_("on"){% endif %}</td><td>_("On: the gateway adds and removes contacts on request.") <code>[contacts]</code> <code>manage</code></td></tr><tr><td>_("Contacts with a device")</td><td>_("up to {devices}")</td><td>_("Each has its own entities in Home Assistant.") <code>[homeassistant]</code> <code>contact_devices</code></td></tr><tr><td>_("Contact entity IDs start with")</td><td><code>{{ m(a.get('contact_entity_prefix')) }}</code></td><td>_("The start of every contact's entity IDs.") <code>[homeassistant]</code> <code>contact_entity_prefix</code></td></tr><tr><td>_("Language of names")</td><td><code>{{ m(a.get('language')) }}</code></td><td>_("The language of the entities' names and of this dashboard.") <code>[homeassistant]</code> <code>language</code></td></tr></table>
               <details><summary>_("What these settings do")</summary><ul><li>_("A contact prefix of its own keeps two gateways' contacts apart in Home Assistant.")</li><li>_("The words in code are the names in the gateway's configuration file, for your administrator.")</li></ul></details>{%- endif -%}
       - type: grid
@@ -2200,7 +2209,7 @@ views:
           - type: markdown
             text_only: true
             content: |-
-              {#- Translators: Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send) #}
+              {#- Translators: Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there #}
               <details><summary>_("Every button and switch")</summary><ul><li><b>_("Write to …")</b>, <b>_("Return, then Send")</b>: _("At the bottom of a chat's page: type, tap Return (↵), then tap Send. Return only keeps the text at the gateway; Send sends it, once.")</li><li><b>_("Ask for position and battery")</b>: _("On Contacts, a switch per person: on, the gateway asks that person's device now and then for its position and battery. Only for people who agreed.")</li><li><b>_("Add at once: pick a node heard nearby")</b>: _("On Contacts: adds the node you pick to the radio at once.")</li><li><b>_("Add by key or contact link")</b>: _("On Contacts: paste a key or a contact link from the MeshCore app, then tap Return (↵).")</li><li><b>_("Remove")</b>: _("On Contacts: takes a contact off the radio. It asks first.")</li><li><b>_("Hidden contacts")</b>, <b>_("Show again")</b>: _("On Contacts: brings back every contact whose device was deleted in Home Assistant.")</li><li><b>_("Advert to radios nearby")</b>, <b>_("Send")</b>: _("On Contacts, under Let someone add this home: the radio tells the radios in direct range its name and key, once.")</li><li><b>_("Background noise")</b>, <b>_("Radio battery")</b>: _("On Gateway: tap one for its history.")</li><li><b>_("Gateway's messages, last hour")</b>, <b>_("Everything the radio sent, last hour")</b>: _("On Gateway: the radio's airtime over the last 24 hours.")</li><li>_("The links, and the badges Gateway, Settings and Help, open a page of this dashboard; the back arrow returns to where you came from.")</li></ul></details>
           - type: markdown
             text_only: true
@@ -2233,7 +2242,7 @@ views:
           - type: markdown
             text_only: true
             content: |-
-              <details><summary>_("Why no advert was sent")</summary><ul><li><b>_("another advert is being sent")</b>, <b>_("only one advert every 10 minutes")</b>: _("The radio sends at most one advert every 10 minutes; the line below the button says from when the next one goes.")</li><li><b>_("messages are on their way")</b>, <b>_("airtime used up")</b>: _("Messages go first, and the radio may send only so much per hour. Try again in a few minutes.")</li><li><b>_("too many requests")</b>: _("The advert was asked for too often in a short time. Try again in a few minutes.")</li><li><b>_("no radio")</b>, <b>_("firmware not tested")</b>: _("The gateway cannot use its radio for this now; Gateway shows why.")</li><li><b>_("the radio would send its position")</b>, <b>_("the radio has no name")</b>: _("This home's radio would put its position into the advert, or has no name, so the gateway sends none. Tell your administrator.")</li><li><b>_("the radio's clock is ahead")</b>, <b>_("the radio did not tell its time")</b>: _("The advert carries the radio's time: one ahead would make radios nearby ignore this radio's later adverts, so the gateway checks it first. The gateway sets the clock back; if this stays, tell your administrator.")</li><li><b>_("the radio did not answer")</b>, <b>_("internal error: see the log")</b>: _("The advert may or may not have gone out. Try again in 10 minutes.")</li><li><b>_("request too large")</b>, <b>_("request not UTF-8")</b>, <b>_("invalid request")</b>, <b>_("published with the retain flag")</b>, <b>_("empty request")</b>: _("An automation sent the request in a wrong form; your administrator fixes it.")</li></ul></details>
+              <details><summary>_("Why no advert was sent")</summary><ul><li><b>_("another advert is being sent")</b>: _("Another press is being handled; its result follows in a moment.")</li><li><b>_("only one advert every 10 minutes")</b>: _("The radio sends at most one advert every 10 minutes; the line below the button says from when the next one goes.")</li><li><b>_("messages are on their way")</b>, <b>_("airtime used up")</b>: _("Messages go first, and the radio may send only so much per hour. Try again in a few minutes.")</li><li><b>_("too many requests")</b>: _("The advert was asked for too often in a short time. Try again in a few minutes.")</li><li><b>_("the radio was busy")</b>: _("The radio had no room for it just then. Try again in a minute.")</li><li><b>_("no radio")</b>, <b>_("firmware not tested")</b>: _("The gateway cannot use its radio for this now; Gateway shows why.")</li><li><b>_("the radio would send its position")</b>, <b>_("the radio has no name")</b>: _("This home's radio would put its position into the advert, or has no name, so the gateway sends none. Tell your administrator.")</li><li><b>_("the radio's clock is ahead")</b>, <b>_("the radio did not tell its time")</b>: _("The advert carries the radio's time: one ahead would make radios nearby ignore this radio's later adverts, so the gateway checks it first. The gateway sets the clock back; if this stays, tell your administrator.")</li><li><b>_("the radio did not answer")</b>, <b>_("internal error: see the log")</b>: _("The advert may or may not have gone out. Try again in 10 minutes.")</li><li><b>_("request too large")</b>, <b>_("request not UTF-8")</b>, <b>_("invalid request")</b>, <b>_("published with the retain flag")</b>, <b>_("empty request")</b>: _("An automation sent the request in a wrong form; your administrator fixes it.")</li></ul></details>
           - type: markdown
             text_only: true
             content: |-

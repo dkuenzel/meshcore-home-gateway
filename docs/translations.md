@@ -116,6 +116,10 @@ delivery steps, telemetry states and contact events it shows.
   them as codes in every language.
 * `{#- Translators: … -#}` notes inside a card's content reach the catalog like `# Translators:`
   notes.
+* Two labels share a phone's line with a button, and a longer one is cut: *Advert to radios
+  nearby* (the row on *Contacts*) has at most 23 letters beside *Send*, as its note says, and the
+  name beside a chat's *Send* button (*Return, then Send*) at most 17. `make check` counts both
+  in every shipped catalog.
 
 ## The installer
 

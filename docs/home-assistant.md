@@ -806,10 +806,11 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   the QR code of the gateway under *Let someone add this home*
   ([above](#adding-and-removing-contacts)), and below it *Advert to radios nearby* with *Send*
   while the button can be pressed, and a line that says for 10 minutes what became of the last
-  advert: sent, with its time and the name it carried, or why not, in words, and from when the
-  next one may go ([advert nearby](#advert-nearby)); with `radio_controls` or `controls` off a
-  blue line says so instead, and its help names the first digits of the radio's key to compare
-  with. Then a *Remove* for each contact, which asks first, and
+  advert: sent, with its time and the name it carried; a press within the 10 minutes, when the
+  last went and from when the next one may go; or why not, in words, and whether it may have
+  gone out ([advert nearby](#advert-nearby)); with `radio_controls` or `controls` off a blue line
+  says so instead. Its help names the first digits of the radio's key to compare with, and, while
+  the button can be pressed, that everyone here can send it. Then a *Remove* for each contact, which asks first, and
   *Hidden contacts* with *Show again*; and *Nodes heard nearby*, the nodes you can add. While the
   controls cannot act, a line above them says why: the gateway offline or the radio disconnected
   (in red, as on *Overview*), `controls = false`, contact management off, the radio not reported

@@ -844,10 +844,11 @@ async def test_the_advert_line_says_what_became_of_the_last_advert_for_ten_minut
     language: str,
 ) -> None:
     """Under the row, the outcome of the last request in the dashboard's language for 10 minutes:
-    sent with the time and the name the advert carried; refused with the reason in words and,
-    after too_soon, when the next one may go; failed as perhaps not gone out; a radio's own
-    error as its code; a hostile name escaped. Then only the help, which names the first digits
-    of the radio's key. With `radio_controls` or `controls` off a blue line says so instead."""
+    sent with the time and the name the advert carried; after it, too_soon as a blue line with
+    the time of the last advert and when the next one may go, not as a warning; a lost answer as
+    perhaps not gone out; the radio's own refusal as no advert sent, table_full in words and any
+    other as its code; a hostile name escaped. Then only the help, which names the first digits
+    of the radio's key and that everyone here can send it."""
     config = speaking(language, monkeypatch)
     loaded, _ = await household_page(hass, hass_ws_client, config, tmp_path, ALICE_NODE)
     line = card(cards(loaded, "contacts"), ADVERT)
@@ -870,8 +871,11 @@ async def test_the_advert_line_says_what_became_of_the_last_advert_for_ten_minut
     def warning(text: str, **values: str) -> str:
         return '<div><ha-alert alert-type="warning"><b>' + said(config, text, **values) + "</b>"
 
-    next_at = iso(time.time() + 600)
-    sent = self_advert_event("sent", "a1", name="Gateway", airtime_s=1.164, next_at=time.time())
+    who = said(config, "Everyone who uses Home Assistant here can send it.")
+    assert who in render(hass, line)
+    sent_at = time.time()
+    next_at = iso(sent_at + 600)
+    sent = self_advert_event("sent", "a1", name="Gateway", airtime_s=1.164, next_at=sent_at)
     await fire(hass, topics.advert_event, sent)
     success = said(
         config, "Advert sent at {time} with the name {called}.", time=clock(), called="Gateway"
@@ -879,12 +883,17 @@ async def test_the_advert_line_says_what_became_of_the_last_advert_for_ten_minut
     assert render(hass, line).startswith(
         f'<div><ha-alert alert-type="success">{success}</ha-alert></div>\n{help_}'
     )
-    refused = self_advert_event("refused", "a2", reason="too_soon", next_at=time.time() + 600)
+    await elapse(hass, freezer, 2 * 60)  # someone else presses two minutes later
+    refused = self_advert_event("refused", "a2", reason="too_soon", next_at=sent_at + 600)
     await fire(hass, topics.advert_event, refused)
-    words = said(config, "only one advert every 10 minutes")
+    last = said(
+        config,
+        "Only one advert every 10 minutes: the last one was at {last}.",
+        last=clock(iso(sent_at)),
+    )
     later = said(config, "The next one is possible from {next}.", next=clock(next_at))
     assert render(hass, line).startswith(
-        warning("No advert sent: {reason}.", reason=words) + f" {later}</ha-alert></div>\n"
+        f'<div><ha-alert alert-type="info">{last} {later}</ha-alert></div>\n{help_}'
     )
     failed = self_advert_event("failed", "a3", reason="outcome_unknown", name="Gateway")
     await fire(hass, topics.advert_event, failed)
@@ -894,9 +903,15 @@ async def test_the_advert_line_says_what_became_of_the_last_advert_for_ten_minut
     )
     radio = self_advert_event("failed", "a4", reason="table_full", name="Gateway")
     await fire(hass, topics.advert_event, radio)
-    code = "<code>table_full</code>"
+    busy = said(config, "the radio was busy")
     assert render(hass, line).startswith(
-        warning("The advert may not have gone out: {reason}.", reason=code) + "</ha-alert>"
+        warning("No advert sent: {reason}.", reason=busy) + "</ha-alert>"
+    )
+    other = self_advert_event("failed", "a6", reason="disabled", name="Gateway")
+    await fire(hass, topics.advert_event, other)
+    code = "<code>disabled</code>"
+    assert render(hass, line).startswith(
+        warning("No advert sent: {reason}.", reason=code) + "</ha-alert>"
     )
     hostile = self_advert_event("sent", "a5", name="<b>Gate</b>&way")
     await fire(hass, topics.advert_event, hostile)
@@ -904,6 +919,28 @@ async def test_the_advert_line_says_what_became_of_the_last_advert_for_ten_minut
     assert "<b>Gate</b>" not in render(hass, line)
     await elapse(hass, freezer, 10 * 60 + 1)
     assert render(hass, line).startswith(help_)  # the line is gone after 10 minutes
+    assert problems(caplog) == []
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+async def test_with_the_advert_off_the_line_says_so_and_the_help_not_who_can_send_it(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    language: str,
+) -> None:
+    """With `radio_controls` or `controls` off a blue line says so in place of the outcome, and
+    the help leaves out that everyone here can send it; switched on again, it says so again."""
+    config = speaking(language, monkeypatch)
+    loaded, _ = await household_page(hass, hass_ws_client, config, tmp_path, ALICE_NODE)
+    line = card(cards(loaded, "contacts"), ADVERT)
+    topics = topics_of(config)
+    help_ = "<details><summary>" + said(config, "What the advert does") + "</summary>"
+    who = said(config, "Everyone who uses Home Assistant here can send it.")
     blue = (
         '<div><ha-alert alert-type="info">'
         + said(
@@ -913,11 +950,15 @@ async def test_the_advert_line_says_what_became_of_the_last_advert_for_ten_minut
         )
         + "</ha-alert></div>\n"
     )
+    sent = self_advert_event("sent", "a1", name="Gateway", airtime_s=1.164, next_at=time.time())
     for off in ("radio_controls", "controls"):
         document = config_document(time.time(), [], {"homeassistant": {off: False}})
         await fire(hass, topics.config, document)
         await fire(hass, topics.advert_event, sent)
         assert render(hass, line).startswith(blue + help_), off
+        assert who not in render(hass, line), off  # not under a line that says it is off
+        await fire(hass, topics.config, config_document(time.time(), [], {}))
+        assert who in render(hass, line), off
     assert problems(caplog) == []
 
 

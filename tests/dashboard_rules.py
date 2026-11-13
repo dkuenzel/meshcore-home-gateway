@@ -662,7 +662,7 @@ def rule_2(template: str, source: Any, loaded: Any, household: Household) -> lis
         "profile": list(PROFILE_STATES),
         "mon": [str(n) for n in range(1, 13)],
         "node": list(NODE_TYPES.values()),
-        "cause": list(SELF_ADVERT_REASONS),
+        "cause": [*SELF_ADVERT_REASONS, "table_full"],  # the radio's one refusal of an advert
     }
     found = []
     for card in cards(template):

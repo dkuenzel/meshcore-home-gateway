@@ -1974,14 +1974,14 @@ msgid "Add a contact"
 msgstr "Kontakt hinzufügen"
 
 #. the label of the list of nodes heard nearby; picking one adds it
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Add at once: pick a node heard nearby"
 msgstr "Sofort hinzufügen: Knoten in der Nähe wählen"
 
 #. the label of the field to paste a key or a contact link into
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Add by key or contact link"
@@ -2013,7 +2013,7 @@ msgctxt "dashboard"
 msgid "Adding or removing did not work; the reason in brackets says why."
 msgstr "Hinzufügen oder Entfernen hat nicht funktioniert; der Grund in Klammern sagt, warum."
 
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Advert button in Home Assistant"
@@ -2027,14 +2027,15 @@ msgid "Advert sent at {time} with the name {called}."
 msgstr "Advert um {time} mit dem Namen {called} gesendet."
 
 #. the label of the row that makes this home's radio send its advert
-#. once, which only the radios in direct range hear
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. once, which only the radios in direct range hear; at most 23 letters, or it is
+#. cut beside Send on a phone
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Advert to radios nearby"
 msgstr "Advert in der Nähe"
 
-#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#. security texts (docs/translations.md): the items on the key, on the position and on who can send it (shown only while Home Assistant's users can); key is the first 8 hex digits of this home's radio's key
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "After the radio got a new name, the advert shows it to the radios nearby that have this home as a contact."
@@ -2107,6 +2108,11 @@ msgctxt "dashboard"
 msgid "Another node's key starts the same, so an answer could not be told apart."
 msgstr "Der Schlüssel eines anderen Knotens beginnt genauso, daher ließe sich eine Antwort nicht zuordnen."
 
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Another press is being handled; its result follows in a moment."
+msgstr "Ein anderer Druck auf die Schaltfläche wird gerade bearbeitet; sein Ergebnis folgt gleich."
+
 #. since is a time, such as 10:31 or yesterday 10:31
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -2119,7 +2125,7 @@ msgctxt "dashboard"
 msgid "Apr"
 msgstr "Apr"
 
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #. volts is a battery's voltage, such as 3.9, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -2216,7 +2222,7 @@ msgctxt "dashboard"
 msgid "At its last message it was {hops} hops away, at a signal of {snr} dB."
 msgstr "Bei seiner letzten Nachricht: Hop-Anzahl {hops}, Signal {snr} dB."
 
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "At the bottom of a chat's page: type, tap Return (↵), then tap Send. Return only keeps the text at the gateway; Send sends it, once."
@@ -2233,7 +2239,7 @@ msgid "Automations send in their own way, which your administrator sets up; they
 msgstr "Automatisierungen senden auf ihre eigene Art, die die Admins einrichten; sie können auch auf die Antwort warten."
 
 #. the label of the radio's noise floor, what it hears when nobody sends
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Background noise"
@@ -2380,7 +2386,7 @@ msgctxt "dashboard"
 msgid "Contact"
 msgstr "Kontakt"
 
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Contact controls in Home Assistant"
@@ -2398,7 +2404,7 @@ msgctxt "dashboard"
 msgid "Contact controls in Home Assistant: on."
 msgstr "Steuerung der Kontakte in Home Assistant: an."
 
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Contact entity IDs start with"
@@ -2442,7 +2448,7 @@ msgctxt "dashboard"
 msgid "Contacts cannot be added or removed now. Tell your administrator this code:"
 msgstr "Kontakte lassen sich gerade nicht hinzufügen oder entfernen. Nenne den Admins diesen Code:"
 
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Contacts managed by the gateway"
@@ -2454,7 +2460,7 @@ msgctxt "dashboard"
 msgid "Contacts that may send commands to this home's automations."
 msgstr "Kontakte, die den Automatisierungen dieses Zuhauses Befehle senden dürfen."
 
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Contacts with a device"
@@ -2487,7 +2493,7 @@ msgctxt "dashboard"
 msgid "Duty cycle"
 msgstr "Duty-Cycle"
 
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Each has its own entities in Home Assistant."
@@ -2533,7 +2539,7 @@ msgctxt "dashboard"
 msgid "Events lost while the broker was away; no fault of the gateway."
 msgstr "Ereignisse, die verloren gingen, während der Broker weg war; kein Fehler des Gateways."
 
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Every button and switch"
@@ -2567,7 +2573,7 @@ msgctxt "dashboard"
 msgid "Everyone in this home who uses Home Assistant shares this field. What someone else leaves in it is what Send sends, and their text can replace yours while you type. Read the field before you tap Send."
 msgstr "Alle in diesem Zuhause, die Home Assistant nutzen, teilen sich dieses Feld. Was jemand anderes darin stehen lässt, wird mit Senden gesendet, und ein fremder Text kann deinen ersetzen, während du tippst. Lies das Feld, bevor du auf Senden tippst."
 
-#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#. security texts (docs/translations.md): the items on the key, on the position and on who can send it (shown only while Home Assistant's users can); key is the first 8 hex digits of this home's radio's key
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Everyone who uses Home Assistant here can send it."
@@ -2585,7 +2591,7 @@ msgstr "Alle, die Home Assistant nutzen, sehen diese Karte und ihren Verlauf."
 
 #. a line of a graph: how long the radio sent in the last hour, its
 #. adverts and acknowledgements included
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Everything the radio sent, last hour"
@@ -2735,7 +2741,7 @@ msgstr "Gateway offline."
 
 #. a line of a graph: how long the gateway's own messages took on air
 #. in the last hour
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Gateway's messages, last hour"
@@ -2766,14 +2772,14 @@ msgstr "Gehört"
 
 #. security text (docs/translations.md): what a tick proves and what it does not; a confirmation that came too soon may be forged
 #. Return (↵) is the keyboard's key: the same word as in the name beside a chat's Send button (Return, then Send); Add at once names the list above as its label begins
-#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#. security texts (docs/translations.md): the items on the key, on the position and on who can send it (shown only while Home Assistant's users can); key is the first 8 hex digits of this home's radio's key
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Help"
 msgstr "Hilfe"
 
 #. Return (↵) is the keyboard's key: the same word as in the name beside a chat's Send button (Return, then Send); Add at once names the list above as its label begins
-#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#. security texts (docs/translations.md): the items on the key, on the position and on who can send it (shown only while Home Assistant's users can); key is the first 8 hex digits of this home's radio's key
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Help explains each word."
@@ -2802,7 +2808,7 @@ msgstr "Die Hilfe sagt, was jeder Grund in Klammern bedeutet und was zu tun ist.
 
 #. the label of the row that brings back the contacts hidden by
 #. deleting their device in Home Assistant
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Hidden contacts"
@@ -2913,7 +2919,7 @@ msgctxt "dashboard"
 msgid "In the MeshCore app: Contacts, Add, Scan QR code."
 msgstr "In der MeshCore-App: Kontakte, Hinzufügen, QR-Code scannen."
 
-#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#. security texts (docs/translations.md): the items on the key, on the position and on who can send it (shown only while Home Assistant's users can); key is the first 8 hex digits of this home's radio's key
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
@@ -2922,7 +2928,7 @@ msgstr "In der App beginnt der Schlüssel des Funkgeräts dieses Zuhauses mit {k
 
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers
 #. the privacy settings; messages, positions and readings are whole numbers of days
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -2970,11 +2976,11 @@ msgctxt "dashboard"
 msgid "It needs no internet: radios reach each other directly or through repeaters."
 msgstr "Es braucht kein Internet: Funkgeräte erreichen sich direkt oder über Repeater."
 
-#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#. security texts (docs/translations.md): the items on the key, on the position and on who can send it (shown only while Home Assistant's users can); key is the first 8 hex digits of this home's radio's key
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "It never carries a position. It goes out at most once every 10 minutes, and its airtime counts against this home's hourly budget."
-msgstr "Es enthält nie eine Position. Es geht höchstens alle 10 Minuten einmal hinaus, und seine Sendezeit zählt zum stündlichen Budget dieses Zuhauses."
+msgstr "Es enthält nie eine Position. Es wird höchstens einmal alle 10 Minuten gesendet, und seine Sendezeit zählt zum stündlichen Budget dieses Zuhauses."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -3041,7 +3047,7 @@ msgctxt "dashboard"
 msgid "Kinds of messages"
 msgstr "Arten von Nachrichten"
 
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Language of names"
@@ -3220,7 +3226,7 @@ msgctxt "dashboard"
 msgid "New: a message arrived less than 15 minutes ago."
 msgstr "Neu: Eine Nachricht kam vor weniger als 15 Minuten an."
 
-#. reason says why, such as only one advert every 10 minutes; next is a clock time such as 10:41
+#. reason says why, such as the radio did not answer
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
@@ -3391,49 +3397,49 @@ msgctxt "dashboard"
 msgid "Older messages are no longer kept for Home Assistant."
 msgstr "Ältere Nachrichten werden für Home Assistant nicht mehr aufbewahrt."
 
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "On Contacts, a switch per person: on, the gateway asks that person's device now and then for its position and battery. Only for people who agreed."
 msgstr "Unter Kontakte ein Schalter pro Person: Ist er an, fragt das Gateway das Gerät dieser Person ab und zu nach Position und Batterie. Nur für Personen, die zugestimmt haben."
 
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "On Contacts, under Let someone add this home: the radio tells the radios in direct range its name and key, once."
-msgstr "Unter Kontakte, bei Dieses Zuhause teilen: Das Funkgerät teilt den Funkgeräten in direkter Reichweite einmal seinen Namen und Schlüssel mit."
+msgstr "Unter Kontakte, bei „Dieses Zuhause teilen“: Das Funkgerät teilt den Funkgeräten in direkter Reichweite einmal seinen Namen und Schlüssel mit."
 
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "On Contacts: adds the node you pick to the radio at once."
 msgstr "Unter Kontakte: fügt den gewählten Knoten sofort zum Funkgerät hinzu."
 
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "On Contacts: brings back every contact whose device was deleted in Home Assistant."
 msgstr "Unter Kontakte: holt jeden Kontakt zurück, dessen Gerät in Home Assistant gelöscht wurde."
 
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "On Contacts: paste a key or a contact link from the MeshCore app, then tap Return (↵)."
 msgstr "Unter Kontakte: Füge einen Schlüssel oder Kontaktlink aus der MeshCore-App ein und tippe dann auf Eingabe (↵)."
 
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "On Contacts: takes a contact off the radio. It asks first."
 msgstr "Unter Kontakte: nimmt einen Kontakt vom Funkgerät. Vorher kommt eine Rückfrage."
 
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "On Gateway: tap one for its history."
 msgstr "Unter Gateway: Tippe auf einen davon, um seinen Verlauf zu sehen."
 
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "On Gateway: the radio's airtime over the last 24 hours."
@@ -3469,13 +3475,13 @@ msgctxt "dashboard"
 msgid "On: direct messages end in a short code such as #1a2b3c4d; it makes a faked confirmation harder. The chat hides it."
 msgstr "An: Direktnachrichten enden mit einem kurzen Code wie #1a2b3c4d; er erschwert eine gefälschte Bestätigung. Der Chat blendet ihn aus."
 
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "On: everyone who uses Home Assistant here can make the radio send its advert to the radios nearby (Contacts)."
 msgstr "An: Alle, die hier Home Assistant nutzen, können das Funkgerät sein Advert an die Funkgeräte in der Nähe senden lassen (Kontakte)."
 
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "On: the gateway adds and removes contacts on request."
@@ -3526,6 +3532,13 @@ msgstr "Nur Automatisierungen schreiben hier: Der Chat hat auf diesem Dashboard 
 msgctxt "dashboard"
 msgid "Only automations write to {name} from this home."
 msgstr "Aus diesem Zuhause schreiben nur Automatisierungen an {name}."
+
+#. last and next are clock times such as 10:31 and 10:41
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "Only one advert every 10 minutes: the last one was at {last}."
+msgstr "Nur ein Advert alle 10 Minuten: Das letzte war um {last}."
 
 #. security text (docs/translations.md): a command needs the sender's current code; a sender without a code secret is refused while the gateway ignores a secret of a key that is no sender; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -3643,7 +3656,7 @@ msgid "Radio and airtime"
 msgstr "Funkgerät und Sendezeit"
 
 #. the label of the battery of this home's radio
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Radio battery"
@@ -3736,7 +3749,7 @@ msgstr "Rot: jetzt handeln; nichts kommt durch, oder jemand anderes steuert das 
 
 #. the label of the button that takes a contact off the radio
 #. the button of the question that removes the contact
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Remove"
@@ -3765,7 +3778,7 @@ msgctxt "dashboard"
 msgid "Remove: the contact leaves the radio; to talk again, add it again."
 msgstr "Entfernen: Der Kontakt wird vom Funkgerät genommen; um wieder zu schreiben, füge ihn erneut hinzu."
 
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #. the name beside a chat's send button: the keyboard's key in the words
 #. the phones of your language show, then the button's label exactly as translated
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -3780,7 +3793,7 @@ msgid "Same text again"
 msgstr "Gleicher Text erneut"
 
 #. the label of the button that sends the advert, as a chat's Send
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #. the label on a chat's send button; keep it one short word
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -3839,7 +3852,7 @@ msgstr "Von den Admins festgelegt."
 
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers
 #. the privacy settings; messages, positions and readings are whole numbers of days
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -3852,7 +3865,7 @@ msgid "Settings"
 msgstr "Einstellungen"
 
 #. the label of the button that brings back the hidden contacts
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Show again"
@@ -3894,7 +3907,7 @@ msgctxt "dashboard"
 msgid "Someone missing: see Where everyone is."
 msgstr "Fehlt jemand? Siehe „Wo alle sind“."
 
-#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#. security texts (docs/translations.md): the items on the key, on the position and on who can send it (shown only while Home Assistant's users can); key is the first 8 hex digits of this home's radio's key
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Someone nearby can then add this home in the MeshCore app without the QR code: the app lists it among the nodes it heard."
@@ -4028,7 +4041,7 @@ msgctxt "dashboard"
 msgid "The advert carries the radio's time: one ahead would make radios nearby ignore this radio's later adverts, so the gateway checks it first. The gateway sets the clock back; if this stays, tell your administrator."
 msgstr "Das Advert trägt die Uhrzeit des Funkgeräts: Geht sie vor, ignorieren Funkgeräte in der Nähe seine späteren Adverts, darum prüft das Gateway sie vorher. Das Gateway stellt die Uhr zurück; bleibt es so, sag den Admins Bescheid."
 
-#. reason says why, such as only one advert every 10 minutes; next is a clock time such as 10:41
+#. reason says why, such as the radio did not answer
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
@@ -4334,7 +4347,7 @@ msgctxt "dashboard"
 msgid "The household's map does not need it: the gateway asks for positions privately (Ask for position and battery)."
 msgstr "Die Karte des Haushalts braucht das nicht: Das Gateway fragt Positionen privat ab („Position und Batterie abfragen“)."
 
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The language of the entities' names and of this dashboard."
@@ -4351,7 +4364,7 @@ msgctxt "dashboard"
 msgid "The law allows a radio only a share of each hour; messages wait when it is used up."
 msgstr "Das Gesetz erlaubt einem Funkgerät nur einen Teil jeder Stunde; Nachrichten warten, wenn er aufgebraucht ist."
 
-#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#. security texts (docs/translations.md): the items on the key, on the position and on who can send it (shown only while Home Assistant's users can); key is the first 8 hex digits of this home's radio's key
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The line above says what happened in the last 10 minutes."
@@ -4363,7 +4376,7 @@ msgctxt "dashboard"
 msgid "The line above says what happened, also why a request did not work."
 msgstr "Die Zeile oben sagt, was passiert ist, auch warum eine Anfrage nicht funktioniert hat."
 
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The links, and the badges Gateway, Settings and Help, open a page of this dashboard; the back arrow returns to where you came from."
@@ -4412,7 +4425,7 @@ msgctxt "dashboard"
 msgid "The newest event of each kind, in full. Home Assistant keeps only the newest of each here."
 msgstr "Das neueste Ereignis jeder Art, vollständig. Home Assistant behält hier nur das neueste jeder Art."
 
-#. reason says why, such as only one advert every 10 minutes; next is a clock time such as 10:41
+#. last and next are clock times such as 10:31 and 10:41
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
@@ -4451,6 +4464,11 @@ msgstr "Das Funkgerät hat die Einstellung nicht übernommen; sag den Admins Bes
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "The radio had no room for it just then. Try again in a minute."
+msgstr "Das Funkgerät hatte gerade keinen Platz dafür. Versuche es in einer Minute erneut."
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "The radio has the setting this home needs."
 msgstr "Das Funkgerät hat die Einstellung, die dieses Zuhause braucht."
 
@@ -4486,7 +4504,7 @@ msgctxt "dashboard"
 msgid "The radio sends at most one advert every 10 minutes; the line below the button says from when the next one goes."
 msgstr "Das Funkgerät sendet höchstens alle 10 Minuten ein Advert; die Zeile unter der Schaltfläche sagt, ab wann das nächste geht."
 
-#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#. security texts (docs/translations.md): the items on the key, on the position and on who can send it (shown only while Home Assistant's users can); key is the first 8 hex digits of this home's radio's key
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The radio tells the radios in direct range its name and key, once. Repeaters do not pass it on."
@@ -4578,7 +4596,7 @@ msgctxt "dashboard"
 msgid "The second line also counts the radio's adverts, acknowledgements and repeats."
 msgstr "Die zweite Linie zählt auch Adverts, Bestätigungen und Wiederholungen des Funkgeräts mit."
 
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The start of every contact's entity IDs."
@@ -4590,7 +4608,7 @@ msgctxt "dashboard"
 msgid "The switch is off for this person."
 msgstr "Der Schalter ist für diese Person aus."
 
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The switches and buttons on Contacts."
@@ -4822,7 +4840,7 @@ msgstr "Was ausgeblendete Kontakte sind"
 
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers
 #. the privacy settings; messages, positions and readings are whole numbers of days
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -4839,7 +4857,7 @@ msgctxt "dashboard"
 msgid "What removing does"
 msgstr "Was Entfernen bewirkt"
 
-#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#. security texts (docs/translations.md): the items on the key, on the position and on who can send it (shown only while Home Assistant's users can); key is the first 8 hex digits of this home's radio's key
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "What the advert does"
@@ -5184,7 +5202,7 @@ msgctxt "dashboard"
 msgid "Write to {name}"
 msgstr "An {name} schreiben"
 
-#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Write to …"
@@ -5857,7 +5875,7 @@ msgstr "vom Funkgerät nicht übernommen"
 #. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers
 #. the privacy settings; messages, positions and readings are whole numbers of days
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -5876,7 +5894,7 @@ msgctxt "dashboard"
 msgid "off: chats show only messages since the gateway started"
 msgstr "aus: Chats zeigen nur Nachrichten seit dem Start des Gateways"
 
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "off: your administrator manages contacts outside Home Assistant"
@@ -5885,7 +5903,7 @@ msgstr "aus: Die Admins verwalten Kontakte außerhalb von Home Assistant"
 #. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers
 #. the privacy settings; messages, positions and readings are whole numbers of days
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #. whether the gateway asks this person's device for its position and battery
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -6170,6 +6188,11 @@ msgstr "Funkgerät hat in der letzten Stunde viel gesendet"
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "the radio was busy"
+msgstr "das Funkgerät war ausgelastet"
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "the radio would send its position"
 msgstr "das Funkgerät würde seine Position mitsenden"
 
@@ -6243,7 +6266,7 @@ msgctxt "dashboard"
 msgid "unsupported node type"
 msgstr "Knotentyp nicht unterstützt"
 
-#. the settings of the contacts in Home Assistant; devices is a whole number
+#. the settings of the contacts in Home Assistant; Advert button in Home Assistant names the setting radio_controls, whether everyone who uses Home Assistant can make the radio send its advert; devices is a whole number
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
