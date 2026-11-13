@@ -2026,7 +2026,7 @@ msgstr "Advert um {time} mit dem Namen {called} gesendet."
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Advert to radios nearby"
-msgstr "Advert an Funkgeräte in der Nähe"
+msgstr "Advert in der Nähe"
 
 #. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
 #: src/meshcore_home_gateway/dashboard.yaml

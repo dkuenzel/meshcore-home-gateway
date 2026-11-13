@@ -47,6 +47,9 @@ TAB_LETTERS = 22  # the three titles together, or the tab bar scrolls at 360 px
 # the name of the tile beside a chat's Send button: 122 px at 360 px, which 17 letters of
 # "Return, then Send" fill to 111 px; a longer name is cut (docs/testing.md, the browser check)
 SEND_NAME_LETTERS = 17
+# the label of the advert nearby's row on Contacts: at 360 px it has room beside its button for
+# the English label, 23 letters; German's "Advert an Funkgeräte in der Nähe" was cut
+ADVERT_ROW = "Advert to radios nearby"
 # rule 2: the mapping macros, each over a closed list; the gateway's list where one exists
 MAPPINGS = (
     "said",

@@ -2381,6 +2381,15 @@ def test_the_name_beside_send_fits_a_phone_in_every_shipped_language() -> None:
     assert len(rules.said(i18n.ENGLISH, rules.KEY_NAME)) == rules.SEND_NAME_LETTERS
 
 
+def test_the_advert_rows_label_fits_a_phone_in_every_shipped_language() -> None:
+    """A shipped catalog's label of the row has no more letters than the English one: German's
+    "Advert an Funkgeräte in der Nähe" was cut beside "Senden" in the browser check."""
+    for language in i18n.LANGUAGES:
+        label = rules.said(i18n.translator(language), rules.ADVERT_ROW)
+        assert len(label) <= len(rules.ADVERT_ROW), (language, label)
+    assert len(rules.ADVERT_ROW) == 23
+
+
 @pytest.mark.real_catalogs
 def test_an_over_long_tab_title_is_caught() -> None:
     long = translated({"Overview": "Übersicht", "Chats": "Unterhaltungen", "Contacts": "Kontakte"})
