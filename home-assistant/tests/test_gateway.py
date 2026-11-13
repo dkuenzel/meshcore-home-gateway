@@ -53,7 +53,9 @@ from test_dashboard import (
     render,
     shown_by_content,
     shows_nothing,
+    speaking,
 )
+from test_dashboard import said as text_in
 
 HEALTH = "set ns = namespace(waiting=0, look=[])"
 FACTS = "set transport = cfg.get('transport')"
@@ -386,6 +388,63 @@ async def test_latest_of_each_kind_shows_a_refused_command_with_its_reason_in_wo
     for forged in (["x", 1], "x", {"at": iso(time.time())}):  # no refusal, and no error
         hass.states.async_set(sensor, "unknown", {"commands": forged})
         assert row(render(hass, latest), "Command").startswith("Bob: arm · "), forged
+    assert problems(caplog) == []
+
+
+# names that show nothing (core.contacts.shows_a_name): a zero-width space, a Hangul filler
+SHOWS_NOTHING = ["\u200b", "\u3164"]
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+@pytest.mark.parametrize("name", [*SHOWS_NOTHING, "Carol"])
+async def test_latest_of_each_kind_names_the_key_when_a_name_shows_nothing(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    freezer: FrozenDateTimeFactory,
+    language: str,
+    name: str,
+) -> None:
+    """A name of only invisible characters, such as a zero-width space or a Hangul filler,
+    shows nothing: each row that names a node names it by its key then, as it does a node
+    without a name (a contact's and a telemetry event's prefix, a new node's and a command
+    sender's first 8 digits), never by an empty bold name (heard_nodes "full" sends the name
+    of a new node since 2.2); a name that shows stays."""
+    config = speaking(language, monkeypatch)
+    loaded = await made(hass, hass_ws_client, config, tmp_path)
+    topics = await gateway(hass, config)
+    latest = card(cards(loaded, "gateway"), LATEST)
+    shown = None if name in SHOWS_NOTHING else name
+    added = contact_event("added", ZED, name=name, node_type=COMPANION)
+    await fire(hass, topics.contact_event, added)
+    unanswered = {"event_type": "unanswered", "key": ZED, "prefix": ZED[:12], "name": name}
+    await fire(hass, topics.telemetry_event, unanswered | {"state": "away"})
+    node = {"event_type": "new", "key": ZED, "prefix": ZED[:12], "name": name, "type": "chat"}
+    await fire(hass, topics.node_event, node)
+    refusal = Refusal(time.time(), "code_invalid", ZED[:12], ZED, name)
+    await fire(hass, topics.refused_commands, refused_document([refusal]))
+    said = render(hass, latest)
+    first = f"<b>{shown or ZED[:12]}</b> "
+    assert row(said, text_in(config, "Contact")).startswith(first), said
+    assert row(said, text_in(config, "Position and battery")).startswith(first), said
+    assert row(said, text_in(config, "New node")).startswith(f"<b>{shown or ZED[:8]}</b> "), said
+    refused = text_in(
+        config,
+        "{sender}: command refused: {reason}",
+        sender=shown or ZED[:8],
+        reason=text_in(config, "wrong code"),
+    )
+    assert row(said, text_in(config, "Command")).startswith(f"{refused} · "), said
+    freezer.tick(timedelta(seconds=1))
+    command = {"event_type": "arm", "args": "now", "sender_key": ZED, "sender_name": name}
+    at = iso(time.time())
+    await fire(hass, topics.command, command | {"sent_at": at, "received_at": at})
+    accepted = text_in(config, "{sender}: {word}", sender=shown or ZED[:8], word="arm")
+    assert row(render(hass, latest), text_in(config, "Command")).startswith(f"{accepted} · ")
     assert problems(caplog) == []
 
 

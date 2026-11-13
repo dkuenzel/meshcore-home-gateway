@@ -783,16 +783,18 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   firmware and radio settings, how the gateway reaches it, its background noise and battery and
   a day of airtime; *Radio settings*, what the managed profile wants and what the radio has,
   with who may ask the radio for its battery, position and readings as the radio acts on it;
-  *Latest of each kind*, the newest contact, telemetry, setting, node and command event; a
-  command the gateway refused after the newest accepted one shows in its place, with its sender
-  and the reason in words, such as *too many wrong codes* for `code_locked`, until the gateway
-  accepts a command after it. It comes from *Refused commands*, which leaves out the command's
-  word; a message that is no command no longer hides it, as it did in 2.1, which read the
-  refusal from the newest message (#141). The gateway gives both times in whole seconds: of a
-  refusal and an accepted command within one second, the row shows the one Home Assistant got
-  later, except after a restart of Home Assistant, which sets the refusal's time of arrival anew:
-  then the refusal shows until a command is accepted again. The gateway's log warns of a sender
-  refused for too many wrong codes. While
+  *Latest of each kind*, the newest contact, telemetry, setting, node and command event, each
+  node by its name, or by the first digits of its key where the name shows nothing, as for a
+  device ([Contacts](#contacts)); a command the gateway refused after the newest accepted one
+  shows in its place, with its sender and the reason in words, such as *too many wrong codes*
+  for `code_locked`, until the gateway accepts a command after it. It comes from
+  *Refused commands*, which leaves out the command's word; a message that is no command no
+  longer hides it, as it did in 2.1, which read the refusal from the newest message (#141). The
+  gateway gives both times in whole seconds: of a refusal and an accepted command within one
+  second, the row shows the one Home Assistant got later, except after a restart of Home
+  Assistant, which sets the refusal's time of arrival anew: then the refusal shows until a
+  command is accepted again. The gateway's log warns of a sender refused for too many wrong
+  codes. While
   the gateway is offline, these cards say so instead of values: Home Assistant keeps no
   attributes of an unavailable entity, so they would read as never reported.
 * *Settings*: what your administrator set, read only, from the gateway's *Configuration*:

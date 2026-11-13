@@ -2259,6 +2259,28 @@ BROKEN = [
         ],
         "the number {slow} not set through num()",
     ),
+    # rule 23: name_or() takes a Hangul filler for a name; a row of Latest of each kind names a
+    # new node by a name that may show nothing
+    (
+        ["@@", "\\u3000\\u3164", "\\u3000"],
+        "rule 23: name_or() takes also [] for no name and not ['U+3164']",
+    ),
+    (
+        [
+            "@@",
+            "name_or(state_attr(n, 'name'), (state_attr(n, 'key') or '')[:8])",
+            "m(state_attr(n, 'name') or (state_attr(n, 'key') or '')[:8] or '?')",
+        ],
+        "rule 23: a card reads a name without name_or(): state_attr(n, 'name')",
+    ),
+    (
+        [
+            "@@",
+            "name_or(q.get('sender_name'),",
+            "m(q.get('sender_name') or",
+        ],
+        "rule 23: a card reads a name without name_or(): q.get('sender_name')",
+    ),
 ]
 
 
@@ -2360,6 +2382,20 @@ def test_m_removes_the_controls_and_the_gateways_invisible_characters() -> None:
     macro = MACRO.replace("| string |", f"| string | regex_replace('[{written}]', '') |")
     template = into_help(*card(macro, "<div>{{ m(states('sensor.x')) }}</div>"))
     assert not [f for f in rules.findings(template) if f.startswith("rule 19: m() removes also")]
+
+
+def test_name_or_takes_for_no_name_what_shows_no_name_to_the_gateway() -> None:
+    """Rule 23: the class of name_or() is the characters that alone show no name to the gateway
+    (core.contacts.shows_a_name): spaces, controls, format and invisible characters, the Hangul
+    fillers and the braille blank, the joiners too, which m() keeps for the emoji they join; a
+    letter, a combining mark, a private-use character or an emoji shows a name. The code points
+    this Python's Unicode does not assign yet are left out."""
+    blank = rules.shows_no_name()
+    assert {0x00, 0x20, 0xA0, 0xAD, 0x200B, 0x200D, 0x2028, 0x3000, 0x3164, 0x2800} <= blank
+    assert {0xFEFF, 0xFFA0, 0x115F, 0x1160, 0xE0001, 0x1D173} <= blank
+    assert {ord("a"), 0x1F600, 0x0301, 0xE000} & blank == set()
+    written = "\\u0000-\\u0020\\u3164\\U000e0000-\\U000e0fff"
+    assert rules.removed_by(written) == {*range(0x21), 0x3164, *range(0xE0000, 0xE1000)}
 
 
 def test_the_tab_titles_fit_a_phone_in_every_shipped_language() -> None:

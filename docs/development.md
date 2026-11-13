@@ -267,6 +267,14 @@ its rule; the shipped template breaks none of them.
     language decides when the dashboard is made. `num()` goes through a float: a fraction below
     0.0001 comes out in Python's exponent form (`1e-05`), and a whole number above 2^53 loses
     its last digits (no value the dashboard prints comes near it).
+23. `name_or(x, key=none)` prints a name from the mesh through `m()`, or `key` (else `?`) where
+    the name shows nothing: where it has no character outside the class of those that alone show
+    no name to the gateway (`core.contacts.shows_a_name`: spaces, controls, format and invisible
+    characters, the joiners, the Hangul fillers, the braille blank), so it agrees with the
+    device names. A card that defines it reads a name (`name`, `sender_name`) only through it:
+    *Latest of each kind* names a node by its key then, never by an empty bold name. The rule
+    compares the code points this Python's Unicode assigns; one that a later Unicode makes a
+    format character joins the class when CI's newest Python knows it.
 
 A translation of a dashboard text is used only when `dashboard.unsafe()` finds nothing in it (no
 Jinja, HTML, Markdown link or address, no line break); the catalog check applies the same test.

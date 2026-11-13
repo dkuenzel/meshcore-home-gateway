@@ -12,16 +12,19 @@ of chat, control and tracker, and reads it; every finding starts with the number
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 import string
+import sys
+import unicodedata
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from meshcore_home_gateway import dashboard, i18n
-from meshcore_home_gateway.core import telemetry
+from meshcore_home_gateway.core import contacts, telemetry
 from meshcore_home_gateway.core.mesh import NODE_TYPES
 from meshcore_home_gateway.core.model import DeliveryState
 from meshcore_home_gateway.mqtt.discovery import DOCUMENTATION_URL, PROFILE_STATES
@@ -275,6 +278,10 @@ KEY_NAME = "Return, then Send"
 # list); never U+200C and U+200D
 INVISIBLE = frozenset(_INVISIBLE)
 REMOVED = frozenset([*range(0x09), 0x0B, 0x0C, *range(0x0E, 0x20), *range(0x7F, 0xA0)]) | INVISIBLE
+# rule 23: what prints a name from the mesh, or the key where the name shows nothing, and the
+# names a card reads from Home Assistant: an event's `name`, a command's `sender_name`
+NAME_OR = "{%- macro name_or("
+NAME_READ = re.compile(r"(?<!name_or\()(?:state_attr\(\w+, |\b\w+\.get\()'(?:sender_)?name'\)")
 # rule 17: Home Assistant's menus, which only a line for the administrator names
 MENUS = ("›", "Devices & services", "Developer tools")
 ADMINISTRATOR = "For your administrator:"
@@ -1295,9 +1302,10 @@ def rule_19(template: str, source: Any, loaded: Any, household: Household) -> li
 
 
 def removed_by(written: str) -> set[int]:
-    """The code points of a character class written with \\u escapes and ranges."""
-    points = [int(m, 16) for m in re.findall(r"\\u([0-9a-fA-F]{4})", written)]
-    shape = re.sub(r"\\u[0-9a-fA-F]{4}", "u", written)
+    """The code points of a character class written with \\u and \\U escapes and ranges."""
+    escape = r"\\u([0-9a-fA-F]{4})|\\U([0-9a-fA-F]{8})"
+    points = [int(short or long, 16) for short, long in re.findall(escape, written)]
+    shape = re.sub(escape, "u", written)
     if set(shape) - {"u", "-"}:
         raise ValueError(f"not a class of \\u escapes: {written!r}")
     found: set[int] = set()
@@ -1354,6 +1362,56 @@ def rule_21(template: str, source: Any, loaded: Any, household: Household) -> li
     ]
 
 
+def rule_23(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
+    """name_or() takes a name for none when it shows nothing to the gateway: its class is the
+    characters that alone show no name (core.contacts.shows_a_name); a card that defines it
+    reads a name only through it."""
+    found = []
+    for card in cards(template):
+        defined = [line for line in card.lines if line.startswith(NAME_OR)]
+        if not defined:
+            continue
+        found += [
+            f"rule 23: a card reads a name without name_or(): {read}"
+            for line in card.lines
+            for read in NAME_READ.findall(line)
+        ]
+        for line in defined:
+            match = re.search(r"is search\('\[\^(.*?)\]'\)", line)
+            if match is None:
+                found.append("rule 23: name_or() tests no class")
+                continue
+            written = {c for c in removed_by(match.group(1)) if _assigned(c)}
+            blank = shows_no_name()
+            if written != blank:
+                more = sorted(f"U+{c:04X}" for c in written - blank)[:8]
+                less = sorted(f"U+{c:04X}" for c in blank - written)[:8]
+                found.append(f"rule 23: name_or() takes also {more} for no name and not {less}")
+    return found
+
+
+def _assigned(point: int) -> bool:
+    """A code point that this Python's Unicode assigns, or that the gateway drops from a name as
+    invisible all the same (core.contacts.INVISIBLE holds code points kept for more of them);
+    never a surrogate. Another Python may know more format characters: rule 23 leaves out what
+    this one does not know."""
+    if 0xD800 <= point <= 0xDFFF:
+        return False
+    return unicodedata.category(chr(point)) != "Cn" or chr(point) in contacts.INVISIBLE
+
+
+@functools.cache
+def shows_no_name() -> frozenset[int]:
+    """Rule 23: the code points that alone show no name to the gateway (core.contacts.
+    shows_a_name), of those _assigned(). A name shows nothing when it has only these: name_key
+    drops or blanks each of them on its own."""
+    return frozenset(
+        point
+        for point in range(sys.maxunicode + 1)
+        if _assigned(point) and not contacts.shows_a_name(chr(point))
+    )
+
+
 def tab_letters(template: str, translator: i18n.Translator) -> int:
     """Rule 14: the letters of the three tabs' titles in a language."""
     source = load(template)
@@ -1385,6 +1443,7 @@ RULES: list[Rule] = [
     rule_20,
     rule_21,
     rule_22,
+    rule_23,
 ]
 
 
