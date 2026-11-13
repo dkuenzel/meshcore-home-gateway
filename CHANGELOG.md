@@ -29,8 +29,16 @@ format, the command line and Home Assistant discovery are public interfaces
   cannot pay it (`airtime_budget`) and while the radio's clock is more than 60 s ahead of the
   host's (`clock_ahead`). A copy of a request with the same `id` within 10 minutes gets no
   event.
-- `[homeassistant] radio_controls` (default `true`), also in the `config` document: the setting
-  of Home Assistant's button *Send advert nearby*; MQTT and the command line do not ask it.
+- Home Assistant: the button *Send advert nearby*
+  (`button.meshcore_home_gateway_<node>_send_advert`), which publishes `send` on `advert/send`
+  at QoS 0, and the event entity *Advert nearby* (`event.meshcore_home_gateway_<node>_advert`,
+  `sent`, `refused`, `failed`, every key of the event as an attribute) on the gateway's device.
+  The button is unavailable while the gateway is offline or its radio not connected. Anyone who
+  can use the Home Assistant instance can press it; with a broker ACL, Home Assistant's user needs
+  `topic write <base_topic>/<node_id>/advert/send` for it.
+- `[homeassistant] radio_controls` (default `true`), also in the `config` document: with `false`
+  Home Assistant shows *Send advert nearby* unavailable (announced, not removed), as
+  `controls = false` does too; `advert/send` on MQTT and the command line keep working.
 
 ## [2.1.1] - 2026-11-13
 

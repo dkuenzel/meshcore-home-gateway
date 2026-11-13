@@ -6611,6 +6611,14 @@ msgctxt "home assistant"
 msgid "Write"
 msgstr "Schreiben"
 
+#. event entity of the gateway: what became of a request to make its
+#. radio send its advert once to the radios in direct range (sent, refused, failed);
+#. an advert is the packet a node announces itself with, its name and key
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Advert nearby"
+msgstr "Advert in der Nähe"
+
 #. sensor (duration) of the gateway: the transmit time left in its
 #. hourly budget
 #: src/meshcore_home_gateway/mqtt/discovery.py
@@ -6824,6 +6832,14 @@ msgstr "Empfangsfehler"
 msgctxt "home assistant"
 msgid "Removed"
 msgstr "Entfernt"
+
+#. button of the gateway: makes its radio send its advert once, which
+#. only the radios in direct range hear (no repeater passes it on): its name and key,
+#. never a position
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Send advert nearby"
+msgstr "Advert in der Nähe senden"
 
 #. notify entity of the gateway: sends a message to a target of the
 #. configuration; {alias} is the target's name there, as the user wrote it

@@ -1683,6 +1683,16 @@
     }
    },
    "gateway": {
+    "advert": {
+     "attributes": "<document advert>",
+     "entity_id": "event.<device>_advert",
+     "event_types": [
+      "failed",
+      "refused",
+      "sent"
+     ],
+     "platform": "event"
+    },
     "advert_position": {
      "attributes": [
       "contacts",
@@ -1933,6 +1943,10 @@
     "send_<alias>": {
      "entity_id": "notify.<device>_send_<alias>",
      "platform": "notify"
+    },
+    "send_advert": {
+     "entity_id": "button.<device>_send_advert",
+     "platform": "button"
     },
     "setting": {
      "attributes": "<document setting>",

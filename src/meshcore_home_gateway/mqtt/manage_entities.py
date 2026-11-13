@@ -31,8 +31,8 @@ from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core.budget import RateLimit
 from meshcore_home_gateway.core.contacts import LABEL_TYPES, HeardNodes, node_label
 from meshcore_home_gateway.core.mesh import Mesh, Node
-from meshcore_home_gateway.mqtt.contact_devices import RADIO_CONNECTED
 from meshcore_home_gateway.mqtt.discovery import (
+    RADIO_CONNECTED,
     controls_off,
     device_id,
     device_name,

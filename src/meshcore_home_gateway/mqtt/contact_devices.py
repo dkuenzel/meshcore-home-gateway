@@ -48,6 +48,7 @@ from meshcore_home_gateway.core.mesh import Mesh, Tracked, type_name
 from meshcore_home_gateway.core.telemetry import STATES
 from meshcore_home_gateway.i18n import N_ha
 from meshcore_home_gateway.mqtt.discovery import (
+    RADIO_CONNECTED,
     controls_off,
     device_id,
     draft_options,
@@ -101,11 +102,8 @@ _LETTERS = str.maketrans(
 )
 _OBJECT = re.compile(r"contact_([0-9a-f]{64})")
 POSITION_KNOWN = "value_json.latitude is number and value_json.longitude is number"
-# `is defined`, `is true`: a document retained by an earlier version, without the key, reads as
-# offline and logs no warning in Home Assistant (docs/platform-notes.md)
-RADIO_CONNECTED = (
-    "{{ 'online' if value_json is defined and value_json.radio == 'connected' else 'offline' }}"
-)
+# `is true`: a document retained by an earlier version, without the key, reads as offline and logs
+# no warning in Home Assistant (docs/platform-notes.md)
 REMOVABLE = (
     "{{ 'online' if value_json is defined and value_json.removable is true else 'offline' }}"
 )

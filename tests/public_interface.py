@@ -822,6 +822,11 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
                 _emitted(published, "telemetry", "event_type"),
                 gateway["telemetry"]["event_types"],
             ),
+            (
+                "advert:event_type",
+                _emitted(published, "advert", "event_type"),
+                gateway["advert"]["event_types"],
+            ),
             ("settings:status", _statuses(), gateway["profile"]["options"]),
         )
     }
@@ -838,7 +843,7 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
     _within(reasons, _emitted(published, "state", "telemetry_reason"), PAUSE_REASONS)
     _within(event_states, {*EVENT_STATES}, STATES)  # an event carries a contact's state
     _within(event_states, _emitted(published, "telemetry", "state"), EVENT_STATES)
-    adverts, advert_reasons = "advert:event_type", "advert:reason"
+    advert_reasons = "advert:reason"
     radio_refusals = [*(code.name.lower() for code in ErrorCode), "disabled"]  # codec.Err.name
     _within(
         advert_reasons,
@@ -872,9 +877,6 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
         statuses: _options(statuses, gateway["telemetry_status"]["options"], STATUSES),
         reasons: list(PAUSE_REASONS),
         event_states: list(EVENT_STATES),
-        adverts: _declared(
-            adverts, _emitted(published, "advert", "event_type"), [*views.SELF_ADVERT_EVENTS]
-        ),
         advert_reasons: list(views.SELF_ADVERT_REASONS),
     }
 

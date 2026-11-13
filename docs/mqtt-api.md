@@ -29,7 +29,7 @@ and no closed lists of values: this page stays normative.
 | `add_contact` | → gateway | must not be | a public key, contact link or contact card, or JSON `{"contact": "…", "id": "…"}`: add a contact to the radio |
 | `contacts/<key>/telemetry` | → gateway | must not be | `on` or `off`, or JSON `{"telemetry": "off", "id": "…", "forget": true}`: ask a companion for its telemetry, or exclude it ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)) |
 | `contacts/<key>/received` | gateway → | no | the `received` events of messages from that contact |
-| `advert/send` | → gateway | must not be | any payload, or JSON `{"id": "…"}`: make the radio send its advert once to the radios in direct range, zero hop ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)) |
+| `advert/send` | → gateway | must not be | any payload, or JSON `{"id": "…"}`: make the radio send its advert once to the radios in direct range, zero hop ([advert nearby](#advert-nearby-advertsend-and-advert)) |
 | `nodes` | gateway → | yes | JSON: nodes heard but not added |
 | `history` | gateway → | yes | JSON: the latest messages in and out |
 | `pending` | gateway → | yes | JSON: the messages on their way, accepted and not final yet |
@@ -923,6 +923,80 @@ contact is excluded, none for a request that was not sent (the radio away, telem
 path, the gateway stopped), and none for a companion that never answered. An event never carries a
 position or a reading; it comes after the contact's document. `name` is that of the radio's table.
 
+## Advert nearby: `advert/send` and `advert`
+
+A request on `advert/send` makes the gateway's radio send its advert once to the radios in direct
+range: zero hop, so no repeater passes it on, and never with a position
+([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)). The advert
+carries the radio's name, its public key and its clock, signed with its key. A companion in range
+that has the gateway as a contact shows its current name from then on: a node keeps a contact's
+name until an advert newer than the one it stored brings another, and the radio sends none by
+itself. One that does not have it lists it among the nodes it heard, so its owner can add the
+gateway without the QR code, after comparing the key. Repeaters keep no companion's advert, and
+nothing confirms that anyone heard it. Adverts the radio hears are `node` events and the `nodes`
+document, not this.
+
+The request takes any payload of at most 1 KiB, or a JSON object (its first character other than
+a space is `{`) such as `{"id": "x1"}`: the `id` (1 to 64 of `A-Z a-z 0-9 . _ : -`) comes back
+in the event; without one the gateway makes one of 8 hex digits. Other keys are ignored. Home
+Assistant's button *Send advert nearby* publishes `send` at QoS 0
+([home-assistant.md](home-assistant.md#advert-nearby)); the command line has
+`meshcore-home-gateway advert`. A request published while the gateway is offline is lost (clean
+session), and one still being handled when the gateway stops has no event. A request whose `id`
+is that of one handed to the radio in the last 10 minutes is a copy, such as a QoS 1 resend, and
+is ignored without an event; requests without an `id` are never copies.
+
+A request is checked in this order; the first check that fails is the `reason` of a `refused`
+event, and nothing reaches the radio:
+
+| Reason | Check |
+| --- | --- |
+| `too_large`, `invalid_utf8` | as for send requests |
+| `invalid_request` | the payload starts with `{` and is no JSON object, or its `id` is no string as above |
+| `retained` | the request was retained: a left-over published while the gateway was away, refused again at each reconnect while it stays retained; clear it with an empty retained message, which is refused as `empty` once |
+| `empty` | an empty payload, which is what clearing a retained message publishes |
+| `no_radio` | the radio is not connected, or the connection ended before the advert was written |
+| `untested_firmware` | firmware the gateway is not tested with, also with `radio.profile.manage = "always"`: the advert's route and position are facts of the tested firmware, which the gateway cannot read back |
+| `advert_location` | the radio's advert location policy, as the radio reports it, is not 0: its advert would carry a position (with policy 1 always, 0, 0 included). Also when `radio.profile.manage = "observe"` leaves it as found; the managed profile sets it to 0 ([configuration.md](configuration.md#radioprofile)) |
+| `no_name` | the radio has no name: every node drops an advert without one |
+| `busy` | another request is between its checks and its outcome |
+| `too_soon` | an advert was written to the radio less than 10 minutes ago; `next_at` says when the next may go. The gateway keeps that time in memory only, so a restart allows the next advert at once |
+| `messages_waiting` | a message is queued or being delivered: the radio is half-duplex, and messages have the first claim on the airtime budget |
+| `airtime_budget` | the message budget cannot pay the advert's estimated time on air at once and still hold one long message beside it, so that an alert after it goes out at once; where both do not fit into the burst, the advert needs a full budget |
+| `clock_ahead` | the radio's clock, read just then, is more than 60 s ahead of the host's: nodes keep the newest advert time of a contact and would ignore the radio's later adverts |
+
+Then the gateway writes `SEND_SELF_ADVERT` without its flood byte
+([protocol.md](protocol.md#2-commands)). Once the command holds the radio, it checks the radio's
+position policy, its name, the 10 minutes, the messages and the budget again (a message that came
+meanwhile goes first), charges the advert's estimated time on air to the airtime budget (the level
+is stored at once) and starts the 10 minutes. The advert carries the radio's clock, which the
+gateway sets from the host's: the host's clock must be right (NTP). A radio clock behind the time
+of an advert a node already has makes that node drop this one; the event still says `sent`.
+
+```json
+{"event_type": "sent", "id": "1a2b3c4d", "reason": null, "name": "Gateway",
+ "airtime_ms": 1164, "next_at": "2026-11-13T10:10:00+00:00"}
+{"event_type": "refused", "id": "cli-5e6f7a8b", "reason": "too_soon", "name": null,
+ "airtime_ms": null, "next_at": "2026-11-13T10:10:00+00:00"}
+```
+
+Not retained. Every key is always there:
+
+| Key | Value |
+| --- | --- |
+| `event_type` | `sent`: the radio answered OK, it queued the advert (it goes on air when the radio's own duty-cycle limit lets it). `refused`: a check said no, nothing was written. `failed`: the advert was written and is not confirmed |
+| `id` | the request's `id`, or the one the gateway made |
+| `reason` | `null` for `sent`; for `refused` a reason of the table above; for `failed` the radio's error name (`table_full`: no free packet buffer; also `unsupported_cmd`, `not_found`, `bad_state`, `file_io_error`, `illegal_arg`, `disabled`, `error_<code>`), `outcome_unknown` (the connection ended after the write: the advert may have gone out) or `internal_error` (a bug; see the log) |
+| `name` | the radio's name the advert carries; `null` unless the advert was written |
+| `airtime_ms` | its estimated time on air, charged to the budget, in milliseconds; `null` unless the advert was written |
+| `next_at` | ISO 8601 UTC: from when the next advert may go, 10 minutes after the last one written; `null` when none was written in the last 10 minutes of this run |
+
+`sent` and `failed` count for the budget, `refused` for neither the budget nor the 10 minutes. A
+`failed` with the radio's error name starts no 10 minutes (nothing was sent), but its airtime
+stays charged; `outcome_unknown` starts them. `refused` events are limited as those of the
+contact requests (20 a second, bursts of 100); the log counts the rest at most once a minute.
+Otherwise every request that is not a copy has exactly one event.
+
 ## Radio profile: `settings` and `setting`
 
 What the managed profile found and did at the last connect
@@ -1177,6 +1251,7 @@ topic write meshcore/radio1/contacts/+/telemetry
 topic write meshcore/radio1/homeassistant/show_hidden
 topic write meshcore/radio1/homeassistant/add_node
 topic write meshcore/radio1/homeassistant/draft/+/+/request
+topic write meshcore/radio1/advert/send
 
 user alarm-script
 topic write meshcore/radio1/send/alerts
@@ -1188,12 +1263,16 @@ have `_` for `-`.
 
 Home Assistant needs `homeassistant/#` for discovery and its own birth and status messages. Only
 the gateway may write the event topics (`received`, `command`, `delivery`, `contact`, `node`,
-`telemetry`) and
+`telemetry`, `advert`) and
 the documents, because automations and dashboards trust them. When commands are configured, the ACL is not optional: any client that can write
 `command` can trigger the automations.
 Home Assistant writes only the requests of the chats' drafts, never the drafts themselves. A
 client that may read `meshcore/radio1/#` reads every unsent draft, and one that may write a
 draft's request topic can send it.
+Home Assistant's button *Send advert nearby* needs the line `advert/send`; without it, Home
+Assistant cannot make the radio advertise, not even with `mqtt.publish`. Leave it out with
+`[homeassistant] radio_controls = false`. A client that may write `advert/send` makes the radio
+announce its name and key to everyone in range, at most every 10 minutes.
 
 Without an ACL every client of the broker can do what the gateway does: publish `command`
 events, write a contact's document with any position, send to every target and read every

@@ -19,8 +19,9 @@ Public interface: see [compatibility](development.md#compatibility).
 * With a topic ACL on the broker, Home Assistant's user needs `readwrite` on `homeassistant/#`
   ([mqtt-api.md](mqtt-api.md#securing-the-broker)), for the switch *Telemetry*
   `topic write <base_topic>/<node_id>/contacts/+/telemetry`, and for writing and sending from
-  Home Assistant `topic write <base_topic>/<node_id>/homeassistant/draft/+/+/request`, which the
-  example ACL of earlier versions lacks: without them the switch and *Send* do nothing, and only
+  Home Assistant `topic write <base_topic>/<node_id>/homeassistant/draft/+/+/request`, and for
+  *Send advert nearby* `topic write <base_topic>/<node_id>/advert/send`, which the example ACL of
+  earlier versions lacks: without them the switch, *Send* and the advert button do nothing, and only
   the broker's debug log shows why (`log_type debug` or `all`; in the Mosquitto add-on, `debug`
   in its option `log_type`, not `debug: true`, which also logs passwords).
 * The generated dashboard ([below](#dashboard)) needs Home Assistant 2026.10 or newer: it shows
@@ -96,6 +97,8 @@ firmware and public key (as serial number). Its entities, with their IDs for nod
 | `sensor.meshcore_home_gateway_radio1_telemetry_status` | enum, diagnostic: `off`, `on`, `paused`, `unsupported` | whether the gateway asks the companions for telemetry; attribute `reason` while `paused` ([below](#telemetry-of-the-households-companions)) |
 | `sensor.meshcore_home_gateway_radio1_telemetry_airtime`, `..._telemetry_mesh_airtime` | duration (s), diagnostic | *Telemetry airtime last hour*: the gateway's own transmit time for telemetry (its lane allows 18 s an hour); *Telemetry mesh airtime last hour*: the airtime its requests caused in the mesh, as estimated (90 s an hour); disabled until enabled in Home Assistant |
 | `event.meshcore_home_gateway_radio1_telemetry` | event: `answered`, `unanswered` | a companion left two requests in a row unanswered, or answers again; attributes `key`, `prefix`, `name`, `state` |
+| `button.meshcore_home_gateway_radio1_send_advert` | button | *Send advert nearby*: makes the radio send its advert once to the radios in direct range, its name and key, never a position ([below](#advert-nearby)); unavailable with `[homeassistant] radio_controls = false` or `controls = false` |
+| `event.meshcore_home_gateway_radio1_advert` | event: `sent`, `refused`, `failed` | *Advert nearby*: what became of a request to send the radio's advert, from Home Assistant, MQTT or the command line; attributes `id`, `reason`, `name`, `airtime_ms`, `next_at` |
 
 A `-` in the node ID becomes `_` in the entity IDs, as in an alias: node `radio-1` gives
 `sensor.meshcore_home_gateway_radio_1_battery`. The discovery topic, the device and the unique
@@ -107,7 +110,8 @@ more than that. Node IDs and aliases that Home Assistant would shorten further (
 All entities share the gateway's availability topic and turn `unavailable` when it is offline,
 except *Message history* and *Messages on their way*, which stay readable;
 the controls that change the radio's contacts also while the radio is not connected or contact
-management is off (also on untested firmware). The state values come from retained documents, so they are back right after a
+management is off (also on untested firmware); *Send advert nearby* also while the radio is not
+connected. The state values come from retained documents, so they are back right after a
 restart of either side.
 
 ### Language of the names
@@ -321,6 +325,44 @@ button is `unavailable`, asks, and then does nothing.
 user can press a button and set a select or text. The broker's ACL decides which clients may write
 the topics ([mqtt-api.md](mqtt-api.md#securing-the-broker)); `manage = false` switches the
 requests off for all of them.
+
+## Advert nearby
+
+*Send advert nearby* (`button.meshcore_home_gateway_radio1_send_advert`) makes the radio send its
+advert once to the radios in direct range: its name and public key, signed with its key, never a
+position; zero hop, so no repeater passes it on
+([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)). Press it when
+someone nearby wants to add this home and has no QR code at hand: their MeshCore app lists the
+radio among the nodes it heard. They compare its key with the one the dashboard shows under *Let
+someone add this home*, or *Gateway*: anyone in range can advertise a node of the same name, and
+only the key tells it apart. Press it also after the radio got a new name: a companion keeps a
+contact's name until an advert brings another, and the radio sends none by itself. Repeaters keep
+nothing of it.
+
+The gateway sends at most one advert every 10 minutes and keeps that time in memory only (a
+restart allows one at once); only while no message is on its way and the airtime budget holds the
+advert and, beside it, one long message, so that an alert after it goes out at once; never while
+the radio would put its position into it (its advert location policy as the radio reports it,
+also when `radio.profile.manage = "observe"` leaves it as found), and not while the radio's clock
+is more than a minute ahead of the host's: nodes keep the newest advert time of a contact and would
+ignore the radio's later adverts. The advert carries the radio's clock, which the gateway sets from
+the host's, so the host's clock must be right (NTP). *Advert nearby*
+(`event.meshcore_home_gateway_radio1_advert`) reports each request's outcome, from Home Assistant,
+MQTT or the command line: `sent` (the radio queued it), `refused` with the `reason`, or `failed`
+([mqtt-api.md](mqtt-api.md#advert-nearby-advertsend-and-advert)); `next_at` says from when the
+next one is possible. The dashboard shows it below the button for 10 minutes. The button is
+unavailable while the gateway is offline or the radio not connected; the other checks show as the
+outcome after a press.
+
+**Who may.** Anyone who can use this Home Assistant instance can press the button: every user,
+also one who is no administrator, from the dashboard or the entity search
+([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)).
+`[homeassistant] radio_controls = false`, and `controls = false` as for every control, make it
+unavailable, so that no user of Home Assistant can press it
+([configuration.md](configuration.md#homeassistant)); the request on MQTT and
+`meshcore-home-gateway advert` keep working. The broker's ACL decides which clients may write
+`advert/send` ([mqtt-api.md](mqtt-api.md#securing-the-broker)): without the line, Home Assistant
+cannot make the radio advertise, not even with `mqtt.publish`.
 
 ## Telemetry of the household's companions
 
@@ -552,6 +594,7 @@ and shows a person instead of a tracker that is the person's current source.
 | `contacts/<key>`: `advert_carries_position` | *Position in adverts*; `advert_position` and `advert_checked_at` stay on MQTT |
 | `state`: `telemetry`, `telemetry_reason`, `telemetry_airtime_1h_s`, `telemetry_mesh_airtime_1h_s` | *Telemetry status* with the attribute `reason`, and the two telemetry airtime sensors |
 | `telemetry` | the event *Telemetry* |
+| `advert`, `advert/send` | the event *Advert nearby* and the button *Send advert nearby* ([advert nearby](#advert-nearby)) |
 | `contacts/<key>/telemetry` | the switch *Telemetry* |
 | `contacts/<key>/received`, `contacts/<key>/send` | a contact's message event and notify entity |
 | `homeassistant/show_hidden` | the button *Show hidden contacts* |
@@ -1245,15 +1288,20 @@ The event's keys are in `trigger.to_state.attributes`, for example `args` of a c
 
 Home Assistant shows every entity to every user, and lets every user operate it; only
 administrators change the configuration. So every user sees every tracker on the map and in the
-history, can send to every target and contact, and can add and remove the radio's contacts and
-switch telemetry for a companion. Dashboards per user hide cards, not the entities behind them.
+history, can send to every target and contact, can add and remove the radio's contacts and
+switch telemetry for a companion, and can make the radio send its advert nearby. Dashboards per
+user hide cards, not the entities behind them.
 
 * `[homeassistant] controls = false` keeps *Add heard node*, *Add contact (key or link)*, *Show
-  hidden contacts* and each contact's *Remove from radio* and *Telemetry* unavailable: nobody
-  operates them in Home Assistant, which leaves unavailable entities out of its actions too. An
-  administrator uses `meshcore-home-gateway contacts` in the container, or MQTT
+  hidden contacts*, *Send advert nearby* and each contact's *Remove from radio* and *Telemetry*
+  unavailable: nobody operates them in Home Assistant, which leaves unavailable entities out of
+  its actions too. An administrator uses `meshcore-home-gateway contacts` and
+  `meshcore-home-gateway advert` in the container, or MQTT
   ([mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)); the broker's
   ACL decides which clients may write those topics.
+* `[homeassistant] radio_controls = false` keeps *Send advert nearby* alone unavailable, so that
+  no user of Home Assistant makes the radio announce itself; leave the line `advert/send` out of
+  Home Assistant's ACL too, so that `mqtt.publish` cannot either ([advert nearby](#advert-nearby)).
 * `[homeassistant] hidden_targets` leaves out the notify entity and the draft (*Write to …*,
   *Send what is written to …*) of a target that only automations should use, such as an alarm
   channel: they send with `mqtt.publish` to `send/<alias>`
