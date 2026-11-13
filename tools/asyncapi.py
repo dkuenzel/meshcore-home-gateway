@@ -93,6 +93,10 @@ REQUESTS: dict[str, tuple[str | None, str]] = {
             "add a contact to the radio"
         ),
     ),
+    "advert/send": (
+        None,
+        'any payload, or JSON {"id": "..."}: make the radio send its advert once, zero hop',
+    ),
     "homeassistant/add_node": (
         TEXT,
         "the label of a heard node, as Home Assistant's select offers it: add it to the radio",

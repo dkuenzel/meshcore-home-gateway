@@ -25,7 +25,13 @@ from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
 from meshcore_home_gateway.mqtt.homie import HomieDevice
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
-from meshcore_home_gateway.ports import ContactRequest, RadioEvent, SendRequest, Transport
+from meshcore_home_gateway.ports import (
+    AdvertRequest,
+    ContactRequest,
+    RadioEvent,
+    SendRequest,
+    Transport,
+)
 from meshcore_home_gateway.protocol.codes import Command
 from meshcore_home_gateway.radio import session as session_module
 from meshcore_home_gateway.radio.profile import RadioProfile
@@ -98,6 +104,7 @@ class FakeBus:
     def __init__(self) -> None:
         self.requests: asyncio.Queue[SendRequest] = asyncio.Queue()
         self.contact_requests: asyncio.Queue[ContactRequest] = asyncio.Queue()
+        self.advert_requests: asyncio.Queue[AdvertRequest] = asyncio.Queue()
         self.on_connected: list[Callable[[], None]] = []
         self.on_ha_online: list[Callable[[], None]] = []
         self.on_ha_offline: list[Callable[[], None]] = []
@@ -144,6 +151,10 @@ class FakeBus:
     ) -> None:
         payload = text.encode() if isinstance(text, str) else text
         self.requests.put_nowait(SendRequest(alias, payload, retained, contact=contact))
+
+    def advert(self, payload: bytes = b"send", retained: bool = False) -> None:
+        """A request on `advert/send` (ADR 0033)."""
+        self.advert_requests.put_nowait(AdvertRequest(payload, retained))
 
     def payloads(self, suffix: str) -> list[dict[str, Any]]:
         """Payloads on the topics ending in `suffix`; those of single contacts only if the suffix

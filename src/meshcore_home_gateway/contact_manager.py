@@ -21,9 +21,7 @@ telemetry request in `excluded`, `included`, `refused` or `failed`.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import re
 import secrets
 import time
 from collections.abc import Awaitable, Callable
@@ -55,12 +53,17 @@ from meshcore_home_gateway.ports import (
 )
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.links import LinkContact, LinkError, parse_contact_text
+from meshcore_home_gateway.request_form import (
+    RefusedError,
+    json_object,
+    request_id,
+    request_text,
+)
 from meshcore_home_gateway.views import contact_event
 
 log = logging.getLogger(__name__)
 log.addFilter(FAILURES)  # caught bugs counted, their tracebacks thinned out
 
-MAX_REQUEST_BYTES = 1024
 MAX_WAITING = 8  # queued requests; then `busy`
 # radio work: a request that reaches the radio reads the table and perhaps writes once; the
 # radio rewrites its contacts file for each change
@@ -69,15 +72,8 @@ REFUSED_EVENTS_PER_S, REFUSED_EVENTS_BURST = 20.0, 100.0
 REFUSED_REPORT_INTERVAL_S = 60.0
 # telemetry requests: each may write the exclusions file, on the event loop
 TELEMETRY_PER_S, TELEMETRY_BURST = 1.0, 30.0
-_ID = re.compile(r"[A-Za-z0-9._:-]{1,64}")
 _RESULT = {"add": "added", "remove": "removed"}  # a request's kind -> its event in the table
 _EXCLUDED = {"off": True, "on": False}  # a telemetry request's text -> whether it excludes
-
-
-class _RefusedError(Exception):
-    def __init__(self, reason: str) -> None:
-        super().__init__(reason)
-        self.reason = reason
 
 
 @dataclass(slots=True)
@@ -161,7 +157,7 @@ class ContactManager:
         try:
             job = self._checked(request, seen)
             self._jobs.put_nowait(job)
-        except _RefusedError as exc:
+        except RefusedError as exc:
             level = request.key if request.kind == "remove" and seen.key is None else None
             self._refuse(
                 request.kind, seen.key, seen.request_id, exc.reason, seen.claim, level=level
@@ -187,28 +183,28 @@ class ContactManager:
             except LinkError as exc:
                 target = exc.reason
         if request.retained:
-            raise _RefusedError("retained")
+            raise RefusedError("retained")
         if target is not None or seen.key is None:
-            raise _RefusedError(target or "unknown_contact")
+            raise RefusedError(target or "unknown_contact")
         return self._job(request.kind, seen.key, seen.request_id, seen.claim)
 
     def _envelope(self, request: ContactRequest, seen: _Seen) -> str:
         """The request's text (add); its id goes to `seen` as soon as it is valid."""
-        text = _text(request.payload)
+        text = request_text(request.payload)
         if text.lstrip().startswith("{"):
             text = self._json_envelope(text, request.kind, seen)
         try:  # a JSON \ud800 escape is valid UTF-8 on the wire, but no text
             text.encode("utf-8")
         except UnicodeEncodeError:
-            raise _RefusedError("invalid_utf8") from None
+            raise RefusedError("invalid_utf8") from None
         return text
 
     def _json_envelope(self, text: str, kind: str, seen: _Seen) -> str:
-        envelope = _json_object(text)
-        seen.request_id = _request_id(envelope) or seen.request_id
+        envelope = json_object(text)
+        seen.request_id = request_id(envelope) or seen.request_id
         contact = envelope.get("contact")
         if kind == "add" and not isinstance(contact, str):
-            raise _RefusedError("invalid_request")  # an empty text is judged as a text
+            raise RefusedError("invalid_request")  # an empty text is judged as a text
         return contact if isinstance(contact, str) else ""
 
     def _labelled(self, label: str) -> LinkContact | None:
@@ -222,14 +218,14 @@ class ContactManager:
 
     def _job(self, kind: str, key: str, request_id: str, claim: LinkContact | None) -> Job:
         if not self.manage:
-            raise _RefusedError("management_off")
+            raise RefusedError("management_off")
         session = self._session()
         info = session.info if session is not None else None
         if kind == "add" and info is not None and key == info.public_key:
-            raise _RefusedError("own_key")
+            raise RefusedError("own_key")
         if kind == "remove":
             if key in self._protected:
-                raise _RefusedError("protected")
+                raise RefusedError("protected")
             return Job("remove", key, request_id, "topic", node_type=None)
         assert claim is not None  # noqa: S101 - parsed above
         heard = self._observer.mesh.nodes.get(key)
@@ -251,7 +247,7 @@ class ContactManager:
         seen = _Seen(secrets.token_hex(4))
         try:
             excluding, forget = self._telemetry_checked(request, seen)
-        except _RefusedError as exc:
+        except RefusedError as exc:
             level = request.key if seen.key is None else None
             self._refuse("telemetry", seen.key, seen.request_id, exc.reason, None, level=level)
             return
@@ -284,19 +280,19 @@ class ContactManager:
         excluding, forget = _telemetry_envelope(request.payload, seen)
         seen.key = request.key if request.key is not None and is_key(request.key) else None
         if request.retained:
-            raise _RefusedError("retained")
+            raise RefusedError("retained")
         if not self._telemetry_rate.allow(self._mono()):  # also one refused below counts
-            raise _RefusedError("rate_limited")
+            raise RefusedError("rate_limited")
         exclusions, key = self._observer.exclusions, seen.key
         excluded = exclusions.keys  # not those only not included (`ask = household`)
         tracked = self._observer.mesh.contacts.get(key) if key is not None else None
         if key is None or (tracked is None and not excluding and key not in excluded):
-            raise _RefusedError("unknown_contact")
+            raise RefusedError("unknown_contact")
         if tracked is not None and tracked.node.node_type not in self._observer.telemetry_types:
-            raise _RefusedError("not_a_companion")  # only companions are asked, or sensors too
+            raise RefusedError("not_a_companion")  # only companions are asked, or sensors too
         kept = excluded if excluding else exclusions.included if exclusions.household else None
         if kept is not None and key not in kept and len(kept) >= exclusions.LIMIT:
-            raise _RefusedError("too_many")
+            raise RefusedError("too_many")
         return excluding, forget
 
     def _exclude(self, key: str, forget: bool) -> tuple[str, str | None]:
@@ -336,7 +332,7 @@ class ContactManager:
             self._writing = False
             try:
                 await self._handle(job)
-            except _RefusedError as exc:
+            except RefusedError as exc:
                 self._refuse(job.kind, job.key, job.request_id, exc.reason, job)
             except asyncio.CancelledError:
                 raise
@@ -353,12 +349,12 @@ class ContactManager:
     async def _handle(self, job: Job) -> None:
         session = self._session()
         if session is None or session.closed or session.info is None:
-            raise _RefusedError("no_radio")
+            raise RefusedError("no_radio")
         info = session.info
         if not self._firmware_allowed(info):
-            raise _RefusedError("untested_firmware")
+            raise RefusedError("untested_firmware")
         if not self._work.allow(self._mono()):
-            raise _RefusedError("rate_limited")
+            raise RefusedError("rate_limited")
         await self._fresh_table(session)
         if job.kind == "add":
             await self._add(session, info.public_key, info.device.max_contacts, job)
@@ -371,9 +367,9 @@ class ContactManager:
         try:
             await session.refresh_contacts(newer_than=session.contacts_changed_at)
         except CommandFailedError as exc:
-            raise _RefusedError(exc.reason) from None
+            raise RefusedError(exc.reason) from None
         except RadioError:
-            raise _RefusedError("no_radio") from None
+            raise RefusedError("no_radio") from None
 
     async def _add(self, session: RadioPort, own_key: str, limit: int, job: Job) -> None:
         heard = job.heard or _node(self._observer.mesh.nodes.get(job.key))
@@ -391,7 +387,7 @@ class ContactManager:
             max_contacts=limit,
         )
         if reason is not None:
-            raise _RefusedError(reason)
+            raise RefusedError(reason)
         request = codec.new_contact(
             bytes.fromhex(job.key), name, 0, node_type=node_type, last_advert=advert
         )
@@ -402,7 +398,7 @@ class ContactManager:
         record = session.contact_records.get(job.key)
         reason = remove_refusal(job.key, table=session.contact_records)
         if reason is not None or record is None:
-            raise _RefusedError(reason or "unknown_contact")
+            raise RefusedError(reason or "unknown_contact")
         named = Job(job.kind, job.key, job.request_id, job.source, record.name, record.node_type)
         await self._write(session, named, session.remove_contact(record.public_key))
 
@@ -527,47 +523,19 @@ def _node(tracked: Any) -> Node | None:
     return tracked.node if tracked is not None else None
 
 
-def _text(payload: bytes) -> str:
-    """A request's payload as text: at most MAX_REQUEST_BYTES of UTF-8."""
-    if len(payload) > MAX_REQUEST_BYTES:
-        raise _RefusedError("too_large")
-    try:
-        return payload.decode("utf-8")
-    except UnicodeDecodeError:
-        raise _RefusedError("invalid_utf8") from None
-
-
-def _json_object(text: str) -> dict[str, Any]:
-    try:
-        envelope = json.loads(text)
-    except (ValueError, RecursionError):
-        raise _RefusedError("invalid_request") from None
-    if not isinstance(envelope, dict):
-        raise _RefusedError("invalid_request")
-    return envelope
-
-
-def _request_id(envelope: dict[str, Any]) -> str | None:
-    """The envelope's id, if it has one; a bad one refuses the request."""
-    given = envelope.get("id")
-    if given is not None and not (isinstance(given, str) and _ID.fullmatch(given)):
-        raise _RefusedError("invalid_request")
-    return given
-
-
 def _telemetry_envelope(payload: bytes, seen: _Seen) -> tuple[bool, bool]:
     """`on` or `off` (spaces around stripped), or JSON with `telemetry`, `id` and `forget`:
     whether it excludes, and whether it forgets the history too (only with `off`). Its id goes to
     `seen` as soon as it is valid."""
-    value: object = _text(payload)
+    value: object = request_text(payload)
     forget: object = False
     if isinstance(value, str) and value.lstrip().startswith("{"):
-        envelope = _json_object(value)
-        seen.request_id = _request_id(envelope) or seen.request_id
+        envelope = json_object(value)
+        seen.request_id = request_id(envelope) or seen.request_id
         value, forget = envelope.get("telemetry"), envelope.get("forget", False)
     if not isinstance(value, str) or not isinstance(forget, bool):
-        raise _RefusedError("invalid_request")
+        raise RefusedError("invalid_request")
     state = value.strip()
     if state not in _EXCLUDED or (forget and state == "on"):
-        raise _RefusedError("invalid_request")
+        raise RefusedError("invalid_request")
     return _EXCLUDED[state], forget

@@ -9,9 +9,9 @@ output (lists, JSON, `config answers`, `--version`) is the same in every languag
 follows [homeassistant] language, as the names in Home Assistant do.
 
 One module per group of commands (CODE-005): `run`, `config_cmd` (`check-config`, `config render`,
-`config answers`), `probe`, `messages` (`send`, `listen`), `contacts` and `dashboard`; `common`
-holds the exit codes and the language of the texts, `broker` the commands' MQTT client. This
-module holds the parser and `main`.
+`config answers`), `probe`, `messages` (`send`, `listen`), `contacts`, `advert` and `dashboard`;
+`common` holds the exit codes and the language of the texts, `broker` the commands' MQTT client.
+This module holds the parser and `main`.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from meshcore_home_gateway import __version__, i18n
+from meshcore_home_gateway.cli.advert import _advert
 from meshcore_home_gateway.cli.backup import _backup
 from meshcore_home_gateway.cli.codes import _enrol, _revoke
 from meshcore_home_gateway.cli.common import (
@@ -170,10 +171,36 @@ def _parser() -> argparse.ArgumentParser:
     listen.add_argument(
         "--topic",
         default="all",
-        choices=["received", "command", "delivery", "state", "contact", "node", "telemetry", "all"],
+        choices=[
+            "received",
+            "command",
+            "delivery",
+            "state",
+            "contact",
+            "node",
+            "telemetry",
+            "advert",
+            "all",
+        ],
     )
     listen.add_argument(
         "--count", type=_count, default=0, help=tr_help("stop after this many events (0: never)")
+    )
+
+    advert = command(
+        "advert",
+        tr_help(
+            "make the radio send one advert to the radios in direct range (zero hop), through "
+            "the broker"
+        ),
+        _advert,
+    )
+    advert.add_argument(
+        "--wait",
+        type=_wait_seconds,
+        default=30.0,
+        metavar="SECONDS",
+        help=tr_help("wait this long for the result; 0: only send the request (default 30)"),
     )
 
     _contacts_parser(commands)

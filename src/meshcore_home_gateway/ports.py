@@ -238,6 +238,8 @@ class RadioPort(Protocol):
     async def request_telemetry(
         self, public_key: bytes, *, unless: Callable[[], bool] | None = None
     ) -> TelemetrySent | None: ...
+    async def send_self_advert(self, *, unless: Callable[[], bool] | None = None) -> bool: ...
+    async def read_clock_offset(self) -> int: ...
 
 
 # made by the wiring (wiring.py): a session on this transport that reports to this queue, and
@@ -271,11 +273,20 @@ class ContactRequest:
     node_label: bool = False  # add: the text is the label of a heard node (add_node)
 
 
+@dataclass(frozen=True, slots=True)
+class AdvertRequest:
+    """A request on `advert/send`: make the radio send its advert nearby (ADR 0033)."""
+
+    payload: bytes
+    retained: bool
+
+
 class Bus(Protocol):
     """What the application needs from the message bus (mqtt/client.py's MqttBus declares it)."""
 
     requests: asyncio.Queue[SendRequest]
     contact_requests: asyncio.Queue[ContactRequest]
+    advert_requests: asyncio.Queue[AdvertRequest]
     connected: bool
     on_connected: list[Callable[[], None]]
     on_ha_online: list[Callable[[], None]]

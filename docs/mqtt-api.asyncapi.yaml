@@ -50,6 +50,82 @@
         }
       }
     },
+    "advert": {
+      "address": "{base_topic}/{node_id}/advert",
+      "messages": {
+        "advert": {
+          "name": "advert",
+          "contentType": "application/json",
+          "summary": "an event",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "airtime_ms": {},
+              "event_type": {
+                "x-values": [
+                  "failed",
+                  "refused",
+                  "sent"
+                ]
+              },
+              "id": {},
+              "name": {},
+              "next_at": {},
+              "reason": {
+                "x-values": [
+                  "advert_location",
+                  "airtime_budget",
+                  "busy",
+                  "clock_ahead",
+                  "empty",
+                  "internal_error",
+                  "invalid_request",
+                  "invalid_utf8",
+                  "messages_waiting",
+                  "no_name",
+                  "no_radio",
+                  "outcome_unknown",
+                  "retained",
+                  "too_large",
+                  "too_soon",
+                  "untested_firmware"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
+    "advert_send": {
+      "address": "{base_topic}/{node_id}/advert/send",
+      "messages": {
+        "advert_send": {
+          "name": "advert_send",
+          "summary": "any payload, or JSON {\"id\": \"...\"}: make the radio send its advert once, zero hop; never retained",
+          "payload": {}
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
     "availability": {
       "address": "{base_topic}/{node_id}/availability",
       "messages": {
@@ -172,7 +248,8 @@
                   "contact_entity_prefix": {},
                   "controls": {},
                   "hidden_targets": {},
-                  "language": {}
+                  "language": {},
+                  "radio_controls": {}
                 }
               },
               "messages": {
@@ -2442,6 +2519,24 @@
         }
       ]
     },
+    "receive_advert_send": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/advert_send"
+      },
+      "summary": "a request",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/advert_send/messages/advert_send"
+        }
+      ]
+    },
     "receive_availability": {
       "action": "receive",
       "channel": {
@@ -2835,6 +2930,24 @@
       "messages": [
         {
           "$ref": "#/channels/status_topic/messages/status_topic"
+        }
+      ]
+    },
+    "send_advert": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/advert"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": false,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/advert/messages/advert"
         }
       ]
     },

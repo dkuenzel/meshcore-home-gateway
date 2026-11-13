@@ -19,6 +19,7 @@ class Command(IntEnum):
     GET_CONTACTS = 4
     GET_DEVICE_TIME = 5
     SET_DEVICE_TIME = 6
+    SEND_SELF_ADVERT = 7  # zero hop only: the codec writes no flood byte (ADR 0033)
     SET_ADVERT_NAME = 8
     ADD_UPDATE_CONTACT = 9
     SYNC_NEXT_MESSAGE = 10

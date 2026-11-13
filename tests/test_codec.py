@@ -6,6 +6,7 @@ layouts are in docs/protocol.md, sections 1-4. The 3-byte frame header is stripp
 are compared.
 """
 
+import inspect
 from dataclasses import replace
 
 import pytest
@@ -38,6 +39,8 @@ def payload(frame_hex: str) -> bytes:
         (codec.app_start("bridge"), "3C 0E 00 01 00 00 00 00 00 00 00 62 72 69 64 67 65"),
         (codec.device_query(), "3C 02 00 16 03"),
         (codec.get_device_time(), "3C 01 00 05"),
+        # the advert zero hop: the code alone (MyMesh.cpp:1297-1316)
+        (codec.send_self_advert(), "3C 01 00 07"),
         (codec.set_device_time(TS), "3C 05 00 06 00 78 E7 68"),
         (
             codec.send_text(h("112233445566"), "Hello", TS, attempt=0),
@@ -64,6 +67,13 @@ def payload(frame_hex: str) -> bytes:
 )
 def test_request_frames(request_bytes: bytes, frame_hex: str) -> None:
     assert encode_frame(request_bytes) == h(frame_hex)
+
+
+def test_the_self_advert_has_no_flood_byte() -> None:
+    """A second byte 1 would flood the advert (MyMesh.cpp:1305-1312): the encoder takes no
+    argument, so no caller can ask for one (ADR 0033)."""
+    assert codec.send_self_advert() == bytes([7])
+    assert inspect.signature(codec.send_self_advert).parameters == {}
 
 
 @pytest.mark.parametrize(

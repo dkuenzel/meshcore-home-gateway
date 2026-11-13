@@ -33,7 +33,7 @@ from meshcore_home_gateway.config import ConfigError, MqttConfig
 from meshcore_home_gateway.health import MinuteCounts
 from meshcore_home_gateway.mqtt.retained import RetainedTopics
 from meshcore_home_gateway.mqtt.topics import Topics
-from meshcore_home_gateway.ports import Bus, ContactRequest, SendRequest
+from meshcore_home_gateway.ports import AdvertRequest, Bus, ContactRequest, SendRequest
 
 log = logging.getLogger(__name__)
 
@@ -175,6 +175,7 @@ class MqttBus(Bus):
         )
         self.requests: asyncio.Queue[SendRequest] = asyncio.Queue()
         self.contact_requests: asyncio.Queue[ContactRequest] = asyncio.Queue()
+        self.advert_requests: asyncio.Queue[AdvertRequest] = asyncio.Queue()
         self.connected = False
         self._queued = 0  # events published since the connection was lost
         self._dropped = 0
@@ -330,6 +331,7 @@ class MqttBus(Bus):
             (self._topics.add_contact, 1),
             (self._topics.contact_remove_subscription, 1),
             (self._topics.contact_telemetry_subscription, 1),
+            (self._topics.advert_request, 1),
         ]
         # the gateway's retained topics, to undo what other clients write there
         subscriptions += [(topic, 1) for topic in self._retained.filters]
@@ -477,7 +479,8 @@ class MqttBus(Bus):
     ) -> None:
         """A request on one of the gateway's request topics; any other topic is ignored. A send
         request keeps its correlation data for its delivery events; a contact request names
-        itself by the `id` of its JSON form, which its events carry."""
+        itself by the `id` of its JSON form, which its events carry, and so does an advert
+        request."""
         alias = self._topics.alias_from_send_topic(topic)
         if alias is not None:
             self.requests.put_nowait(SendRequest(alias, payload, retained, False, correlation))
@@ -488,6 +491,9 @@ class MqttBus(Bus):
             return
         if topic == self._topics.add_contact:
             self.contact_requests.put_nowait(ContactRequest("add", payload, retained))
+            return
+        if topic == self._topics.advert_request:
+            self.advert_requests.put_nowait(AdvertRequest(payload, retained))
             return
         for kind in ("remove", "telemetry"):
             key = self._topics.key_from_contact_topic(topic, kind)

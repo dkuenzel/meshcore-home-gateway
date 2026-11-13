@@ -984,6 +984,20 @@ def test_home_assistant_controls_hidden_targets_and_entity_prefix() -> None:
     assert parse_config(text + f'contact_entity_prefix = "{"m" * 20}"\n')
 
 
+def test_the_advert_button_in_home_assistant_is_on_by_default() -> None:
+    """ADR 0033: anyone who uses this Home Assistant may make the radio advertise, unless the
+    administrator switches it off; MQTT and the command line do not ask it."""
+    assert parse_config(MINIMAL).homeassistant.radio_controls is True
+    off = parse_config(MINIMAL + "[homeassistant]\nradio_controls = false\n")
+    assert off.homeassistant.radio_controls is False
+    assert off.homeassistant.controls is True  # the contacts' controls are another setting
+    with pytest.raises(ConfigError, match=r"homeassistant\.radio_controls"):
+        parse_config(MINIMAL + '[homeassistant]\nradio_controls = "no"\n')
+    answers = config_answers(MINIMAL + "[homeassistant]\nradio_controls = false\n")
+    assert "homeassistant.radio_controls=false\n" in answers
+    assert parse_config(render_config(answers)).homeassistant.radio_controls is False
+
+
 def test_contacts_are_managed_on_request_by_default() -> None:
     assert parse_config(MINIMAL).contacts.manage is True
     assert parse_config(MINIMAL).contacts.heard_nodes == "keys"  # SEC-015, since 2.0.0

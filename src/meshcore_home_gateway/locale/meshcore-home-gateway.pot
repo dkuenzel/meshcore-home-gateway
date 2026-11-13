@@ -158,6 +158,11 @@ msgid "list, add and remove the radio's contacts, and exclude companions from te
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
+msgid "make the radio send one advert to the radios in direct range (zero hop), through the broker"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/__init__.py
 #, python-brace-format
 msgid "no host in {text!r}"
 msgstr ""
@@ -322,6 +327,33 @@ msgstr ""
 #: src/meshcore_home_gateway/cli/__init__.py
 #, python-format
 msgid "write the configuration and the state into an archive (tar.gz, mode 0600)"
+msgstr ""
+
+#. name is the radio's name as the advert carried it
+#: src/meshcore_home_gateway/cli/advert.py
+#, python-brace-format
+msgid "advert sent with the name {name!r}; radios in direct range that heard it can add this radio or show its new name"
+msgstr ""
+
+#. reason is a code such as too_soon, which stays; document is a path
+#: src/meshcore_home_gateway/cli/advert.py
+#, python-brace-format
+msgid "no advert sent ({reason}); {document} says why"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/advert.py src/meshcore_home_gateway/cli/contacts.py
+#, python-brace-format
+msgid "no result in time (request {request}; it may still be handled: {command})"
+msgstr ""
+
+#: src/meshcore_home_gateway/cli/advert.py src/meshcore_home_gateway/cli/contacts.py
+msgid "the gateway is offline"
+msgstr ""
+
+#. reason is a code such as outcome_unknown, which stays
+#: src/meshcore_home_gateway/cli/advert.py
+#, python-brace-format
+msgid "the radio did not confirm the advert ({reason}); it may have gone out"
 msgstr ""
 
 #. detail is the system's reason, such as "No such file or directory".
@@ -663,11 +695,6 @@ msgid "no node {label} (the published list is cut: give the full key)"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/contacts.py
-#, python-brace-format
-msgid "no result in time (request {request}; it may still be handled: {command})"
-msgstr ""
-
-#: src/meshcore_home_gateway/cli/contacts.py
 msgid "not on the radio now: excluded in advance"
 msgstr ""
 
@@ -677,10 +704,6 @@ msgstr ""
 
 #: src/meshcore_home_gateway/cli/contacts.py
 msgid "the gateway has published no contacts"
-msgstr ""
-
-#: src/meshcore_home_gateway/cli/contacts.py
-msgid "the gateway is offline"
 msgstr ""
 
 #: src/meshcore_home_gateway/cli/contacts.py

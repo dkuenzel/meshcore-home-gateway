@@ -8,6 +8,30 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Added
+
+- Advert nearby: the gateway makes its radio send its advert once to the radios in direct range,
+  zero hop, never a flood, never a position, nothing written to the radio
+  ([ADR 0033](docs/decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)). A
+  person nearby can then add this home without its QR code, and the household's companions
+  learn a new name of the radio. The new MQTT request topic `advert/send` (any payload, or JSON
+  `{"id": "…"}`) and event topic `advert` (`event_type` `sent`, `refused` or `failed`, with `id`,
+  `reason`, `name`, `airtime_ms` and `next_at`), and the new command
+  `meshcore-home-gateway advert [--wait SECONDS]` and `listen --topic advert` (`all` includes
+  it). At most one advert every 10 minutes (kept in memory), charged to the airtime budget,
+  which must hold a long message beside it. A request is refused (`reason`) in a wrong form
+  (`too_large`, `invalid_utf8`, `invalid_request`), retained (`retained`) or empty (`empty`),
+  without a connected radio (`no_radio`), on firmware the gateway is not tested with, also with
+  `radio.profile.manage = "always"` (`untested_firmware`), while the radio would put its
+  position into the advert (`advert_location`, its policy as the radio reports it), when the
+  radio has no name (`no_name`), while another advert is being sent (`busy`), within the 10
+  minutes (`too_soon`), while messages are on their way (`messages_waiting`), when the budget
+  cannot pay it (`airtime_budget`) and while the radio's clock is more than 60 s ahead of the
+  host's (`clock_ahead`). A copy of a request with the same `id` within 10 minutes gets no
+  event.
+- `[homeassistant] radio_controls` (default `true`), also in the `config` document: the setting
+  of Home Assistant's button *Send advert nearby*; MQTT and the command line do not ask it.
+
 ## [2.1.1] - 2026-11-13
 
 Fixes of the dashboard found in the maintainer's first use of 2.1.0, and of the radio's clock

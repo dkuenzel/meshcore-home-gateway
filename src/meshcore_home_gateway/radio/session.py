@@ -400,6 +400,31 @@ class CompanionSession:
             self.contact_records = {**self.contact_records, key: patched}
         await self._events.put(PathReset(public_key))
 
+    async def send_self_advert(self, *, unless: Callable[[], bool] | None = None) -> bool:
+        """SEND_SELF_ADVERT, zero hop (ADR 0033). True on OK, which means the radio queued it;
+        False when `unless()` held once the command had the lock (nothing written).
+        CommandFailedError: the radio's ERR name (`table_full`: no packet buffer free,
+        Mesh.cpp:407-410) or `disabled`; NotSentError: closed before the write; RadioError:
+        lost after it."""
+        name = "send advert"
+        try:
+            async with self._command(codec.send_self_advert(), _SIMPLE, unless=unless) as pending:
+                decoded = self._decode(await self._next(pending), name)
+        except _WithdrawnError:
+            return False
+        if isinstance(decoded, codec.Err):
+            raise CommandFailedError(name, decoded.name)
+        if isinstance(decoded, codec.Disabled):
+            raise CommandFailedError(name, "disabled")
+        return True
+
+    async def read_clock_offset(self) -> int:
+        """The radio's clock minus the host's, read now (GET_DEVICE_TIME), never the offset of
+        the last heartbeat: the clock can jump between two (ADR 0033). `clock_offset_s` follows
+        it as at the heartbeat; nothing is written."""
+        radio_time = await self._read_clock()
+        return radio_time - int(self._wall())
+
     async def request_telemetry(
         self, public_key: bytes, *, unless: Callable[[], bool] | None = None
     ) -> TelemetrySent | None:

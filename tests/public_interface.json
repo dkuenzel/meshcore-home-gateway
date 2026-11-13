@@ -25,6 +25,7 @@
     "homeassistant.hidden_targets",
     "homeassistant.language",
     "homeassistant.prefix",
+    "homeassistant.radio_controls",
     "homeassistant.status_topic",
     "homie.contacts",
     "homie.enabled",
@@ -90,6 +91,29 @@
    "probe --list profile: writes": 2
   },
   "commands": {
+   "advert": {
+    "options": {
+     "--config": {
+      "default": "/etc/meshcore-home-gateway/config.toml",
+      "names": [
+       "--config"
+      ],
+      "takes_value": true,
+      "type": "path"
+     },
+     "--wait": {
+      "default": 30.0,
+      "max": 86400.0,
+      "min": 0.0,
+      "names": [
+       "--wait"
+      ],
+      "takes_value": true,
+      "type": "seconds"
+     }
+    },
+    "positionals": {}
+   },
    "backup": {
     "options": {
      "--config": {
@@ -504,6 +528,7 @@
      },
      "--topic": {
       "choices": [
+       "advert",
        "all",
        "command",
        "contact",
@@ -1039,6 +1064,11 @@
    "default": "homeassistant",
    "identity": true,
    "type": "string"
+  },
+  "homeassistant.radio_controls": {
+   "answer": "bool",
+   "default": true,
+   "type": "boolean"
   },
   "homeassistant.status_topic": {
    "answer": "str",
@@ -2010,6 +2040,14 @@
  },
  "mqtt": {
   "documents": {
+   "advert": [
+    "airtime_ms",
+    "event_type",
+    "id",
+    "name",
+    "next_at",
+    "reason"
+   ],
    "command": [
     "args",
     "event_type",
@@ -2040,6 +2078,7 @@
     "homeassistant.controls",
     "homeassistant.hidden_targets",
     "homeassistant.language",
+    "homeassistant.radio_controls",
     "messages",
     "messages.ascii_only",
     "messages.clean_received",
@@ -2430,6 +2469,11 @@
    }
   },
   "publish": {
+   "<base_topic>/<node_id>/advert": {
+    "payload": "json",
+    "qos": 1,
+    "retained": false
+   },
    "<base_topic>/<node_id>/availability": {
     "payload": "text",
     "qos": 1,
@@ -2755,6 +2799,9 @@
    "<base_topic>/<node_id>/add_contact": {
     "qos": 1
    },
+   "<base_topic>/<node_id>/advert/send": {
+    "qos": 1
+   },
    "<base_topic>/<node_id>/availability": {
     "qos": 1
    },
@@ -2823,6 +2870,29 @@
    }
   },
   "values": {
+   "advert:event_type": [
+    "failed",
+    "refused",
+    "sent"
+   ],
+   "advert:reason": [
+    "advert_location",
+    "airtime_budget",
+    "busy",
+    "clock_ahead",
+    "empty",
+    "internal_error",
+    "invalid_request",
+    "invalid_utf8",
+    "messages_waiting",
+    "no_name",
+    "no_radio",
+    "outcome_unknown",
+    "retained",
+    "too_large",
+    "too_soon",
+    "untested_firmware"
+   ],
    "availability": [
     "offline",
     "online"

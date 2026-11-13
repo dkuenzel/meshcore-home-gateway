@@ -125,6 +125,9 @@ class HomeAssistantConfig:
     # Home Assistant's controls (contact requests, telemetry switches, show hidden) can be used;
     # without, they are unavailable there, and MQTT and the command line still work (SEC-008)
     controls: bool = True
+    # Home Assistant's button "Send advert nearby" (ADR 0033): anyone who uses Home Assistant
+    # may press it; without, it is unavailable there, and MQTT and the command line still work
+    radio_controls: bool = True
     hidden_targets: frozenset[str] = frozenset()  # targets without a notify entity (SEC-008)
     contact_entity_prefix: str = "mesh"  # of the contact devices' entity IDs (ARC-015)
 
@@ -764,6 +767,7 @@ def _homeassistant(s: _Section) -> HomeAssistantConfig:
         contact_devices=s.integer("contact_devices", 50, 0, MAX_CONTACT_DEVICES),
         language=language,
         controls=s.boolean("controls", True),
+        radio_controls=s.boolean("radio_controls", True),
         hidden_targets=frozenset(s.strings("hidden_targets")),
         contact_entity_prefix=entity_prefix,
     )
@@ -949,6 +953,7 @@ _ANSWER_TYPES: dict[str, type] = {
     "homeassistant.contact_devices": int,
     "homeassistant.language": str,
     "homeassistant.controls": bool,
+    "homeassistant.radio_controls": bool,
     "homeassistant.hidden_targets": list,
     "homeassistant.contact_entity_prefix": str,
     "messages.ascii_only": bool,

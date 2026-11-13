@@ -29,6 +29,7 @@ and no closed lists of values: this page stays normative.
 | `add_contact` | → gateway | must not be | a public key, contact link or contact card, or JSON `{"contact": "…", "id": "…"}`: add a contact to the radio |
 | `contacts/<key>/telemetry` | → gateway | must not be | `on` or `off`, or JSON `{"telemetry": "off", "id": "…", "forget": true}`: ask a companion for its telemetry, or exclude it ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)) |
 | `contacts/<key>/received` | gateway → | no | the `received` events of messages from that contact |
+| `advert/send` | → gateway | must not be | any payload, or JSON `{"id": "…"}`: make the radio send its advert once to the radios in direct range, zero hop ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)) |
 | `nodes` | gateway → | yes | JSON: nodes heard but not added |
 | `history` | gateway → | yes | JSON: the latest messages in and out |
 | `pending` | gateway → | yes | JSON: the messages on their way, accepted and not final yet |
@@ -36,6 +37,7 @@ and no closed lists of values: this page stays normative.
 | `config` | gateway → | yes | JSON: the settings of the configuration in effect, by an allowlist ([configuration](#configuration-config)) |
 | `contact` | gateway → | no | JSON, `event_type` = `added`, `removed`, `hidden`, `shown`, `excluded`, `included`, `refused`, `failed` or `position_in_advert` |
 | `telemetry` | gateway → | no | JSON, `event_type` = `answered` or `unanswered`: a companion answers again or stopped answering ([telemetry events](#telemetry-events-telemetry)) |
+| `advert` | gateway → | no | JSON, `event_type` = `sent`, `refused` or `failed`: what became of an advert request; adverts heard are `node` events and the `nodes` document |
 | `node` | gateway → | no | JSON, `event_type` = `new`: a node heard for the first time |
 | `setting` | gateway → | no | JSON, `event_type` = `written`, `failed`, `not_taken`, `not_converging` or `drift`: a radio setting of the profile |
 | `homeassistant/show_hidden` | → gateway | must not be | any payload: show the contacts deleted in Home Assistant again |

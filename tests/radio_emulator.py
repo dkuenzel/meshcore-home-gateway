@@ -190,6 +190,7 @@ class EmulatedRadio:
     disabled: set[int] = field(default_factory=set)  # command codes answered with DISABLED
     unknown: set[int] = field(default_factory=set)  # older firmware: ERR "unsupported", always
     ignored: set[int] = field(default_factory=set)  # setters answered OK without effect
+    held: set[int] = field(default_factory=set)  # command codes answered only on release()
     firmware_code: int = 14  # FIRMWARE_VER_CODE of companion 1.18
     max_contacts: int = 100  # DEVICE_INFO reports half of it
     frequency_khz: int = 869_618  # in the 10 % sub-band
@@ -202,7 +203,8 @@ class EmulatedRadio:
         self.errors = dict(self.errors)
         self.silent, self.drop_on = set(self.silent), set(self.drop_on)
         self.disabled, self.unknown = set(self.disabled), set(self.unknown)
-        self.ignored = set(self.ignored)
+        self.ignored, self.held = set(self.ignored), set(self.held)
+        self._holding: list[bytes] = []  # the held commands, in order
         self.opened = False
         self.received: list[bytes] = []  # every command payload, in order
         self.raw_written = bytearray()
@@ -210,6 +212,7 @@ class EmulatedRadio:
         self.channel_texts: list[tuple[int, str, int]] = []
         self.path_resets: list[bytes] = []
         self.reboots = 0
+        self.adverts: list[bytes] = []  # every SEND_SELF_ADVERT, its optional flood byte too
         self.telemetry_requests: list[tuple[bytes, bool]] = []  # key, flooded
         self._asked: tuple[bytes, bool] | None = None  # the pending telemetry request
         self._tag = 0x11223344
@@ -405,6 +408,16 @@ class EmulatedRadio:
     def commands(self) -> list[int]:
         return [p[0] for p in self.received]
 
+    def release(self, code: int) -> None:
+        """Answer the held commands with this code, as the radio would have, and hold no more."""
+        self.held.discard(code)
+        waiting, self._holding = self._holding, []
+        for payload in waiting:
+            if payload[0] == code:
+                self._answer(payload)
+            else:
+                self._holding.append(payload)
+
     def answer_telemetry(self) -> None:
         """The pending request's companion answers (MyMesh.cpp:739-749): a direct request
         directly (or by flood, if it has no path back), a flooded one by a path return, whose
@@ -430,9 +443,15 @@ class EmulatedRadio:
 
     # --- firmware model -------------------------------------------------------------------------
 
-    def _handle(self, p: bytes) -> None:  # noqa: PLR0912 - one branch per command
-        code = p[0]
+    def _handle(self, p: bytes) -> None:
         self.received.append(p)
+        if p[0] in self.held:
+            self._holding.append(p)
+            return
+        self._answer(p)
+
+    def _answer(self, p: bytes) -> None:  # noqa: PLR0912 - one branch per command
+        code = p[0]
         if code in self.silent:
             return
         if code in self.drop_on:
@@ -506,6 +525,9 @@ class EmulatedRadio:
                 self.emit(bytes([Response.OK]))
         elif code == Command.SEND_TELEMETRY_REQ and len(p) >= 36:
             self._telemetry(p[4:36])
+        elif code == Command.SEND_SELF_ADVERT:  # zero hop, or flooded with byte 1 (MyMesh.cpp:1297)
+            self.adverts.append(p)
+            self.emit(bytes([Response.OK]))
         elif code == Command.RESET_PATH:
             self.path_resets.append(p[1:33])
             for contact in self.contacts:

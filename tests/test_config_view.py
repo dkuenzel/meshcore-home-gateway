@@ -104,6 +104,7 @@ SHOWN = {
         f"homeassistant.{key}"
         for key in (
             "controls",
+            "radio_controls",
             "hidden_targets",
             "contact_entity_prefix",
             "language",
@@ -292,6 +293,7 @@ node_id = "radio1"
 [homeassistant]
 contact_devices = 10
 controls = false
+radio_controls = false
 hidden_targets = ["alarm"]
 contact_entity_prefix = "mesh_2"
 [messages]
@@ -348,6 +350,7 @@ contact = "{KEY}"
     assert shown["telemetry"] == {"enabled": False, "ask": "all", "ask_types": ["chat", "sensor"]}
     assert shown["homeassistant"] == {
         "controls": False,
+        "radio_controls": False,
         "hidden_targets": 1,
         "contact_entity_prefix": "mesh_2",
         "language": "en",

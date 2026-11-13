@@ -295,6 +295,7 @@ def test_the_privacy_page_names_the_event_topics_the_gateway_has() -> None:
             topics.node_event,
             topics.setting_event,
             topics.telemetry_event,
+            topics.advert_event,
             topics.contact_received("<key>"),
         )
     }

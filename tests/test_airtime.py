@@ -232,3 +232,17 @@ def test_a_forger_beside_the_radio_answers_sooner_only_over_a_repeater() -> None
         forged = time_on_air_s(direct_message_bytes(20, hops, False), EU_NARROW)
         forged += time_on_air_s(8, EU_NARROW)
         assert (forged < shortest_acknowledgement_s(20, hops, hops, EU_NARROW)) is (hops > 0)
+
+
+# --- this radio's own advert (ADR 0033) ----------------------------------------------------------
+
+
+def test_this_radios_advert_is_103_bytes_and_its_name() -> None:
+    """Zero hop without a position: header, path length 0, key, timestamp, signature, flags and
+    the name cut at 31 bytes (Mesh.cpp:404-438, AdvertDataHelpers.cpp:4-28). A name of 12 bytes
+    takes about 1.16 s at EU/UK Narrow (docs/protocol.md, On-air sizes)."""
+    assert airtime.self_advert_bytes(0) == 103
+    assert airtime.self_advert_bytes(12) == 115
+    assert airtime.self_advert_bytes(31) == 134
+    assert airtime.self_advert_bytes(40) == 134  # the firmware cuts the name
+    assert time_on_air_s(115, meshcore_lora(62_500, 8, 8)) == pytest.approx(1.164, abs=0.001)

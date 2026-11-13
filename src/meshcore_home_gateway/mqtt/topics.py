@@ -25,10 +25,13 @@ class Topics:
         self.node_event = f"{self.root}/node"  # a node heard for the first time
         self.setting_event = f"{self.root}/setting"  # a radio setting written or found changed
         self.telemetry_event = f"{self.root}/telemetry"  # a companion answers again or stops
+        self.advert_event = f"{self.root}/advert"  # the outcome of an advert request
         # requests
         self.show_hidden = f"{self.root}/homeassistant/show_hidden"  # contacts deleted in HA
         self.add_node = f"{self.root}/homeassistant/add_node"  # a heard node by its label (HA)
         self.add_contact = f"{self.root}/add_contact"  # a key, contact link or card (ADR 0017)
+        # make the radio send its advert nearby, zero hop (ADR 0033)
+        self.advert_request = f"{self.root}/advert/send"
         # the drafts of Home Assistant's chats: `draft/<kind>/<id>`, kind `target` (its alias) or
         # `contact` (its key); retained {"text": …}, and the requests below each (design §6.7)
         self._draft = f"{self.root}/homeassistant/draft/"

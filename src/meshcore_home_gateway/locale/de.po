@@ -160,6 +160,11 @@ msgid "list, add and remove the radio's contacts, and exclude companions from te
 msgstr "die Kontakte des Funkgeräts auflisten, hinzufügen und entfernen und Companions von der Telemetrie ausnehmen, über den Broker"
 
 #: src/meshcore_home_gateway/cli/__init__.py
+#, python-format
+msgid "make the radio send one advert to the radios in direct range (zero hop), through the broker"
+msgstr "das Funkgerät ein Advert an die Funkgeräte in direkter Reichweite senden lassen (ohne Weiterleitung), über den Broker"
+
+#: src/meshcore_home_gateway/cli/__init__.py
 #, python-brace-format
 msgid "no host in {text!r}"
 msgstr "kein Host in {text!r}"
@@ -325,6 +330,33 @@ msgstr "das Broker-Passwort statt in die Konfiguration in diese Datei schreiben 
 #, python-format
 msgid "write the configuration and the state into an archive (tar.gz, mode 0600)"
 msgstr "die Konfiguration und den Zustand in ein Archiv schreiben (tar.gz, Modus 0600)"
+
+#. name is the radio's name as the advert carried it
+#: src/meshcore_home_gateway/cli/advert.py
+#, python-brace-format
+msgid "advert sent with the name {name!r}; radios in direct range that heard it can add this radio or show its new name"
+msgstr "Advert mit dem Namen {name!r} gesendet; Funkgeräte in direkter Reichweite, die es gehört haben, können dieses Funkgerät hinzufügen oder seinen neuen Namen anzeigen"
+
+#. reason is a code such as too_soon, which stays; document is a path
+#: src/meshcore_home_gateway/cli/advert.py
+#, python-brace-format
+msgid "no advert sent ({reason}); {document} says why"
+msgstr "kein Advert gesendet ({reason}); {document} sagt, warum"
+
+#: src/meshcore_home_gateway/cli/advert.py src/meshcore_home_gateway/cli/contacts.py
+#, python-brace-format
+msgid "no result in time (request {request}; it may still be handled: {command})"
+msgstr "kein Ergebnis innerhalb der Wartezeit (Anfrage {request}; sie wird vielleicht noch bearbeitet: {command})"
+
+#: src/meshcore_home_gateway/cli/advert.py src/meshcore_home_gateway/cli/contacts.py
+msgid "the gateway is offline"
+msgstr "das Gateway ist offline"
+
+#. reason is a code such as outcome_unknown, which stays
+#: src/meshcore_home_gateway/cli/advert.py
+#, python-brace-format
+msgid "the radio did not confirm the advert ({reason}); it may have gone out"
+msgstr "das Funkgerät hat das Advert nicht bestätigt ({reason}); es ist vielleicht trotzdem gesendet worden"
 
 #. detail is the system's reason, such as "No such file or directory".
 #: src/meshcore_home_gateway/cli/backup.py src/meshcore_home_gateway/cli/codes.py src/meshcore_home_gateway/cli/history.py src/meshcore_home_gateway/config.py
@@ -665,11 +697,6 @@ msgid "no node {label} (the published list is cut: give the full key)"
 msgstr "kein Knoten {label} (die veröffentlichte Liste ist gekürzt: gib den vollständigen Schlüssel an)"
 
 #: src/meshcore_home_gateway/cli/contacts.py
-#, python-brace-format
-msgid "no result in time (request {request}; it may still be handled: {command})"
-msgstr "kein Ergebnis innerhalb der Wartezeit (Anfrage {request}; sie wird vielleicht noch bearbeitet: {command})"
-
-#: src/meshcore_home_gateway/cli/contacts.py
 msgid "not on the radio now: excluded in advance"
 msgstr "gerade nicht auf dem Funkgerät: vorab ausgenommen"
 
@@ -680,10 +707,6 @@ msgstr "das Gateway hat keinen Kontaktlink veröffentlicht"
 #: src/meshcore_home_gateway/cli/contacts.py
 msgid "the gateway has published no contacts"
 msgstr "das Gateway hat keine Kontakte veröffentlicht"
-
-#: src/meshcore_home_gateway/cli/contacts.py
-msgid "the gateway is offline"
-msgstr "das Gateway ist offline"
 
 #: src/meshcore_home_gateway/cli/contacts.py
 msgid "the gateway is offline: the lists are as it last saw them"

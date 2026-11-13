@@ -61,6 +61,12 @@ def set_device_time(timestamp: int) -> bytes:
     return bytes([Command.SET_DEVICE_TIME]) + _u32(timestamp, "timestamp")
 
 
+def send_self_advert() -> bytes:
+    """SEND_SELF_ADVERT without its optional byte: the radio sends its advert zero hop; a second
+    byte 1 would flood it (MyMesh.cpp:1297-1316). No parameter, so no flood (ADR 0033)."""
+    return bytes([Command.SEND_SELF_ADVERT])
+
+
 def reboot() -> bytes:
     """No answer: the radio saves its contacts and restarts (MyMesh.cpp:1512-1516)."""
     return bytes([Command.REBOOT]) + b"reboot"
