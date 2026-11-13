@@ -314,7 +314,7 @@ also without command words, then with what an earlier run refused, or none.
 | Key | Meaning |
 | --- | --- |
 | `at` | the gateway's clock when it took the message from the radio, as `received_at` of its `received` event |
-| `sender_key`, `sender_prefix`, `sender_name` | as in its `received` event: the full key and name of the one contact with the prefix, else `null`; with `[messages] clean_received` the name cleaned, on one line, where the gateway takes it from the radio ([received messages](#received-messages-received)) |
+| `sender_key`, `sender_prefix`, `sender_name` | as in its `received` event: the full key and name of the one contact with the prefix, else `null`; with `[messages] clean_received` the name cleaned, on one line, where the gateway takes it from the radio, and at the start in the refusals a run with it off kept ([received messages](#received-messages-received)) |
 | `reason` | why, one of the reasons of [`command`](#commands-command); expect new ones |
 
 `total` counts the refusals kept (at most five); the whole document stays within 15 KiB, which

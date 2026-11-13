@@ -248,6 +248,29 @@ def test_ledger_keeps_the_latest_refused_commands_across_a_restart(tmp_path: Pat
     assert CommandLedger(JsonStateFile(path)).refused[:2] == (unknown, refusals[-1])
 
 
+def test_ledger_cleans_the_names_a_run_without_clean_received_kept(tmp_path: Path) -> None:
+    """#137, #141: a run with `clean_received` off kept a refused sender's name as it came; with
+    the setting on the next run cleans the kept names at its start, as the inbox cleans a new
+    one's, and stores them so at once. A missing name stays missing, the rest stays as it was,
+    and names that are clean already leave the file as it is."""
+    path = tmp_path / "state.json"
+    store = JsonStateFile(path)
+    ledger = CommandLedger(store)
+    raw = Refusal(2.0, "sender_not_allowed", "c3" * 6, "c3" * 32, "Mal\x1b[2J\u202elory")
+    for refusal in (Refusal(1.0, "sender_unknown", "d4" * 6), raw):
+        ledger.refusal(refusal)
+    assert store.flush()
+    restarted = CommandLedger(JsonStateFile(path))
+    restarted.clean_names()
+    cleaned = (dataclasses.replace(raw, sender_name="Mal[2Jlory"), ledger.refused[1])
+    assert restarted.refused == cleaned
+    assert CommandLedger(JsonStateFile(path)).refused == cleaned  # stored at once
+    before = path.stat().st_mtime_ns
+    os.utime(path, ns=(before - 10**9, before - 10**9))
+    CommandLedger(JsonStateFile(path)).clean_names()
+    assert path.stat().st_mtime_ns == before - 10**9  # nothing to clean: not written
+
+
 def test_ledger_skips_malformed_refused_commands(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
     good = {"at": 5, "reason": "replay", "sender_prefix": "aa" * 6, "sender_key": None}

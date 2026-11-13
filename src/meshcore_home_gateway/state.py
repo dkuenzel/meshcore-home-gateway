@@ -19,7 +19,7 @@ import os
 import tempfile
 import time
 from collections.abc import Callable, Collection, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, TypeGuard
@@ -36,6 +36,7 @@ from meshcore_home_gateway.core.contacts import is_key
 from meshcore_home_gateway.core.mesh import AdvertCheck
 from meshcore_home_gateway.core.profile import Applied, Attempt, Value
 from meshcore_home_gateway.core.telemetry import Saved, SavedContact
+from meshcore_home_gateway.core.text import clean_name
 
 log = logging.getLogger(__name__)
 
@@ -227,6 +228,19 @@ class CommandLedger:
         a crash may lose it, which costs only what a front end shows."""
         self._refused = (refusal, *self._refused)[:REFUSALS_KEPT]
         self._store.put(self._REFUSED, [_refusal_entry(r) for r in self._refused])
+
+    def clean_names(self) -> None:
+        """With `[messages] clean_received`, at the start: the senders' names that a run with it
+        off kept as they came, cleaned as the inbox cleans a new refusal's (#137). Stored at once
+        when one changed, as the observer stores a cleaned document of the last run."""
+        cleaned = tuple(
+            r if r.sender_name is None else replace(r, sender_name=clean_name(r.sender_name))
+            for r in self._refused
+        )
+        if cleaned != self._refused:
+            self._refused = cleaned
+            self._store.put(self._REFUSED, [_refusal_entry(r) for r in cleaned])
+            self._store.flush()
 
     def record(self, sender_key: str, timestamp: int, code_step: int | None = None) -> None:
         """Store the timestamp (and the code's time step) durably; memory follows only after a

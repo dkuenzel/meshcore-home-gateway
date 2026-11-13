@@ -1241,3 +1241,31 @@ def test_a_refused_senders_name_is_kept_cleaned_only_when_asked(
             assert refusal["sender_name"] == ("Mal[2Jlory" if clean else "Mal\x1b[2J\u202elory")
 
     scenario(main)
+
+
+@pytest.mark.parametrize("clean", [False, True])
+def test_a_refused_senders_name_kept_by_a_run_without_cleaning_is_cleaned_when_asked(
+    tmp_path: Path, clean: bool
+) -> None:
+    """#137, #141: a run with `clean_received` off kept a refused sender's name as it came. A
+    later run with the setting on publishes it cleaned from the start, and its state file keeps
+    it so; one with it off keeps it as it came."""
+    raw = "Mal\x1b[2J\u202elory"
+    forger = EmulatedContact(bytes.fromhex("c3" * 32), raw)
+    radio = EmulatedRadio(contacts=[ALICE, forger])
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path) as (_, bus, _notes):
+            radio.queue_direct_message(forger.public_key[:6], "arm", NOW - 5)
+            await bus.wait_for("radio1/refused_commands", lambda d: d["total"] == 1)
+        config = make_config(messages=f"clean_received = {str(clean).lower()}")
+        quiet = EmulatedRadio(contacts=[ALICE])  # the forger has left the radio's table
+        async with running(config, quiet, tmp_path) as (_, bus, _notes):
+            name = "Mal[2Jlory" if clean else raw
+            documents = _refused(bus)  # at the start and at the broker's connect
+            assert len(documents) >= 2
+            assert all(d["commands"][0]["sender_name"] == name for d in documents)
+        stored = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+        assert [r["sender_name"] for r in stored["command_refusals"]] == [name]
+
+    scenario(main)
