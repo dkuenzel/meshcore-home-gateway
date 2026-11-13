@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / "docs" / "home-assistant.md"
 # the guide of a release: the guide the gateway's device page links to, at the release's tag
 GUIDE_URL = DOCUMENTATION_URL.replace("/blob/main/", "/blob/v{version}/")
-VERSION = "2.1.1rc1"
+VERSION = "2.1.1"
 NODE = "radio1"
 GW = "meshcore_home_gateway_radio1"
 # rule 18: a chat page's thread, and its refused line, which alone reads the delivery event
