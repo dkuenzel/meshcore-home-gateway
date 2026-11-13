@@ -203,6 +203,24 @@ async def test_every_contact_gets_a_device_below_the_gateway(
     assert problems(caplog) == []
 
 
+async def test_a_contact_named_by_an_invisible_character_has_its_key_as_device_name(
+    hass: HomeAssistant,
+    mqtt: Any,
+    broker: Broker,
+    store: JsonStateFile,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """#137: a name of a zero-width space alone would leave the device without a name to
+    read in Home Assistant's lists: the device has the first 12 digits of the key."""
+    await with_gateway(hass)
+    gateway_devices(broker, store).update(mesh_of(Node(ALICE, "\u200b", COMPANION)))
+    await broker.deliver(hass)
+    alice = registry_devices(hass)[f"{PREFIX}_contact_{ALICE}"]
+    assert (alice.name, alice.name_by_user) == (ALICE[:12], None)
+    assert friendly(hass, f"notify.mesh_{ALICE[:8]}") == ALICE[:12]
+    assert problems(caplog) == []
+
+
 async def test_a_companion_that_is_no_contact_target_has_a_draft(
     hass: HomeAssistant,
     mqtt: Any,

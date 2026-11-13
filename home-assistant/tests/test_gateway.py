@@ -479,6 +479,37 @@ async def test_settings_say_which_kinds_of_node_are_asked(
     assert problems(caplog) == []
 
 
+@pytest.mark.parametrize(
+    ("level", "kept"),
+    [
+        ("off", "not kept"),
+        ("keys", "keys only"),
+        ("full", "keys, names, times and signal"),
+        (None, "keys, names, times and signal"),  # the default since 2.2 (ADR 0032)
+    ],
+)
+async def test_settings_say_what_is_kept_of_the_nodes_heard_nearby(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    level: str | None,
+    kept: str,
+) -> None:
+    """Settings, Privacy: what the gateway keeps of other people's radios, all of it for `full`
+    ([contacts] heard_nodes)."""
+    config = make_config("" if level is None else f'[contacts]\nheard_nodes = "{level}"\n')
+    loaded = await made(hass, hass_ws_client, config, tmp_path)
+    topics = await gateway(hass, config)
+    document = config_document(time.time(), target_settings(config, RADIO), shown_settings(config))
+    await fire(hass, topics.config, document, retain=True)
+    said = "\n".join(render(hass, c) for c in cards(loaded, "settings") if c["type"] == "markdown")
+    assert row(said, "Nodes heard nearby") == kept
+    assert problems(caplog) == []
+
+
 async def test_settings_without_the_configuration_say_what_is_missing(
     hass: HomeAssistant,
     mqtt: Any,

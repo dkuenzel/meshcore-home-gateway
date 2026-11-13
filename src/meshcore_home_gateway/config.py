@@ -166,10 +166,10 @@ class HistoryConfig:
 @dataclass(frozen=True, slots=True)
 class ContactsConfig:
     """Managing the radio's contact table on request (ADR 0017), and what is published of the
-    nodes heard but not added (SEC-015)."""
+    nodes heard but not added (SEC-015; everything by default, ADR 0032)."""
 
     manage: bool = True
-    heard_nodes: HeardNodes = "keys"
+    heard_nodes: HeardNodes = "full"
 
 
 TelemetryAsk = Literal["all", "household"]
@@ -877,7 +877,7 @@ def _history(s: _Section) -> HistoryConfig:
 
 
 def _contacts(s: _Section) -> ContactsConfig:
-    heard_nodes = s.string("heard_nodes", "keys")
+    heard_nodes = s.string("heard_nodes", "full")
     if heard_nodes not in HEARD_NODES:
         raise _one_of(s.key("heard_nodes"), HEARD_NODES, heard_nodes)
     return ContactsConfig(manage=s.boolean("manage", True), heard_nodes=heard_nodes)

@@ -200,10 +200,11 @@ separate setting on the radio.
 ## Privacy
 
 The gateway keeps what its radio hears: the household's messages, positions and readings, and of
-other people's radios by default only their keys and types; the texts of a channel only when it
-is a target. [`docs/privacy.md`](docs/privacy.md) lists what is kept where and for how long, and
-the settings that keep more or less of other people's (`[contacts] heard_nodes`, `[messages]
-publish_channels`). Do not share dashboards or copies of the history beyond the household.
+other people's radios their keys, types, names, when they were heard and their signal, never a
+position; the texts of a channel only when it is a target. [`docs/privacy.md`](docs/privacy.md)
+lists what is kept where and for how long, and the settings that keep more or less of other
+people's (`[contacts] heard_nodes`, `[messages] publish_channels`). Do not share dashboards or
+copies of the history beyond the household.
 
 ## Development
 

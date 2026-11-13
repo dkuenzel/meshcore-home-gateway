@@ -1036,6 +1036,33 @@ def test_received_texts_are_published_cleaned_only_when_asked(tmp_path: Path) ->
         scenario(main)
 
 
+@pytest.mark.parametrize("clean", [False, True])
+def test_a_contacts_name_is_published_cleaned_only_when_asked(tmp_path: Path, clean: bool) -> None:
+    """#137: `clean_received` cleans the contacts' names too, where the gateway takes them from
+    the radio's table: in the `received` and `command` events, the history and the contact's
+    document. The command is judged as it came. Off, names stay as they came."""
+    hostile = "Ali\x1b[31mce\u202e"
+    shown = "Ali[31mce" if clean else hostile
+    radio = EmulatedRadio(contacts=[dataclasses.replace(ALICE, name=hostile)])
+    config = make_config(messages=f"clean_received = {str(clean).lower()}")
+    alice = ALICE.public_key.hex()
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path) as (_, bus, _notes):
+            radio.queue_direct_message(ALICE.public_key[:6], "status", NOW - 5)
+            command = await bus.wait_for("/command", lambda c: c["event_type"] == "status")
+            received = await bus.wait_for("/received", lambda e: e["event_type"] == "contact")
+            own = await bus.wait_for(f"/contacts/{alice}/received", lambda e: True)
+            history = await bus.wait_for("/history", lambda d: d["total"] >= 1)
+            document = (await bus.wait_for(f"/contacts/{alice}", lambda d: "name" in d))["name"]
+            assert command["sender_name"] == received["sender_name"] == shown
+            assert own["sender_name"] == shown
+            assert {m["name"] for m in history["messages"]} == {shown}  # also the answer's
+            assert document == shown
+
+    scenario(main)
+
+
 @pytest.mark.parametrize("publish", ["all", "targets"])
 def test_only_the_channels_of_targets_are_published_when_asked(
     tmp_path: Path, publish: str

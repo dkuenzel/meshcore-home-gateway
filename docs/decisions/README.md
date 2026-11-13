@@ -23,7 +23,7 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0013](0013-signed-releases-with-github-artifact-attestations.md) | Signed releases with GitHub artifact attestations | accepted; amended by 0022; amended 2026-11-03 (the installer pins the program; build apart, rebuilt and compared) |
 | [0014](0014-the-gateway-as-the-households-mesh-observer.md) | The gateway as the household's mesh observer: positions, telemetry, contacts and dashboards | accepted |
 | [0015](0015-provider-neutral-documents-on-the-bus.md) | Provider-neutral documents on the bus; front ends are adapters | accepted; amended 2026-11-03 (the integrity model), 2026-11-04 (the Homie device) and 2026-11-07 (its gateway node); amended by 0031 (the drafts of Home Assistant's chats) |
-| [0016](0016-history-in-a-local-sqlite-database.md) | History in a local SQLite database | accepted; amended 2026-11-03 (the purge in a thread; the state file held in memory) |
+| [0016](0016-history-in-a-local-sqlite-database.md) | History in a local SQLite database | accepted; amended 2026-11-03 (the purge in a thread; the state file held in memory) and 2026-11-11 (the received messages of channels not published deleted at the start) |
 | [0017](0017-contacts-on-the-radio-each-with-its-own-device.md) | Contacts live on the radio; each contact is a recipient with its own device | accepted |
 | [0018](0018-telemetry-pulled-from-the-households-companions.md) | Telemetry and positions pulled from the household's companions, in budget lanes | accepted; amended by 0025; amended 2026-11-04 (sensors may be asked) and 2026-11-05 (the household's companions asked by default) |
 | [0019](0019-internationalisation-with-gettext.md) | Internationalisation with gettext catalogs; English source, German, Dutch, Polish, French | accepted; amended by 0027; amended 2026-11-11 (numbers in the dashboard's language; English and German offered, others when a translator offers one) |
@@ -36,6 +36,7 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0026](0026-gateway-tested-against-the-real-firmware-built-natively.md) | The gateway is tested against the real firmware, built natively | accepted; amended by 0030 |
 | [0027](0027-message-catalogs-compiled-when-loaded.md) | Message catalogs compiled when they are loaded | accepted |
 | [0028](0028-outgoing-queue-kept-across-restarts.md) | The outgoing queue kept across restarts, alerts first | accepted; amended 2026-11-03 (where its tests are) and 2026-11-07 (the queue kept through a stop; an alert ends a wait) |
-| [0029](0029-what-a-contact-is-trusted-with.md) | What a contact of the radio is trusted with | accepted; amended 2026-11-05 (the defaults of 2.0.0) |
+| [0029](0029-what-a-contact-is-trusted-with.md) | What a contact of the radio is trusted with | accepted; amended 2026-11-05 (the defaults of 2.0.0); the default of `heard_nodes` superseded by 0032 (2026-11-11) |
 | [0030](0030-release-checked-by-ci-self-test-and-use.md) | A release checked by CI, the installer's self-test and the maintainer's use, not by a manual checklist | accepted; amended 2026-11-06 with 0022 (a candidate tagged once CI passed) |
 | [0031](0031-household-chat-problems-and-settings-on-the-generated-dashboard.md) | Household chat, problems and settings on the generated dashboard | accepted; amended 2026-11-11 (the refused line above the thread) |
+| [0032](0032-heard-nodes-kept-with-name-signal-and-time-by-default.md) | Heard nodes are kept with name, signal and time by default | accepted |

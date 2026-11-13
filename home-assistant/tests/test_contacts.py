@@ -398,6 +398,38 @@ async def test_a_removed_contact_leaves_no_row_and_no_warning(
     assert problems(caplog) == []
 
 
+@pytest.mark.parametrize("removable", [False, True])
+async def test_with_no_contact_removable_the_section_says_so(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    removable: bool,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Maintainer's use of 2.1.1rc1: *Remove a contact* stood as a heading alone while no contact
+    could be removed (every one kept on purpose, as the chats' contacts are by default). The
+    section then says so; while a contact can be removed, its row shows and the line does not."""
+    config = make_config()
+    broker, mesh = Broker(), household(ALICE_NODE, HILL_NODE)
+    contacts_of(config, tmp_path, broker).update(mesh)
+    loaded = await made(hass, hass_ws_client, config, tmp_path)
+    await gateway(hass, config)
+    await deliver(hass, config, broker, mesh, removable=removable)
+    await connected(hass, config)
+    viewer = await household_viewer(hass, hass_ws_client)
+    view = page(loaded, "contacts")
+    removes = {entity: row for entity, row in rows(view).items() if entity.endswith("_remove")}
+    assert set(removes) == {"button.mesh_alice_remove", "button.mesh_hilltop_remove"}
+    for entity, row in removes.items():
+        assert await viewer.shown(view, row) is removable, entity
+    (help_,) = [c for c in markdown(view) if "What removing does" in c["content"]]
+    said = render(hass, help_).startswith("<div>No contact can be removed here.</div>")
+    assert said is not removable
+    assert problems(caplog) == []
+
+
 async def test_a_prefix_set_later_keeps_the_table_and_names_the_real_ids(
     hass: HomeAssistant,
     mqtt: Any,

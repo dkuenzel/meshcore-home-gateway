@@ -631,6 +631,37 @@ def test_forgetting_is_one_transaction_and_none_without_a_working_history(
     assert caplog.text.count("history cannot be written") == 1
 
 
+def test_forgetting_the_channels_not_published_deletes_their_received_messages(
+    tmp_path: Path,
+) -> None:
+    """#136: the received messages of the channels not kept go, also one without a channel's
+    index (as none is published); the gateway's own messages to them and the contacts' stay."""
+    history = opened(tmp_path / "h.sqlite3")
+    for entry in (
+        HistoryEntry(T, "in", "channel", "family news", channel_index=0, name="Bob"),
+        HistoryEntry(T + 1, "in", "channel", "chatter", channel_index=1, name="Dave"),
+        HistoryEntry(T + 2, "in", "channel", "Dave: without an index"),
+        HistoryEntry(T + 3, "in", "contact", "Hi from Alice", contact_key=KEY, name="Alice"),
+        HistoryEntry(T + 4, "out", "channel", "to channel 1", channel_index=1, state="sent"),
+    ):
+        history.add_message(entry)
+    assert history.forget_received_channels({0}) == 2
+    texts = [m.text for m in history.recent_messages(10)]
+    assert texts == ["to channel 1", "Hi from Alice", "family news"]
+    assert history.forget_received_channels({0}) == 0
+    assert history.forget_received_channels(()) == 1  # no channel kept: "family news" goes
+    assert [m.text for m in history.recent_messages(10)] == ["to channel 1", "Hi from Alice"]
+
+
+def test_forgetting_channels_is_none_without_a_working_history(tmp_path: Path) -> None:
+    history = opened(tmp_path / "h.sqlite3")
+    history.add_message(HistoryEntry(T, "in", "channel", "chatter", channel_index=1))
+    history._db.execute("DROP TABLE message")
+    assert history.forget_received_channels({0}) is None
+    assert history.broken
+    assert history.forget_received_channels({0}) is None
+
+
 # --- the purge in its thread (CODE-002) ----------------------------------------------------------
 
 
@@ -716,6 +747,23 @@ def test_forgetting_and_closing_wait_for_the_purge(
     assert asyncio.run(main()) == 2  # the held reading was written before
     again = opened(path)
     assert [m.text for m in again.recent_messages(10)] == ["held at the stop"]
+
+
+def test_forgetting_channels_waits_for_the_purge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#136: the messages written while a purge runs go too: it waits for the purge, and the
+    writes it held are written first."""
+    history = opened(tmp_path / "h.sqlite3")
+    slow_purge(monkeypatch, 0.2)
+
+    async def main() -> int | None:
+        history.purge_in_thread(T)
+        history.add_message(HistoryEntry(T, "in", "channel", "held", channel_index=1))
+        return history.forget_received_channels({0})
+
+    assert asyncio.run(main()) == 1
+    assert history.recent_messages(10) == []
 
 
 def test_a_purge_that_fails_in_its_thread_breaks_the_history(

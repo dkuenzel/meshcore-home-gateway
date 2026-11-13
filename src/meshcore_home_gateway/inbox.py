@@ -25,7 +25,7 @@ from meshcore_home_gateway.core.commands import (
 )
 from meshcore_home_gateway.core.contacts import PREFIX_HEX_DIGITS, Contact
 from meshcore_home_gateway.core.model import InboundMessage, MessageKind
-from meshcore_home_gateway.core.text import clean_received
+from meshcore_home_gateway.core.text import clean_name, clean_received
 from meshcore_home_gateway.health import FAILURES
 from meshcore_home_gateway.mqtt.payloads import command_payload, encode, received_payload
 from meshcore_home_gateway.mqtt.topics import Topics
@@ -211,10 +211,7 @@ class Inbox:
             return  # judged, but neither published nor recorded: one sender or channel floods
         if self.config.messages.clean_received:  # judged as it came, published cleaned
             message = replace(message, text=clean_received(message.text))
-        sender = None
-        if message.sender_prefix is not None:
-            matches = session.contacts.resolve(message.sender_prefix)
-            sender = matches[0] if len(matches) == 1 else None
+        sender = self._sender(message, session)
         target = self._target_for(message, sender)
         # %r: names come from the mesh and must not forge log lines or terminal escapes
         log.info(
@@ -259,13 +256,11 @@ class Inbox:
     ) -> None:
         """A refusal published on `received` is kept with the latest (#141), and the
         `refused_commands` document goes out: who sent it, when and why, never its word, which
-        only the household's automations need to know. The sender's name as the radio's table
-        has it, with `clean_received` without control and direction characters (SEC-017)."""
+        only the household's automations need to know. The sender's name as `_sender` gives it:
+        with `clean_received` cleaned as the text is (SEC-017, #137)."""
         if decision.rejection is None:  # accepted
             return
         name = sender.name if sender is not None else None
-        if name is not None and self.config.messages.clean_received:
-            name = clean_received(name)
         refusal = Refusal(
             message.received_at,
             decision.rejection.value,
@@ -275,6 +270,19 @@ class Inbox:
         )
         self._ledger.refusal(refusal)
         observe(self._observer.refused, self._ledger.refused)
+
+    def _sender(self, message: InboundMessage, session: RadioPort) -> Contact | None:
+        """The contact the message's key prefix names, if exactly one; with `[messages]
+        clean_received` its name cleaned as the text is (#137)."""
+        if message.sender_prefix is None:
+            return None
+        matches = session.contacts.resolve(message.sender_prefix)
+        if len(matches) != 1:
+            return None
+        sender = matches[0]
+        if self.config.messages.clean_received:
+            sender = replace(sender, name=clean_name(sender.name))
+        return sender
 
     def _count_wrong_code(self, decision: CommandDecision | None) -> None:
         """A wrong code is counted before anything is published (#79): at the limit the
@@ -378,6 +386,12 @@ class Inbox:
 def target_channels(config: Config) -> frozenset[int]:
     """The channels of `[targets.*]` entries."""
     return frozenset(t.channel_index for t in config.targets if t.channel_index is not None)
+
+
+def published_channels(config: Config) -> frozenset[int]:
+    """The channels whose messages are published while only the targets' are (`publish_channels
+    = "targets"`): the targets' channels, but not those in `ignore_channels`."""
+    return target_channels(config) - config.messages.ignore_channels
 
 
 def channel_published(config: Config, index: int | None) -> bool:

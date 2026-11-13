@@ -88,6 +88,14 @@ flowchart LR
   (`Outgoing.nonce`, in the state file across a stop) and gives it to the delivery's events, not
   on the `delivery` topic, as the acceptance time; the table gets the column `nonce` the same
   way, empty in the rows of earlier versions.
+* **Channels not published** (#136): with `publish_channels = "targets"` only the messages of the
+  targets' channels are published and stored, but an earlier version kept every channel's, and
+  so does `"all"`. At the start, before the first `history` document, the observer deletes from
+  the table `message` the received messages of every channel but the targets' that are not
+  ignored, also those without a channel's index, in one statement after a purge that runs; the
+  gateway's own messages stay, also to an ignored channel. The deletion is for good, and the
+  log says how many rows went. With `"all"` nothing is deleted: the documents leave the ignored
+  channels out (#103) and their age removes them.
 * **The settings in effect** go to the `config` document: `config_view` takes them from the
   configuration by an allowlist, and the bridge hands them over at the start and again at each
   radio connect, as a channel text's room depends on the radio's name. The targets are a list in
@@ -130,10 +138,11 @@ flowchart LR
   minute tick after that), so a flood of adverts does not republish it (up to 15 KiB) per advert.
   The history keeps the rows of the contacts and of the heard nodes the gateway keeps: the hourly
   purge removes the others, and every row after 7 days. Heard nodes are other people's radios:
-  `[contacts] heard_nodes = "keys"` publishes their keys and types only and stores besides them
-  when and how they were heard and the time their last advert carried, `"off"` nothing; the
-  memory still holds them, for the look-alike check, whose keys stay published
-  ([privacy.md](privacy.md)).
+  by default (`[contacts] heard_nodes = "full"`, since 2.2) the gateway publishes and stores
+  their names, when and how they were heard and their signal; `"keys"` publishes their keys and
+  types only and stores besides them when and how they were heard and the time their last advert
+  carried, `"off"` nothing; the memory still holds them, for the look-alike check, whose keys stay
+  published ([privacy.md](privacy.md)).
 * **Last heard** follows adverts and messages at once; a contact heard only by its telemetry
   answers moves it at most once an hour, keeping the signal of its last advert or message (an
   answer reports none).
