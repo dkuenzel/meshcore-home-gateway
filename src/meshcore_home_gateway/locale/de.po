@@ -358,6 +358,12 @@ msgstr "das Gateway ist offline"
 msgid "the radio did not confirm the advert ({reason}); it may have gone out"
 msgstr "das Funkgerät hat das Advert nicht bestätigt ({reason}); es ist vielleicht trotzdem gesendet worden"
 
+#. reason is the radio's error name such as table_full, which stays
+#: src/meshcore_home_gateway/cli/advert.py
+#, python-brace-format
+msgid "the radio refused the advert ({reason}); nothing was sent"
+msgstr "das Funkgerät hat das Advert abgelehnt ({reason}); es wurde nichts gesendet"
+
 #. detail is the system's reason, such as "No such file or directory".
 #: src/meshcore_home_gateway/cli/backup.py src/meshcore_home_gateway/cli/codes.py src/meshcore_home_gateway/cli/history.py src/meshcore_home_gateway/config.py
 #, python-brace-format
@@ -3713,11 +3719,6 @@ msgstr "Funkgerät von einem anderen Programm übernommen."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "Radios nearby would ignore this radio's later adverts. The gateway sets the clock back; if it stays, tell your administrator."
-msgstr "Funkgeräte in der Nähe würden spätere Adverts dieses Funkgeräts ignorieren. Das Gateway stellt die Uhr zurück; bleibt es so, sag den Admins Bescheid."
-
-#: src/meshcore_home_gateway/dashboard.yaml
-msgctxt "dashboard"
 msgid "Readings count for an hour after the last answer; then they show as –."
 msgstr "Messwerte gelten bis eine Stunde nach der letzten Antwort; danach erscheinen sie als –."
 
@@ -4022,6 +4023,11 @@ msgctxt "dashboard"
 msgid "That person's device tells everyone nearby where it is; Overview says what to do."
 msgstr "Das Gerät dieser Person teilt allen in der Nähe mit, wo es ist; die Übersicht sagt, was zu tun ist."
 
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The advert carries the radio's time: one ahead would make radios nearby ignore this radio's later adverts, so the gateway checks it first. The gateway sets the clock back; if this stays, tell your administrator."
+msgstr "Das Advert trägt die Uhrzeit des Funkgeräts: Geht sie vor, ignorieren Funkgeräte in der Nähe seine späteren Adverts, darum prüft das Gateway sie vorher. Das Gateway stellt die Uhr zurück; bleibt es so, sag den Admins Bescheid."
+
 #. reason says why, such as only one advert every 10 minutes; next is a clock time such as 10:41
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -4033,6 +4039,11 @@ msgstr "Das Advert ist vielleicht nicht gesendet worden: {reason}."
 msgctxt "dashboard"
 msgid "The advert may or may not have gone out. Try again in 10 minutes."
 msgstr "Das Advert ist vielleicht gesendet worden, vielleicht nicht. Versuche es in 10 Minuten erneut."
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The advert was asked for too often in a short time. Try again in a few minutes."
+msgstr "Das Advert wurde in kurzer Zeit zu oft angefordert. Versuche es in ein paar Minuten erneut."
 
 #. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -6141,6 +6152,11 @@ msgstr "Funkgerät fügt Kontakte selbst hinzu"
 msgctxt "dashboard"
 msgid "the radio did not answer"
 msgstr "das Funkgerät hat nicht geantwortet"
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "the radio did not tell its time"
+msgstr "das Funkgerät hat seine Uhrzeit nicht genannt"
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"

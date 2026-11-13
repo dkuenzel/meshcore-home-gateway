@@ -389,6 +389,8 @@ SELF_ADVERT_REASONS = (
     "too_soon",
     "messages_waiting",
     "airtime_budget",
+    "rate_limited",
+    "clock_unknown",
     "clock_ahead",
     "outcome_unknown",
     "internal_error",

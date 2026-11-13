@@ -129,6 +129,8 @@ def test_a_sent_advert_prints_its_event_and_names_the_name(
     [
         ("refused", "too_soon", "no advert sent (too_soon); docs/mqtt-api.md says why"),
         ("failed", "outcome_unknown", "the radio did not confirm the advert (outcome_unknown)"),
+        ("failed", "table_full", "the radio refused the advert (table_full); nothing was sent"),
+        ("failed", "disabled", "the radio refused the advert (disabled); nothing was sent"),
     ],
 )
 def test_a_refused_or_failed_advert_fails_with_its_reason(

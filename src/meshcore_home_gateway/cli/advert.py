@@ -22,6 +22,8 @@ from meshcore_home_gateway.cli.common import (
 from meshcore_home_gateway.config import Config, load_config
 
 _OUTCOMES = {"sent", "refused", "failed"}  # every request ends in one of them
+# a `failed` that may have gone out; every other is the radio's error name: it built no advert
+_UNCONFIRMED = {"outcome_unknown", "internal_error"}
 
 
 class _AdvertSession(broker.GatewaySession):
@@ -94,10 +96,14 @@ def _request(session: _AdvertSession, wait_s: float) -> int:
             document="docs/mqtt-api.md",
         )
         print(PREFIX + _safe_text(refused), file=sys.stderr)
-    else:
+    elif reason in _UNCONFIRMED:
         # Translators: reason is a code such as outcome_unknown, which stays
         failed = tr(
             "the radio did not confirm the advert ({reason}); it may have gone out", reason=reason
         )
+        print(PREFIX + _safe_text(failed), file=sys.stderr)
+    else:
+        # Translators: reason is the radio's error name such as table_full, which stays
+        failed = tr("the radio refused the advert ({reason}); nothing was sent", reason=reason)
         print(PREFIX + _safe_text(failed), file=sys.stderr)
     return EX_FAILURE

@@ -356,6 +356,12 @@ msgstr ""
 msgid "the radio did not confirm the advert ({reason}); it may have gone out"
 msgstr ""
 
+#. reason is the radio's error name such as table_full, which stays
+#: src/meshcore_home_gateway/cli/advert.py
+#, python-brace-format
+msgid "the radio refused the advert ({reason}); nothing was sent"
+msgstr ""
+
 #. detail is the system's reason, such as "No such file or directory".
 #: src/meshcore_home_gateway/cli/backup.py src/meshcore_home_gateway/cli/codes.py src/meshcore_home_gateway/cli/history.py src/meshcore_home_gateway/config.py
 #, python-brace-format
@@ -3711,11 +3717,6 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "Radios nearby would ignore this radio's later adverts. The gateway sets the clock back; if it stays, tell your administrator."
-msgstr ""
-
-#: src/meshcore_home_gateway/dashboard.yaml
-msgctxt "dashboard"
 msgid "Readings count for an hour after the last answer; then they show as –."
 msgstr ""
 
@@ -4020,6 +4021,11 @@ msgctxt "dashboard"
 msgid "That person's device tells everyone nearby where it is; Overview says what to do."
 msgstr ""
 
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The advert carries the radio's time: one ahead would make radios nearby ignore this radio's later adverts, so the gateway checks it first. The gateway sets the clock back; if this stays, tell your administrator."
+msgstr ""
+
 #. reason says why, such as only one advert every 10 minutes; next is a clock time such as 10:41
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -4030,6 +4036,11 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The advert may or may not have gone out. Try again in 10 minutes."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The advert was asked for too often in a short time. Try again in a few minutes."
 msgstr ""
 
 #. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
@@ -6138,6 +6149,11 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "the radio did not answer"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "the radio did not tell its time"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml

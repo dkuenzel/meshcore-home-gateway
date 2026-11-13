@@ -30,9 +30,14 @@ Assistant's user needs `topic write <base_topic>/<node_id>/advert/send` for *Sen
   position into the advert (`advert_location`, its policy as the radio reports it), when the
   radio has no name (`no_name`), while another advert is being sent (`busy`), within the 10
   minutes (`too_soon`), while messages are on their way (`messages_waiting`), when the budget
-  cannot pay it (`airtime_budget`) and while the radio's clock is more than 60 s ahead of the
-  host's (`clock_ahead`). A copy of a request with the same `id` within 10 minutes gets no
-  event.
+  cannot pay it (`airtime_budget`), when the requests that passed these checks asked the radio
+  too often (`rate_limited`, 10 in a row, then one a minute), when the radio answers the read of
+  its clock with an error (`clock_unknown`) and while the radio's clock is more than 60 s ahead
+  of the host's (`clock_ahead`). A radio that refuses the advert (`failed` with its error name,
+  such as `table_full`) built none: its airtime is given back, and the next request may go at
+  once. A copy of the request in progress, or of the one whose advert went out in the last 10
+  minutes, with the same `id` gets no event; a request that ended with nothing sent leaves its
+  `id` free.
 - Home Assistant: the button *Send advert nearby*
   (`button.meshcore_home_gateway_<node>_send_advert`), which publishes `send` on `advert/send`
   at QoS 0, and the event entity *Advert nearby* (`event.meshcore_home_gateway_<node>_advert`,

@@ -326,6 +326,12 @@ class Delivery:
         self.budget.consume(airtime_s, self._mono())
         self.save_level()
 
+    def refund_airtime(self, airtime_s: float) -> None:
+        """Give back what `spend_airtime` took for a transmission the radio did not make, and
+        store the level at once."""
+        self.budget.refund(airtime_s, self._mono())
+        self.save_level()
+
     def _message_budget(self) -> tuple[AirtimeBudget, AirtimeLevel]:
         """The budget at the level the last run left (ARC-005), refilled since; at least what a
         long message needs, so that the first alert after a restart goes out at once."""

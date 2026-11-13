@@ -5,6 +5,7 @@ airtime budget and one `advert` event per request."""
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 import re
@@ -499,12 +500,13 @@ def test_after_a_restart_with_an_empty_budget_the_reserve_is_not_spent(tmp_path:
     scenario(main)
 
 
-@pytest.mark.parametrize(("ahead", "sent"), [(61, False), (60, True), (-30, True)])
+@pytest.mark.parametrize(("ahead", "sent"), [(61, False), (60, True), (-30, True), (-3600, True)])
 def test_a_radio_clock_ahead_by_more_than_a_minute_is_refused(
     tmp_path: Path, ahead: int, sent: bool
 ) -> None:
     """Read afresh before the advert: nodes keep the newest advert time of a contact, and would
-    ignore the radio's later adverts (BaseChatMesh.cpp:133-136)."""
+    ignore the radio's later adverts (BaseChatMesh.cpp:133-136). Only a clock ahead counts: one
+    behind, as with `set_clock = false`, still sends."""
     radio = EmulatedRadio()
 
     async def main() -> None:
@@ -531,6 +533,32 @@ def test_a_radio_lost_while_its_clock_is_read_is_no_radio(tmp_path: Path) -> Non
             event = await outcome(bus)
             assert (event["event_type"], event["reason"]) == ("refused", "no_radio")
             assert radio.adverts == []
+
+    scenario(main)
+
+
+def test_a_clock_the_radio_does_not_tell_is_clock_unknown(tmp_path: Path) -> None:
+    """The radio answers the clock read with an error and stays connected: the gateway never
+    sends with a clock it did not check, and says why."""
+    radio = EmulatedRadio()
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path) as (bridge, bus, _n):
+            session = bridge.radio.live()
+            radio.errors[Command.GET_DEVICE_TIME] = 6  # once: illegal_arg
+            since = len(radio.received)
+            ask(bus)
+            event = await outcome(bus)
+            assert (event["event_type"], event["reason"], event["next_at"]) == (
+                "refused",
+                "clock_unknown",
+                None,
+            )
+            assert written(radio, since) == [Command.GET_DEVICE_TIME]
+            assert bridge.radio.live() is session  # still connected
+            assert bridge.outbox.budget.used_s(time.monotonic()) == 0
+            ask(bus)
+            assert (await outcome(bus, 2))["event_type"] == "sent"
 
     scenario(main)
 
@@ -562,6 +590,101 @@ def test_a_radio_lost_before_the_worker_takes_the_request_is_no_radio(
                 None,
             )
             assert written(radio, since) == []
+            assert bridge.outbox.budget.used_s(time.monotonic()) == 0
+
+    scenario(main)
+
+
+class StandIn:
+    """Another radio's session, live in place of the one a request was checked on."""
+
+    def __init__(self, info: Any) -> None:
+        self.info = info
+        self.calls: list[str] = []
+
+    async def read_clock_offset(self) -> int:
+        self.calls.append("clock")
+        return 0
+
+    async def send_self_advert(self, *, unless: Any = None) -> bool:
+        self.calls.append("claim")
+        if unless is not None and unless():
+            return False
+        self.calls.append("advert")
+        return True
+
+
+def test_a_radio_connected_again_before_the_worker_is_no_radio(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The link reconnected, perhaps to another radio, between the checks and the worker: the
+    request was checked on the session that is gone, so nothing is read or written on the new
+    one, also when its firmware is tested."""
+    radio = EmulatedRadio()
+    real = advertiser_module.Advertiser._checked
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path) as (bridge, bus, _n):
+            live = bridge.radio.live()
+            assert live is not None
+            other = StandIn(live.info)
+
+            def checked(self: advertiser_module.Advertiser, request: AdvertRequest) -> RadioPort:
+                session = real(self, request)
+                monkeypatch.setattr(bridge.radio, "live", lambda: other)
+                return session
+
+            monkeypatch.setattr(advertiser_module.Advertiser, "_checked", checked)
+            ask(bus)
+            event = await outcome(bus)
+            monkeypatch.undo()
+            assert (event["event_type"], event["reason"]) == ("refused", "no_radio")
+            assert other.calls == []
+            assert bridge.outbox.budget.used_s(time.monotonic()) == 0
+
+    scenario(main)
+
+
+@pytest.mark.parametrize(
+    ("change", "reason"),
+    [
+        ({"self_info": {"advert_location": 1}}, "advert_location"),
+        ({"self_info": {"name": ""}}, "no_name"),
+        ({"device": {"firmware_code": 15}}, "untested_firmware"),
+    ],
+)
+def test_the_claim_checks_the_radio_again_before_the_advert(
+    tmp_path: Path, change: dict[str, dict[str, Any]], reason: str
+) -> None:
+    """What the radio reported can change while its clock is read (a settings read after a
+    write): once the advert holds the radio, its position policy, its name and its firmware are
+    checked again. Nothing is written, charged or started."""
+    radio = EmulatedRadio()
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path) as (bridge, bus, _n):
+            session = bridge.radio.live()
+            assert session is not None
+            radio.held.add(Command.GET_DEVICE_TIME)
+            since = len(radio.received)
+            ask(bus)
+            await until(lambda: Command.GET_DEVICE_TIME in radio.commands()[since:])
+            info = session.info
+            assert info is not None
+            parts = {
+                part: dataclasses.replace(getattr(info, part), **fields)
+                for part, fields in change.items()
+            }
+            session.info = dataclasses.replace(info, **parts)
+            radio.release(Command.GET_DEVICE_TIME)
+            event = await outcome(bus)
+            assert (event["event_type"], event["reason"], event["next_at"]) == (
+                "refused",
+                reason,
+                None,
+            )
+            await asyncio.sleep(0.05)
+            assert written(radio, since) == [Command.GET_DEVICE_TIME]
             assert bridge.outbox.budget.used_s(time.monotonic()) == 0
 
     scenario(main)
@@ -607,53 +730,68 @@ def test_a_session_closed_before_the_advert_is_written_is_no_radio(
 @pytest.mark.parametrize(
     ("refusal", "reason"), [("errors", "table_full"), ("disabled", "disabled")]
 )
-def test_a_radio_refusal_fails_with_its_name_and_leaves_the_ten_minutes(
+def test_a_radio_refusal_fails_with_its_name_and_counts_for_nothing(
     tmp_path: Path, refusal: str, reason: str
 ) -> None:
-    """Nothing was sent: the next request goes at once; the airtime stays charged."""
+    """The radio built no advert (ERR only when it had no packet buffer, MyMesh.cpp:1304-1316):
+    its airtime is given back, its level stored, and the 10 minutes do not start; the same
+    request, id and all, goes at once."""
     radio = EmulatedRadio()
 
     async def main() -> None:
         async with running(config(), radio, tmp_path) as (bridge, bus, _n):
+            budget = bridge.outbox.budget
+            before = budget.available_s(time.monotonic())
             if refusal == "errors":
                 radio.errors[Command.SEND_SELF_ADVERT] = 3
             else:
                 radio.disabled.add(Command.SEND_SELF_ADVERT)
-            ask(bus)
+            ask(bus, {"id": "welcome"})
             event = await outcome(bus)
             assert event == {
                 "event_type": "failed",
-                "id": event["id"],
+                "id": "welcome",
                 "reason": reason,
                 "name": "Bridge",
-                "airtime_ms": round(BRIDGE_S * 1000),
+                "airtime_ms": None,
                 "next_at": None,
             }
+            assert budget.used_s(time.monotonic()) == pytest.approx(0)
+            assert budget.available_s(time.monotonic()) == pytest.approx(before, abs=0.01)
+            level = AirtimeLevel(run_state(tmp_path)).load(NOW)
+            assert level is not None
+            assert level[0] == pytest.approx(before, abs=0.01)
             radio.disabled.clear()
-            ask(bus)
-            assert (await outcome(bus, 2))["event_type"] == "sent"
-            used = bridge.outbox.budget.used_s(time.monotonic())
-            assert used == pytest.approx(2 * BRIDGE_S)
+            ask(bus, {"id": "welcome"})
+            again = await outcome(bus, 2)
+            assert (again["event_type"], again["id"]) == ("sent", "welcome")
+            assert budget.used_s(time.monotonic()) == pytest.approx(BRIDGE_S)
 
     scenario(main)
 
 
 def test_a_connection_lost_after_the_write_fails_outcome_unknown(tmp_path: Path) -> None:
-    """The advert may have gone out: the 10 minutes count."""
+    """The advert may have gone out: the 10 minutes and the airtime count, and a copy of the
+    request is still ignored."""
     radio = EmulatedRadio()
 
     async def main() -> None:
         async with running(config(), radio, tmp_path) as (bridge, bus, _n):
             lost = bridge.radio.session
             radio.drop_on.add(Command.SEND_SELF_ADVERT)
-            ask(bus)
+            ask(bus, {"id": "x1"})
             event = await outcome(bus)
             assert (event["event_type"], event["reason"]) == ("failed", "outcome_unknown")
             assert (event["name"], event["next_at"]) == ("Bridge", iso(NOW + 600))
+            assert event["airtime_ms"] == round(BRIDGE_S * 1000)
             await until(lambda: bridge.radio.live() not in (None, lost))
+            ask(bus, {"id": "x1"})  # a copy: no event
             ask(bus)
             soon = await outcome(bus, 2)
             assert (soon["event_type"], soon["reason"]) == ("refused", "too_soon")
+            await asyncio.sleep(0.05)
+            assert len(events(bus)) == 2
+            assert bridge.outbox.budget.used_s(time.monotonic()) == pytest.approx(BRIDGE_S)
 
     scenario(main)
 
@@ -746,25 +884,46 @@ def test_a_copy_is_a_request_of_its_own_after_ten_minutes(tmp_path: Path) -> Non
     scenario(main)
 
 
-def test_only_the_ids_of_the_newest_requests_taken_are_kept(tmp_path: Path) -> None:
-    """A request taken and then refused by the worker starts no 10 minutes, so many can be taken
-    within them: only the newest KEPT_IDS ids are kept as copies to ignore."""
+def test_a_request_refused_after_its_checks_is_no_copy(tmp_path: Path) -> None:
+    """Refused by the worker, nothing written: the same id after the cause is gone is a request
+    of its own, with its own event (an automation with a fixed id, a client trying again)."""
     radio = EmulatedRadio()
-    kept = advertiser_module.KEPT_IDS
 
     async def main() -> None:
         async with running(config(), radio, tmp_path) as (_, bus, _n):
-            radio.clock = int(NOW) + 61  # every request is taken, then refused by the worker
-            for count in range(1, kept + 2):
-                ask(bus, {"id": f"x{count - 1}"})
+            radio.clock = int(NOW) + 120
+            ask(bus, {"id": "welcome"})
+            first = await outcome(bus)
+            assert (first["event_type"], first["reason"]) == ("refused", "clock_ahead")
+            radio.clock = int(NOW)
+            ask(bus, {"id": "welcome"})
+            again = await outcome(bus, 2)
+            assert (again["event_type"], again["id"]) == ("sent", "welcome")
+            assert radio.adverts == [b"\x07"]
+
+    scenario(main)
+
+
+def test_the_radio_work_of_requests_is_limited(tmp_path: Path) -> None:
+    """Each request that passes its checks reads the radio's clock: while the worker refuses
+    them, at most WORK_BURST in a row, then one a minute; the rest are refused before the
+    radio is asked."""
+    radio = EmulatedRadio()
+    burst = int(advertiser_module.WORK_BURST)
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path) as (_, bus, _n):
+            radio.clock = int(NOW) + 120  # each request is taken, then refused by the worker
+            since = len(radio.received)
+            for count in range(1, burst + 1):
+                ask(bus)
                 assert (await outcome(bus, count))["reason"] == "clock_ahead"
-            ask(bus, {"id": f"x{kept}"})  # the newest: still a copy
-            ask(bus, {"id": "x0"})  # the oldest: no longer kept, so a request of its own
-            again = await outcome(bus, kept + 2)
-            assert (again["id"], again["reason"]) == ("x0", "clock_ahead")
-            await asyncio.sleep(0.1)
-            assert len(events(bus)) == kept + 2
-            assert radio.adverts == []
+            reads = written(radio, since)
+            ask(bus)
+            limited = await outcome(bus, burst + 1)
+            assert (limited["event_type"], limited["reason"]) == ("refused", "rate_limited")
+            await asyncio.sleep(0.05)
+            assert written(radio, since) == reads == [Command.GET_DEVICE_TIME] * burst
 
     scenario(main)
 

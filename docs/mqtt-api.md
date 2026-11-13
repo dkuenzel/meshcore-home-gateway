@@ -949,8 +949,11 @@ Assistant's button *Send advert nearby* publishes `send` at QoS 0
 ([home-assistant.md](home-assistant.md#advert-nearby)); the command line has
 `meshcore-home-gateway advert`. A request published while the gateway is offline is lost (clean
 session), and one still being handled when the gateway stops has no event. A request whose `id`
-is that of one handed to the radio in the last 10 minutes is a copy, such as a QoS 1 resend, and
-is ignored without an event; requests without an `id` are never copies.
+is that of the request in progress, or of the one whose advert was written to the radio in the
+last 10 minutes and went out or may have (`sent`, `outcome_unknown`), is a copy, such as a QoS 1
+resend, and is ignored without an event. A request that ended with nothing sent (`refused`, or
+`failed` with the radio's error name) leaves its `id` free: the same request again is one of its
+own. Requests without an `id` are never copies.
 
 A request is checked in this order; the first check that fails is the `reason` of a `refused`
 event, and nothing reaches the radio:
@@ -959,7 +962,7 @@ event, and nothing reaches the radio:
 | --- | --- |
 | `too_large`, `invalid_utf8` | as for send requests |
 | `invalid_request` | the payload starts with `{` and is no JSON object, or its `id` is no string as above |
-| `retained` | the request was retained: a left-over published while the gateway was away, refused again at each reconnect while it stays retained; clear it with an empty retained message, which is refused as `empty` once |
+| `retained` | the request was retained: a left-over published while the gateway was away, refused again at each reconnect while it stays retained; clear it with an empty retained message, which is refused as `empty` once. As for every request, the broker forwards one published with the retain flag while the gateway runs like any other, so the radio advertises once, and the retained copy is refused at each reconnect after |
 | `empty` | an empty payload, which is what clearing a retained message publishes |
 | `no_radio` | the radio is not connected, or the connection ended before the advert was written |
 | `untested_firmware` | firmware the gateway is not tested with, also with `radio.profile.manage = "always"`: the advert's route and position are facts of the tested firmware, which the gateway cannot read back |
@@ -969,12 +972,15 @@ event, and nothing reaches the radio:
 | `too_soon` | an advert was written to the radio less than 10 minutes ago; `next_at` says when the next may go. The gateway keeps that time in memory only, so a restart allows the next advert at once |
 | `messages_waiting` | a message is queued or being delivered: the radio is half-duplex, and messages have the first claim on the airtime budget |
 | `airtime_budget` | the message budget cannot pay the advert's estimated time on air at once and still hold one long message beside it, so that an alert after it goes out at once; where both do not fit into the burst, the advert needs a full budget |
-| `clock_ahead` | the radio's clock, read just then, is more than 60 s ahead of the host's: nodes keep the newest advert time of a contact and would ignore the radio's later adverts |
+| `rate_limited` | the requests that passed these checks asked the radio too often: each reads its clock, also when it is then refused; 10 in a row, then one a minute, as the contact requests' radio work |
+| `clock_unknown` | the radio answered the read of its clock with an error: the gateway sends no advert with a clock it did not check |
+| `clock_ahead` | the radio's clock, read just then, is more than 60 s ahead of the host's: nodes keep the newest advert time of a contact and would ignore the radio's later adverts; a clock behind the host's is no reason |
 
-Then the gateway writes `SEND_SELF_ADVERT` without its flood byte
+`clock_unknown` and `clock_ahead` come from the read of the radio's clock that follows the
+other checks. Then the gateway writes `SEND_SELF_ADVERT` without its flood byte
 ([protocol.md](protocol.md#2-commands)). Once the command holds the radio, it checks the radio's
-position policy, its name, the 10 minutes, the messages and the budget again (a message that came
-meanwhile goes first), charges the advert's estimated time on air to the airtime budget (the level
+firmware, its position policy, its name, the 10 minutes, the messages and the budget again (a
+message that came meanwhile goes first), charges the advert's estimated time on air to the airtime budget (the level
 is stored at once) and starts the 10 minutes. The advert carries the radio's clock, which the
 gateway sets from the host's: the host's clock must be right (NTP). A radio clock behind the time
 of an advert a node already has makes that node drop this one; the event still says `sent`.
@@ -990,16 +996,17 @@ Not retained. Every key is always there:
 
 | Key | Value |
 | --- | --- |
-| `event_type` | `sent`: the radio answered OK, it queued the advert (it goes on air when the radio's own duty-cycle limit lets it). `refused`: a check said no, nothing was written. `failed`: the advert was written and is not confirmed |
+| `event_type` | `sent`: the radio answered OK, it queued the advert (it goes on air when the radio's own duty-cycle limit lets it). `refused`: a check said no, nothing was written. `failed`: the advert was written and is not confirmed: the radio refused it, the connection ended, or a bug |
 | `id` | the request's `id`, or the one the gateway made |
-| `reason` | `null` for `sent`; for `refused` a reason of the table above; for `failed` the radio's error name (`table_full`: no free packet buffer; also `unsupported_cmd`, `not_found`, `bad_state`, `file_io_error`, `illegal_arg`, `disabled`, `error_<code>`), `outcome_unknown` (the connection ended after the write: the advert may have gone out) or `internal_error` (a bug; see the log) |
+| `reason` | `null` for `sent`; for `refused` a reason of the table above; for `failed` the radio's error name, with which it built no advert and nothing was sent (`table_full`: the radio had no free packet buffer just then; also `unsupported_cmd`, `not_found`, `bad_state`, `file_io_error`, `illegal_arg`, `disabled`, `error_<code>`), `outcome_unknown` (the connection ended after the write: the advert may have gone out) or `internal_error` (a bug; see the log) |
 | `name` | the radio's name the advert carries; `null` unless the advert was written |
-| `airtime_ms` | its estimated time on air, charged to the budget, in milliseconds; `null` unless the advert was written |
+| `airtime_ms` | its estimated time on air, charged to the budget, in milliseconds; `null` while nothing is charged: for `refused`, for a `failed` with the radio's error name (given back) and for an `internal_error` before the charge |
 | `next_at` | ISO 8601 UTC: from when the next advert may go, 10 minutes after the last one written; `null` when none was written in the last 10 minutes of this run |
 
-`sent` and `failed` count for the budget, `refused` for neither the budget nor the 10 minutes. A
-`failed` with the radio's error name starts no 10 minutes (nothing was sent), but its airtime
-stays charged; `outcome_unknown` starts them. `refused` events are limited as those of the
+An advert that went out, or may have, counts for the budget and starts the 10 minutes: `sent`,
+and a `failed` with `airtime_ms` (`outcome_unknown`, or an `internal_error` after the charge). A
+`failed` with the radio's error name gives its airtime back and starts no 10 minutes: the radio
+built no advert, so the next request may go at once. `refused` counts for neither. `refused` events are limited as those of the
 contact requests (20 a second, bursts of 100); the log counts the rest at most once a minute.
 Otherwise every request that is not a copy has exactly one event.
 

@@ -4,18 +4,20 @@ zero hop, never with a position.
 A request on `advert/send` is checked at once, in this order, and refused with the first reason
 that holds: its form (`too_large`, `invalid_utf8`, `invalid_request`), a left-over (`retained`,
 `empty`), the radio (`no_radio`, `untested_firmware`, `advert_location`, `no_name`), and then
-what passes (`busy`, `too_soon`, `messages_waiting`, `airtime_budget`). A request that repeats
-the id of one taken in the last 10 minutes is a copy (a QoS 1 resend) and is ignored. One worker
-takes the requests that pass, one at a time: it reads the radio's clock afresh (`clock_ahead`),
-then writes SEND_SELF_ADVERT without its flood byte. Once the command holds the radio, the claim
-checks the radio's position policy, its name, the 10 minutes, the messages and the budget again,
-and only then charges the advert's airtime and starts the 10 minutes: a message that came while
-the clock was read goes first, and nothing is counted for an advert that was not written. The 10
-minutes are kept in memory only.
+what passes (`busy`, `too_soon`, `messages_waiting`, `airtime_budget`, and `rate_limited`, the
+radio work of the requests that pass). A request that repeats the id of the one in progress, or
+of the advert that started the 10 minutes, is a copy (a QoS 1 resend) and is ignored. One worker
+takes the requests that pass, one at a time: it reads the radio's clock afresh (`clock_unknown`,
+`clock_ahead`), then writes SEND_SELF_ADVERT without its flood byte. Once the command holds the
+radio, the claim checks the radio's firmware, its position policy, its name, the 10 minutes, the
+messages and the budget again, and only then charges the advert's airtime and starts the 10
+minutes: a message that came while the clock was read goes first, and nothing is counted for an
+advert that was not written. A radio that answers with an error built no advert: its airtime is
+given back and the 10 minutes do not start. The 10 minutes are kept in memory only.
 
 Every request that is not a copy ends in one `advert` event: `sent` (the radio queued it),
-`refused` (nothing was written; at a bounded rate) or `failed` (written and not confirmed, or a
-bug).
+`refused` (nothing was written; at a bounded rate) or `failed` (written and not confirmed: the
+radio's error, a connection lost after the write, or a bug).
 """
 
 from __future__ import annotations
@@ -23,7 +25,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
-from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -58,7 +59,9 @@ INTERVAL_S = 600.0  # at most one advert written to the radio per this
 CLOCK_AHEAD_MAX_S = 60
 REFUSED_EVENTS_PER_S, REFUSED_EVENTS_BURST = 20.0, 100.0  # as the contact requests'
 REFUSED_REPORT_INTERVAL_S = 60.0
-KEPT_IDS = 64  # the ids of the requests taken in the last INTERVAL_S, to ignore their copies
+# radio work: each request that passes its checks reads the radio's clock, also when the worker
+# then refuses it (a clock ahead); as the contact requests'
+WORK_PER_S, WORK_BURST = 1 / 60, 10.0
 
 
 @dataclass(slots=True)
@@ -68,7 +71,8 @@ class _Claim:
     reason: str | None = None  # why it withdrew the advert
     name: str | None = None  # the name the advert carries, once claimed
     airtime_s: float | None = None
-    before: tuple[float, float] | None = None  # the last advert's time before this one
+    # the last advert written before this one, and its request's id
+    before: tuple[tuple[float, float] | None, str | None] = (None, None)
 
 
 class Advertiser:
@@ -86,10 +90,11 @@ class Advertiser:
         self._radio, self._outbox = radio, outbox
         self._mono, self._wall = monotonic, wall_clock
         self._jobs: asyncio.Queue[tuple[str, RadioPort]] = asyncio.Queue(maxsize=1)
-        self._active = False  # a request is between its checks and its outcome
+        self._active: str | None = None  # the id of the request between its checks and outcome
         self._last: tuple[float, float] | None = None  # the last advert written: monotonic, wall
-        self._taken: OrderedDict[str, float] = OrderedDict()  # id -> monotonic time taken
+        self._last_id: str | None = None  # the id of the request that wrote it
         self._refusals = RateLimit(REFUSED_EVENTS_PER_S, REFUSED_EVENTS_BURST, now=monotonic())
+        self._work = RateLimit(WORK_PER_S, WORK_BURST, now=monotonic())
         self._unpublished = 0
         self._next_report = monotonic()
 
@@ -112,18 +117,16 @@ class Advertiser:
             log.exception("advert request %s: checks failed", request_id)
             self._publish(self_advert_event("failed", request_id, reason="internal_error"))
             return
-        self._active = True
-        self._taken[request_id] = self._mono()
-        while len(self._taken) > KEPT_IDS:
-            self._taken.popitem(last=False)
+        self._active = request_id
         self._jobs.put_nowait((request_id, session))
 
     def _copy(self, request_id: str) -> bool:
-        """Whether a request with this id was taken in the last INTERVAL_S."""
-        now = self._mono()
-        while self._taken and now - next(iter(self._taken.values())) >= INTERVAL_S:
-            self._taken.popitem(last=False)
-        return request_id in self._taken
+        """Whether this is the id of the request in progress, or of the one whose advert went
+        out, or may have, in the last INTERVAL_S. A request that ended with nothing sent leaves
+        no id: the same request again is one of its own."""
+        if request_id == self._active:
+            return True
+        return request_id == self._last_id and self._next_at() is not None
 
     def _checked(self, request: AdvertRequest) -> RadioPort:
         """The checks after the form, in their documented order; the session they found."""
@@ -135,16 +138,20 @@ class Advertiser:
         info = session.info if session is not None else None
         if session is None or info is None:
             raise RefusedError("no_radio")
-        if info.device.firmware_code not in policy.TESTED_FIRMWARE:
-            raise RefusedError("untested_firmware")
-        reason = self._radio_refusal(info) or ("busy" if self._active else self._refusal(info))
+        busy = "busy" if self._active is not None else None
+        reason = self._radio_refusal(info) or busy or self._refusal(info)
         if reason is not None:
             raise RefusedError(reason)
+        if not self._work.allow(self._mono()):  # last: only a request the radio would serve
+            raise RefusedError("rate_limited")
         return session
 
     def _radio_refusal(self, info: RadioInfo) -> str | None:
-        """Why this radio sends no advert: a position in it (its policy as the radio reports it,
-        also while the profile only observes), or no name, which every node drops."""
+        """Why this radio sends no advert: firmware the gateway is not tested with, a position
+        in it (its policy as the radio reports it, also while the profile only observes), or no
+        name, which every node drops."""
+        if info.device.firmware_code not in policy.TESTED_FIRMWARE:
+            return "untested_firmware"
         if info.self_info.advert_location != 0:
             return "advert_location"
         if not info.name:
@@ -184,16 +191,16 @@ class Advertiser:
                 )
                 self._publish(event)
             finally:
-                self._active = False
+                self._active = None
 
     async def _handle(self, request_id: str, checked: RadioPort, claim: _Claim) -> None:
         try:
-            await self._write(checked, claim)
+            await self._write(request_id, checked, claim)
         except RefusedError as exc:
             self._refuse(request_id, exc.reason)
             return
-        except CommandFailedError as exc:  # nothing was sent: the 10 minutes do not start
-            self._last = claim.before
+        except CommandFailedError as exc:  # the radio built no advert (MyMesh.cpp:1304-1316)
+            self._unclaim(claim)
             self._failed(request_id, exc.reason, claim)
             return
         except RadioError:  # lost after the write: it may have gone out
@@ -210,7 +217,7 @@ class Advertiser:
         )
         self._publish(event)
 
-    async def _write(self, checked: RadioPort, claim: _Claim) -> None:
+    async def _write(self, request_id: str, checked: RadioPort, claim: _Claim) -> None:
         """The clock read afresh, then the advert with its claim; RefusedError when nothing was
         written."""
         session = self._radio.live()
@@ -218,20 +225,25 @@ class Advertiser:
             raise RefusedError("no_radio")
         try:
             offset = await session.read_clock_offset()  # never the heartbeat's: it can jump
+        except CommandFailedError:  # an answer, but no time: never send with a clock unchecked
+            raise RefusedError("clock_unknown") from None
         except RadioError:
             raise RefusedError("no_radio") from None
         if offset > CLOCK_AHEAD_MAX_S:
             raise RefusedError("clock_ahead")
         try:
-            written = await session.send_self_advert(unless=lambda: self._claim(session, claim))
+            written = await session.send_self_advert(
+                unless=lambda: self._claim(session, request_id, claim)
+            )
         except NotSentError:  # closed before the claim: nothing counted
             raise RefusedError("no_radio") from None
         if not written:
             raise RefusedError(claim.reason or "internal_error")
 
-    def _claim(self, session: RadioPort, claim: _Claim) -> bool:
+    def _claim(self, session: RadioPort, request_id: str, claim: _Claim) -> bool:
         """At the radio's lock, before the write: True withdraws the advert (nothing counted,
-        `claim.reason` says why); else its airtime is charged and the 10 minutes start."""
+        `claim.reason` says why); else its airtime is charged and the 10 minutes start, with
+        this request's id as the one whose copies are ignored."""
         info = session.info
         if info is None:
             claim.reason = "no_radio"
@@ -241,9 +253,19 @@ class Advertiser:
             return True
         airtime = _airtime_s(info)
         self._outbox.spend_airtime(airtime)
-        claim.before, self._last = self._last, (self._mono(), self._wall())
+        claim.before = (self._last, self._last_id)
+        self._last, self._last_id = (self._mono(), self._wall()), request_id
         claim.name, claim.airtime_s = info.name, airtime
         return False
+
+    def _unclaim(self, claim: _Claim) -> None:
+        """The radio built no advert: its airtime back (the level stored at once), the 10
+        minutes and the id as before the claim."""
+        if claim.airtime_s is None:  # not claimed: nothing to undo
+            return
+        self._outbox.refund_airtime(claim.airtime_s)
+        self._last, self._last_id = claim.before
+        claim.airtime_s = None
 
     def _next_at(self) -> float | None:
         """When the next advert may go (wall clock), if one was written in the last 10 minutes."""

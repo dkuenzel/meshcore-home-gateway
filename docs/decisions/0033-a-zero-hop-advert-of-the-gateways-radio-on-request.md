@@ -58,8 +58,9 @@ household's companions, while it never floods and never carries a position.
   (written and not confirmed: the radio's error name, `outcome_unknown` when the connection ended
   after the write, `internal_error` for a bug). The event carries `event_type`, `id`, `reason`,
   `name` and `airtime_ms` of an advert that was written, and `next_at`, when the next one is
-  possible. A request that repeats the `id` of one handed to the radio in the last 10 minutes
-  is a copy (a QoS 1 resend) and gets no event.
+  possible. A request that repeats the `id` of the one in progress, or of the one whose advert
+  went out or may have in the last 10 minutes, is a copy (a QoS 1 resend) and gets no event; a
+  request that ended with nothing sent leaves its `id` free, so the same request may come again.
 * **The checks, in this order**; the first that fails is the reason of `refused`: `too_large`,
   `invalid_utf8`, `invalid_request` (the request's form, as the contact requests'); `retained`
   and `empty` (a left-over, or what clearing one publishes); `no_radio`; `untested_firmware`,
@@ -73,15 +74,19 @@ household's companions, while it never floods and never carries a position.
   `too_soon`, an advert was written less than 10 minutes ago; `messages_waiting`, a message is
   queued or being delivered (the radio is half-duplex, and messages have the first claim on the
   budget); `airtime_budget`, the message budget cannot pay the advert's estimated time on air at
-  once and still hold one long message beside it, so that an alert after it goes out at once.
-  Then the radio's clock is read afresh (`GET_DEVICE_TIME`): `clock_ahead` when it is more than
+  once and still hold one long message beside it, so that an alert after it goes out at once;
+  `rate_limited`, the requests that passed asked the radio too often (each reads its clock, also
+  when it is then refused), as the contact requests' radio work. Then the radio's clock is read
+  afresh (`GET_DEVICE_TIME`): `clock_unknown` when the radio answers with an error, so that no
+  advert goes with a clock the gateway did not check, and `clock_ahead` when it is more than
   60 s ahead of the host's.
-* **The claim.** Once the advert holds the radio's command lock, the gateway checks the position
-  policy, the name, the 10 minutes, the messages and the budget again; a message that came while
+* **The claim.** Once the advert holds the radio's command lock, the gateway checks the
+  firmware, the position policy, the name, the 10 minutes, the messages and the budget again; a message that came while
   the clock was read goes first. Only then is the estimated airtime taken from the budget (its
   level stored at once), the 10 minutes started and the command written. A `refused` advert
   counts for neither. The 10 minutes are kept in memory only: a restart allows one at once. A
-  radio `ERR` does not start them (nothing was sent), the airtime stays charged.
+  radio `ERR` means it built no advert (`MyMesh.cpp:1304-1316`): the airtime is given back and
+  the 10 minutes do not start.
 * **Home Assistant.** The gateway's device gets the button *Send advert nearby*, which publishes
   `send` on `advert/send` at QoS 0, and the event entity *Advert nearby* (`advert`). The button
   is behind the new setting `[homeassistant] radio_controls`, `true` by default: anyone who can

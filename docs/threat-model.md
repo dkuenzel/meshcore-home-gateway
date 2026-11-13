@@ -31,7 +31,7 @@ weakens a control updates the boundary's section here in the same pull request.
 
 | | Actor | What they can do | What stands in the way |
 | --- | --- | --- | --- |
-| T1 | A stranger in radio range | Send any packet: adverts under any name and any key of their own, channel messages, acknowledgements and paths in the clear; read what is in the clear, the radio's name and full key from an advert it sends on request too, and add the gateway as a contact; jam | The firmware decrypts direct messages only from contacts, so a stranger's direct messages are still dropped and their telemetry requests denied; floods are bounded (B1); acknowledgements prove little ([what `confirmed` proves](mqtt-api.md#what-confirmed-proves)); `radio_controls = false` keeps Home Assistant's users from making the radio advertise |
+| T1 | A stranger in radio range | Send any packet: adverts under any name and any key of their own, channel messages, acknowledgements and paths in the clear; read what is in the clear, the radio's name and full key from an advert it sends on request too, and add the gateway as a contact; jam | The firmware decrypts direct messages only from contacts, so a stranger's direct messages are still dropped and their telemetry requests denied; floods are bounded (B1); acknowledgements prove little ([what `confirmed` proves](mqtt-api.md#what-confirmed-proves)); the radio's advert on request goes zero hop and never carries a position (B1) |
 | T2 | A stranger with a 6-byte key prefix collision | Pose as an allowed sender's prefix, after about 2⁴⁸ key generations ([residual risks](#residual-risks)) | The look-alike memory ([design §7.3](design.md#73-command-authorisation-in-detail)); codes ([configuration](configuration.md#commands)) |
 | T3 | A contact of the radio outside the household | Direct messages the radio decrypts, telemetry answers, adverts | Commands need the allowlist; telemetry asks only the household (`ask = "household"`, the default) ([ADR 0029](decisions/0029-what-a-contact-is-trusted-with.md)); rate limits per sender |
 | T4 | Whoever holds an allowed sender's handheld or key | Send accepted commands | Codes, a second factor on a phone, at most 5 wrong ones per sender an hour; a small word list; automations that confirm |
@@ -133,8 +133,10 @@ key digits.
 **What crosses:** every entity to every user. **Trusted:** Home Assistant's users are the
 household. **Not trusted:** that every user should act on the radio.
 
-**Controls:** controls that can be switched off, targets that can be hidden; the guide explains
-Home Assistant's user model ([shared households](home-assistant.md#shared-households)).
+**Controls:** controls that can be switched off (`controls`, and `radio_controls` for *Send
+advert nearby*, which every user may press while it is on), targets that can be hidden; the
+guide explains Home Assistant's user model
+([shared households](home-assistant.md#shared-households)).
 
 ### B6: the service, the container and the host
 
@@ -196,7 +198,7 @@ Deny alerts or presence (A2, A3, A11)
 ├─ keep the radio busy with direct messages (T3) ...... remove the contact; see below
 ├─ spend airtime on answers to replays (T1) ........... reply off by default; repeat memory; rate limits; budget
 ├─ take the client id, clear documents (T6) ........... random id; the ACL; restored documents
-├─ request adverts over and over (T6, T7) ............. one in 10 minutes; messages first; budget
+├─ request adverts over and over (T6, T7) ............. one in 10 minutes; messages first; budget; radio work limited
 └─ push the radio's clock ahead (T12) ................. clock bounds; the offset in `state`
 ```
 
