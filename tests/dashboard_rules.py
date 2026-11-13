@@ -1364,18 +1364,18 @@ def rule_21(template: str, source: Any, loaded: Any, household: Household) -> li
 
 def rule_23(template: str, source: Any, loaded: Any, household: Household) -> list[str]:
     """name_or() takes a name for none when it shows nothing to the gateway: its class is the
-    characters that alone show no name (core.contacts.shows_a_name); a card that defines it
-    reads a name only through it."""
+    characters that alone show no name (core.contacts.shows_a_name); every card reads a name
+    only through it, and a card that uses it defines it."""
     found = []
     for card in cards(template):
-        defined = [line for line in card.lines if line.startswith(NAME_OR)]
-        if not defined:
-            continue
         found += [
             f"rule 23: a card reads a name without name_or(): {read}"
             for line in card.lines
             for read in NAME_READ.findall(line)
         ]
+        defined = [line for line in card.lines if line.startswith(NAME_OR)]
+        if not defined and any("name_or(" in line for line in card.lines):
+            found.append("rule 23: a card uses name_or() without defining it")
         for line in defined:
             match = re.search(r"is search\('\[\^(.*?)\]'\)", line)
             if match is None:

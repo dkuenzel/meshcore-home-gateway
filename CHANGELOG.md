@@ -79,9 +79,11 @@ format, the command line and Home Assistant discovery are public interfaces
   commands*, and the line names the sender and the reason, no longer the command's word, such as
   "Bob: command refused: wrong code" (#141). A node or sender whose name shows nothing, made only
   of invisible characters such as a zero-width space or drawn as nothing such as a Hangul filler,
-  is named there by the first digits of its key, as one without a name, no longer by an empty
-  bold name, which the row *New node* showed for such a stranger now that `heard_nodes = "full"`
-  sends its name. Make the dashboard again after the update.
+  is named there and in the result of a request on the page *Contacts* by the first digits of its
+  key, as one without a name, and is *?* in the chats, no longer an empty bold name: the row *New
+  node* showed one for such a stranger now that `heard_nodes = "full"` sends its name, and so did
+  the line under *Add by key or contact link* after it was added. Make the dashboard again after
+  the update.
 - The dashboard's chats cut the delivery code of `[messages] confirm_nonce` from a sent direct
   message only where the history says the gateway added one (#142). They went by the setting of
   now: after it was switched on, a household's own text sent before that ends in ` #` and 8 hex

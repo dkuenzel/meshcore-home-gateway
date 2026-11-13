@@ -729,7 +729,9 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   *Where everyone is* lists the contacts with a position, in words, and links to the map.
 * *Chats*: *All chats*, every chat page with its kind and newest message, those only automations
   write to last, then the contacts with a device that have no chat page yet and the channels
-  heard that have none; and *Latest messages*, all messages together as a thread.
+  heard that have none; and *Latest messages*, all messages together as a thread. A sender
+  whose name shows nothing, as a channel message may claim, is *?* here and on a chat's page,
+  as one without a name.
 * A chat's page shows the chat's messages, under the line that says why the gateway refused a
   message to the chat, while there is one: received on the left, sent from this home on the
   right with their time and ✓ (sent) or ✓✓ (delivered, which the person's radio confirmed);
@@ -762,7 +764,8 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   *Sensors*, the readings of the contacts that report some; *Ask for position and battery*, a
   switch for each person, and for each sensor asked for readings (`[telemetry] ask_types`);
   *Add or remove*: *Add at once: pick a node heard nearby* and *Add by key or contact link*
-  (paste it, then tap Return), the result of the last request below them,
+  (paste it, then tap Return), the result of the last request below them, which names a node
+  whose name shows nothing by the first 12 digits of its key,
   the QR code of the gateway under *Let someone add this home*
   ([above](#adding-and-removing-contacts)), a *Remove* for each contact, which asks first, and
   *Hidden contacts* with *Show again*; and *Nodes heard nearby*, the nodes you can add. While the

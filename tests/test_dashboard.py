@@ -2281,6 +2281,24 @@ BROKEN = [
         ],
         "rule 23: a card reads a name without name_or(): q.get('sender_name')",
     ),
+    # rule 23 in every card: the Contacts page's last contact event, which defines no name_or()
+    # then, and a chat's sender, as before 2.2
+    (
+        [
+            "@@",
+            "name_or(state_attr(e, 'name'), state_attr(e, 'prefix'))",
+            "m(state_attr(e, 'name') or state_attr(e, 'prefix') or '?')",
+        ],
+        "rule 23: a card reads a name without name_or(): state_attr(e, 'name')",
+    ),
+    (
+        ["@@", "name_or(e.get('name'))", "m(e.get('name') or '?')"],
+        "rule 23: a card reads a name without name_or(): e.get('name')",
+    ),
+    (
+        card(MACRO, "<div>{{ name_or(states('sensor.x'), 'a1b2c3d4') }}</div>"),
+        "rule 23: a card uses name_or() without defining it",
+    ),
 ]
 
 

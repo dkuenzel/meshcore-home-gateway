@@ -48,6 +48,8 @@ from test_dashboard import (
     HISTORY,
     NONE,
     PENDING,
+    SHOWS_NOTHING,
+    ZED,
     card,
     cards,
     contacts_of,
@@ -905,6 +907,49 @@ async def test_latest_messages_name_each_messages_chat(
     assert "<b>Eve (not a contact)</b> · " in cells[2]
     assert "<b>Alice</b> · " in cells[3]
     assert "<small>to Alerts · " in cells[4]
+    assert problems(caplog) == []
+
+
+@pytest.mark.parametrize("name", [*SHOWS_NOTHING, "Carol"])
+async def test_a_sender_whose_name_shows_nothing_is_a_question_mark(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    name: str,
+) -> None:
+    """A name that shows nothing, made only of invisible characters such as a zero-width space
+    or drawn as nothing such as a Hangul filler, is no name: the sender a channel message claims
+    and a contact without a chat page are "?" in Latest messages, Latest chats, All chats and a
+    channel's thread, as without a name, never an empty bold name. A name that shows stays."""
+    loaded = await chats_of(hass, hass_ws_client, tmp_path)
+    everything = card(loaded, "macro entry(e)")
+    alerts = thread(loaded, "alerts")
+    latest = card(cards(loaded, "overview"), "./messages")  # Latest chats
+    chats = card(loaded, "Who reads what")  # All chats
+    shown = name if name == "Carol" else "?"
+    zed = {"kind": "contact", "contact_key": ZED, "channel_index": None, "name": name}
+    documented(
+        hass,
+        HISTORY,
+        [
+            final(10, "Gate open", **zed, target=None),
+            received(20, "Psst", **zed, target=None),
+            received(30, "Psst", kind="contact", contact_key=None, channel_index=None, name=name),
+            received(40, "Dinner", name=name),
+        ],
+    )
+    cells = [cell for _, cell in rows(render(hass, everything))]
+    assert f"<b>{shown} in Alerts</b> · " in cells[0], cells[0]
+    assert f"<b>{shown} (not a contact)</b> · " in cells[1], cells[1]
+    assert f"<b>{shown}</b> · " in cells[2], cells[2]
+    assert f"<small>to {shown} · " in cells[3], cells[3]
+    assert f"<b>{shown}</b> · " in render(hass, alerts)
+    documented(hass, HISTORY, [received(40, "Dinner", name=name)])
+    for found in (latest, chats):
+        assert f"{shown}: Dinner</small>" in render(hass, found)
     assert problems(caplog) == []
 
 

@@ -39,6 +39,7 @@ from test_dashboard import (
     CONFIGURATION,
     NONE,
     PENDING,
+    SHOWS_NOTHING,
     ZED,
     card,
     cards,
@@ -389,10 +390,6 @@ async def test_latest_of_each_kind_shows_a_refused_command_with_its_reason_in_wo
         hass.states.async_set(sensor, "unknown", {"commands": forged})
         assert row(render(hass, latest), "Command").startswith("Bob: arm · "), forged
     assert problems(caplog) == []
-
-
-# names that show nothing (core.contacts.shows_a_name): a zero-width space, a Hangul filler
-SHOWS_NOTHING = ["\u200b", "\u3164"]
 
 
 @pytest.mark.parametrize("language", ["en", "de"])

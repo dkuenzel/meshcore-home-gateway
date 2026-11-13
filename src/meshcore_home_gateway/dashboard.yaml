@@ -308,6 +308,7 @@ views:
           - type: markdown
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro name_or(x, key=none) -%}{{ m(x if (x or '') is search('[^\u0000-\u0020\u007f-\u00a0\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180f\u2000-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]') else key or '?') }}{%- endmacro -%}
               {%- macro mt(x) -%}{%- set brk = '\u200b' -%}{{ m(x) | regex_replace('((?:&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f][\u0300-\u036f\u0483-\u0489]*){20})(?=&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f])', '\\1' ~ brk) }}{%- endmacro -%}
               {%- macro mon(v) -%}
               {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
@@ -347,7 +348,7 @@ views:
               {%- macro line(e) -%}
               {%- set raw = e.get('text') or '' -%}
               {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if e.get('direction') == 'out' and e.get('kind') == 'contact' and (e.get('nonce') == true or (e.get('nonce') is none and coded)) else raw -%}
-              {%- set text = mt(raw[:60] ~ ('…' if raw | length > 60 else '')) -%}{%- set sender = m(e.get('name') or '?') -%}
+              {%- set text = mt(raw[:60] ~ ('…' if raw | length > 60 else '')) -%}{%- set sender = name_or(e.get('name')) -%}
               {%- if e.get('direction') == 'in' and e.get('kind') == 'channel' -%}
               {#- Translators: a channel message in one line: the sender's name, as the sender typed it, then the text -#}
               _("{sender}: {text}")
@@ -482,6 +483,7 @@ views:
           - type: markdown
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro name_or(x, key=none) -%}{{ m(x if (x or '') is search('[^\u0000-\u0020\u007f-\u00a0\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180f\u2000-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]') else key or '?') }}{%- endmacro -%}
               {%- macro mt(x) -%}{%- set brk = '\u200b' -%}{{ m(x) | regex_replace('((?:&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f][\u0300-\u036f\u0483-\u0489]*){20})(?=&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f])', '\\1' ~ brk) }}{%- endmacro -%}
               {%- macro mon(v) -%}
               {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
@@ -529,7 +531,7 @@ views:
               {%- macro line(e) -%}
               {%- set raw = e.get('text') or '' -%}
               {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if e.get('direction') == 'out' and e.get('kind') == 'contact' and (e.get('nonce') == true or (e.get('nonce') is none and coded)) else raw -%}
-              {%- set text = mt(raw[:60] ~ ('…' if raw | length > 60 else '')) -%}{%- set sender = m(e.get('name') or '?') -%}
+              {%- set text = mt(raw[:60] ~ ('…' if raw | length > 60 else '')) -%}{%- set sender = name_or(e.get('name')) -%}
               {%- if e.get('direction') == 'in' and e.get('kind') == 'channel' -%}
               {#- Translators: a channel message in one line: the sender's name, as the sender typed it, then the text -#}
               _("{sender}: {text}")
@@ -596,6 +598,7 @@ views:
           - type: markdown
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro name_or(x, key=none) -%}{{ m(x if (x or '') is search('[^\u0000-\u0020\u007f-\u00a0\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180f\u2000-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]') else key or '?') }}{%- endmacro -%}
               {%- macro mt(x) -%}{%- set brk = '\u200b' -%}{{ m(x) | regex_replace('((?:&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f][\u0300-\u036f\u0483-\u0489]*){20})(?=&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f])', '\\1' ~ brk) }}{%- endmacro -%}
               {%- macro mon(v) -%}
               {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
@@ -673,7 +676,7 @@ views:
               {%- elif e.get('kind') == 'channel' -%}
               {#- Translators: a channel of the radio without a chat page; n is its number -#}
               _("channel {n}")
-              {%- else -%}{{ m(e.get('name') or '?') }}
+              {%- else -%}{{ name_or(e.get('name')) }}
               {%- endif -%}
               {%- endmacro -%}
               {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87), whose entries say since 2.2 whether it added one (nonce, #142): cut where an entry says true, whatever the setting is now, never where it says false; an entry of 2.1 says nothing (null): cut it while the setting is on now or the gateway, being offline, does not say, as before (PC 16) -#}
@@ -684,10 +687,10 @@ views:
               {%- set trouble = e.get('direction') != 'in' and (e.get('state') in ['failed', 'expired'] or e.get('suspect') == true) -%}
               {%- set state = 'suspect' if e.get('state') == 'confirmed' and e.get('suspect') == true else (e.get('state') or e.get('step') or '') -%}
               {%- set attempt = e.get('attempt') | int(0) -%}{%- set attempts = e.get('max_attempts') | int(0) -%}{%- set later = when(e.get('at')) -%}
-              {%- set sender = m(e.get('name') or '?') -%}{%- set chat = label(e) -%}
+              {%- set sender = name_or(e.get('name')) -%}{%- set chat = label(e) -%}
               {%- if e.get('direction') == 'in' -%}
               {#- Translators: who wrote a message of Latest messages: sender is the name the sender gave, chat the chat it came in -#}
-              <table role="presentation" width="100%"><tr><td width="85%" align="left"><small><b>{% if e.get('kind') == 'channel' %}_("{sender} in {chat}"){% elif not e.get('contact_key') %}_("{sender} (not a contact)"){% else %}{{ m(e.get('name') or '?') }}{% endif %}</b> · {{ when(e.get('at')) }}</small><br>{{ mt(raw) }}</td><td width="15%"></td></tr></table>
+              <table role="presentation" width="100%"><tr><td width="85%" align="left"><small><b>{% if e.get('kind') == 'channel' %}_("{sender} in {chat}"){% elif not e.get('contact_key') %}_("{sender} (not a contact)"){% else %}{{ name_or(e.get('name')) }}{% endif %}</b> · {{ when(e.get('at')) }}</small><br>{{ mt(raw) }}</td><td width="15%"></td></tr></table>
               {%- else -%}
               {#- Translators: on its way: attempt and attempts are whole numbers; ✓✓ {later}: delivered, later the time the person's radio confirmed it, such as 10:34; to {chat}: to whom it went, chat is a chat's name -#}
               <table role="presentation" width="100%"><tr><td width="15%"></td><td width="85%" align="right">{% if trouble %}<ha-alert alert-type="warning">{% endif %}<small>_("to {chat}") · {{ when(e.get('queued_at') or e.get('at')) }} · {% if state == 'sent' and e.get('step') %}_("… sent, waiting for confirmation (try {attempt} of {attempts})"){% elif state == 'confirmed' and e.get('queued_at') and when(e.get('queued_at')) != later %}_("✓✓ {later}"){% else %}{{ mark(state) }}{% endif %}{% if trouble and e.get('reason') and not (state == 'expired' and e.get('reason') == 'queue_ttl') %} ({{ why(e.get('reason')) }}){% endif %}</small><br>{% if e.get('step') %}<i>{{ mt(raw) }}</i>{% else %}{{ mt(raw) }}{% endif %}{% if trouble %}</ha-alert>{% endif %}</td></tr></table>
@@ -1138,6 +1141,7 @@ views:
             text_only: true
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro name_or(x, key=none) -%}{{ m(x if (x or '') is search('[^\u0000-\u0020\u007f-\u00a0\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180f\u2000-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]') else key or '?') }}{%- endmacro -%}
               {%- macro mon(v) -%}
               {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
               {%- if v == 1 -%}_("Jan")
@@ -1219,7 +1223,7 @@ views:
               {%- set e = 'event.@gw@_contact' -%}
               {%- set kind = state_attr(e, 'event_type') -%}
               {%- set reason = state_attr(e, 'reason') -%}
-              {%- set who = m(state_attr(e, 'name') or state_attr(e, 'prefix') or '?') -%}
+              {%- set who = name_or(state_attr(e, 'name'), state_attr(e, 'prefix')) -%}
               {%- set ns = namespace(page=false) -%}
               {%- for x in ["@chats@"] if x.key and x.key == state_attr(e, 'key') -%}{%- set ns.page = true -%}{%- endfor -%}
               {#- Translators: Return (↵) is the keyboard's key: the word the phone keyboards of your language show, with the sign ↵, and the same word as in the name beside a chat's Send button (Return, then Send) -#}
@@ -1229,9 +1233,9 @@ views:
               {%- elif kind is none %}
               <div>_("No contact event yet.")</div>
               {%- elif kind in ['refused', 'failed'] %}
-              <div><ha-alert alert-type="warning"><b>{{ m(state_attr(e, 'name') or state_attr(e, 'prefix') or '?') }}</b> {{ what(kind) }}{% if reason %} ({{ why(reason) }}){% endif %} · {{ when(states(e)) }}</ha-alert></div>
+              <div><ha-alert alert-type="warning"><b>{{ name_or(state_attr(e, 'name'), state_attr(e, 'prefix')) }}</b> {{ what(kind) }}{% if reason %} ({{ why(reason) }}){% endif %} · {{ when(states(e)) }}</ha-alert></div>
               {%- else %}
-              <div><b>{{ m(state_attr(e, 'name') or state_attr(e, 'prefix') or '?') }}</b> {{ what(kind) }} · {{ when(states(e)) }}</div>
+              <div><b>{{ name_or(state_attr(e, 'name'), state_attr(e, 'prefix')) }}</b> {{ what(kind) }} · {{ when(states(e)) }}</div>
               {%- if kind == 'added' and state_attr(e, 'type') == 'chat' and not ns.page %}
               {#- Translators: who is a contact's name #}
               <div>_("To write to {who} here, your administrator makes the dashboard again.")</div>
@@ -2363,6 +2367,7 @@ views:
           - type: markdown
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro name_or(x, key=none) -%}{{ m(x if (x or '') is search('[^\u0000-\u0020\u007f-\u00a0\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180f\u2000-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]') else key or '?') }}{%- endmacro -%}
               {%- macro mt(x) -%}{%- set brk = '\u200b' -%}{{ m(x) | regex_replace('((?:&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f][\u0300-\u036f\u0483-\u0489]*){20})(?=&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f])', '\\1' ~ brk) }}{%- endmacro -%}
               {%- macro mon(v) -%}
               {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
@@ -2440,7 +2445,7 @@ views:
               {%- set trouble = e.get('direction') != 'in' and (e.get('state') in ['failed', 'expired'] or e.get('suspect') == true) -%}
               {%- set state = 'suspect' if e.get('state') == 'confirmed' and e.get('suspect') == true else (e.get('state') or e.get('step') or '') -%}
               {%- set attempt = e.get('attempt') | int(0) -%}{%- set attempts = e.get('max_attempts') | int(0) -%}{%- set later = when(e.get('at')) -%}
-              {%- if e.get('direction') == 'in' -%}<table role="presentation" width="100%"><tr><td width="85%" align="left"><small>{% if e.get('kind') == 'channel' %}<b>{{ m(e.get('name') or '?') }}</b> · {% endif %}{{ when(e.get('at')) }}</small><br>{{ mt(raw) }}</td><td width="15%"></td></tr></table>
+              {%- if e.get('direction') == 'in' -%}<table role="presentation" width="100%"><tr><td width="85%" align="left"><small>{% if e.get('kind') == 'channel' %}<b>{{ name_or(e.get('name')) }}</b> · {% endif %}{{ when(e.get('at')) }}</small><br>{{ mt(raw) }}</td><td width="15%"></td></tr></table>
               {%- else -%}
               {#- Translators: on its way: attempt and attempts are whole numbers; ✓✓ {later}: delivered, later the time the person's radio confirmed it, such as 10:34 -#}
               <table role="presentation" width="100%"><tr><td width="15%"></td><td width="85%" align="right">{% if trouble %}<ha-alert alert-type="warning">{% endif %}<small>{{ when(e.get('queued_at') or e.get('at')) }} · {% if state == 'sent' and e.get('step') %}_("… sent, waiting for confirmation (try {attempt} of {attempts})"){% elif state == 'confirmed' and e.get('queued_at') and when(e.get('queued_at')) != later %}_("✓✓ {later}"){% else %}{{ mark(state) }}{% endif %}{% if trouble and e.get('reason') and not (state == 'expired' and e.get('reason') == 'queue_ttl') %} ({{ why(e.get('reason')) }}){% endif %}</small><br>{% if e.get('step') %}<i>{{ mt(raw) }}</i>{% else %}{{ mt(raw) }}{% endif %}{% if trouble %}</ha-alert>{% endif %}</td></tr></table>
