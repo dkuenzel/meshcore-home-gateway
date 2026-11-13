@@ -39,6 +39,7 @@ pins, the release check against a real installation ([testing.md](testing.md#rel
 
 | Gateway | Contract tests | Release check |
 | --- | --- | --- |
+| 2.1.1, the program of 2.1.1rc2 | 2026.10.2, and 2026.11.0 from its own environment | the maintainer's use of 2.1.1rc2 on Home Assistant 2026.11.1 (Home Assistant OS 18.4, frontend 20261028.5) |
 | 2.1.1rc2 | 2026.10.2, and 2026.11.0 from its own environment | the browser check of 2.1.1rc1 on 2026.10.2 and 2026.11.0; the maintainer's use before 2.1.1 |
 | 2.1.1rc1 | 2026.10.2, and 2026.11.0 from its own environment | the browser check on 2026.10.2 and 2026.11.0; not finished: the clock fixes followed in 2.1.1rc2 |
 | 2.1.0, the program of 2.1.0rc1 | 2026.10.2, and 2026.11.0 from its own environment | the browser check of 2.1.0rc1 on 2026.10.2 and 2026.11.0; the maintainer's use follows 2.1.0, as they decided |
@@ -279,7 +280,10 @@ sending; clear it before the next one.
 
 **Remove.** *Remove from radio* on the contact's device page (*Configuration*). It is
 `unavailable` for a contact target or command sender (protected), with management off or on
-untested firmware, and while the radio or the gateway is away. After a removal the radio drops the node's direct messages, messages queued to
+untested firmware, and while the radio or the gateway is away. When none can be removed, the
+dashboard's *Remove a contact* says so instead of a row. A protected contact is replaced in the
+configuration: its target's `contact` takes the new key ([configuration.md](configuration.md)),
+and after the restart the old key can be removed. After a removal the radio drops the node's direct messages, messages queued to
 it fail with `unknown_contact`, and its device goes; while it counts as heard, it is offered again
 in *Add heard node*, and adding it back restores the device with its name, area and labels.
 *Delete* on the device page is something else: it hides the contact in Home Assistant only
