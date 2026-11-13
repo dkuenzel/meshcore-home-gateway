@@ -8,6 +8,13 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Fixed
+
+- The dashboard's *Remove a contact* stood as a heading alone when no contact could be removed,
+  as when every contact is a chat's target or a command sender, which the gateway keeps on
+  purpose. It now says that no contact can be removed here, above the fold that says why. Make
+  the dashboard again after the update.
+
 ## [2.1.1] - 2026-11-13
 
 Fixes of the dashboard found in the maintainer's first use of 2.1.0, and of the radio's clock

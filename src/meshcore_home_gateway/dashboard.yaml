@@ -1303,6 +1303,12 @@ views:
           - type: markdown
             text_only: true
             content: |-
+              {#- while no contact of this gateway can be removed, the heading says why it stands alone (2.1.1rc1 in use) -#}
+              {#- now(): the card renders again each minute, as the registry it reads tells no listener -#}
+              {%- set clock = now() -%}
+              {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
+              {%- set removable = [] if gw is none else integration_entities('mqtt') | select('match', 'button\\.\\w+_remove(_\\d+)?$') | select('is_device_attr', 'via_device_id', gw) | reject('is_state', 'unavailable') | list -%}
+              {%- if not removable -%}<div>_("No contact can be removed here.")</div>{%- endif %}
               <details><summary>_("What removing does")</summary><ul><li>_("Remove: the contact leaves the radio; to talk again, add it again.")</li><li>_("It asks first. A contact your administrator keeps on purpose cannot be removed, and its row is missing.")</li></ul></details>
 # @else
           - type: markdown
