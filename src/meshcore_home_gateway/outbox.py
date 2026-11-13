@@ -118,8 +118,9 @@ class Outgoing:
     # start), then `sent`; pausing it for an alert sends none and leaves it `sent`
     step: DeliveryState = DeliveryState.QUEUED
     # the gateway added confirm_nonce's random suffix to `text`: events show it without until
-    # the delivery ended (#87), whatever the setting is by then
-    nonce: bool = False
+    # the delivery ended (#87), whatever the setting is by then; None: 2.0 kept it without the
+    # record, and the history does not guess it (the setting of now hides a suffix meanwhile)
+    nonce: bool | None = False
 
 
 class Outbox:
@@ -766,14 +767,15 @@ class Delivery:
         """Whether a message to the target gets the random suffix of `confirm_nonce` now."""
         return target.kind is MessageKind.CONTACT and self.config.messages.confirm_nonce
 
-    @staticmethod
-    def _on_its_way(item: Outgoing) -> str:
+    def _on_its_way(self, item: Outgoing) -> str:
         """The text that events and `pending` show until the delivery ended: without the
-        suffix the gateway added (`Outgoing.nonce`). The suffix is the only secret of the
-        acknowledgement's code, so it stays the radios' until no acknowledgement counts any more
-        (#87); the final event and the history carry the text as sent. A household's own text
-        that ends like a suffix is shown whole."""
-        return without_nonce(item.text) if item.nonce else item.text
+        suffix the gateway added (`Outgoing.nonce`; for one 2.0 kept without the record, as the
+        setting of now says). The suffix is the only secret of the acknowledgement's code, so it
+        stays the radios' until no acknowledgement counts any more (#87); the final event and
+        the history carry the text as sent. A household's own text that ends like a suffix is
+        shown whole."""
+        nonce = self._nonce(item.target) if item.nonce is None else item.nonce
+        return without_nonce(item.text) if nonce else item.text
 
     def _deliver_event(self, event: DeliveryEvent) -> None:
         # %r: the alias of a rejected request comes from its topic, which may hold any character
@@ -939,8 +941,7 @@ class Delivery:
                 timestamp=saved.timestamp,
                 sent=saved.sent,
                 queued_at=saved.queued_at,
-                # kept by 2.1 with its record; by 2.0, as the setting says
-                nonce=self._nonce(target) if saved.nonce is None else saved.nonce,
+                nonce=saved.nonce,  # kept by 2.1 with its record; by 2.0 without: unknown
             )
             if age >= config.queue_ttl_s:  # it would have expired meanwhile
                 self._deliver_event(self._out_of_time(item, item.sent, reason="queue_ttl"))

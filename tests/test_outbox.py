@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 import logging
 import re
 import shutil
@@ -1140,6 +1141,52 @@ def test_a_kept_message_hides_its_suffix_after_confirm_nonce_was_switched_off(
             history = await bus.wait_for("radio1/history", lambda h: bool(h["messages"]))
             (entry,) = history["messages"]
             assert (entry["text"], entry["nonce"]) == (sent, True)
+
+    scenario(main)
+
+
+@pytest.mark.parametrize("now_on", [False, True])
+def test_a_message_kept_by_2_0_has_no_nonce_in_the_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, now_on: bool
+) -> None:
+    """2.0 kept a message without the record of whether the gateway added the suffix. Until its
+    delivery ended the gateway goes by the setting of now, as before, to keep a suffix off the
+    bus; the history says `nonce` is unknown, `null`, rather than that guess (mqtt-api.md), and
+    a stop keeps it unknown."""
+    monkeypatch.setattr(outbox_module, "STOP_OUTBOX_S", 0.2)
+    first = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+    second = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+    third = EmulatedRadio(contacts=[ALICE, BOB], auto_ack=False)
+    state = tmp_path / "state.json"
+
+    def as_2_0_kept_it() -> None:
+        data = json.loads(state.read_text(encoding="utf-8"))
+        for message in data["outbox"]["messages"]:
+            del message["nonce"], message["queued_at"]
+        state.write_text(json.dumps(data), encoding="utf-8")
+
+    async def main() -> None:
+        on = make_config(messages="confirm_nonce = true")
+        async with running(on, first, tmp_path) as (_, bus, _n):
+            bus.send("alice", "Door open")
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            (sent,) = {t.text for t in first.texts}
+        as_2_0_kept_it()
+        now = on if now_on else make_config()
+        async with running(now, second, tmp_path) as (_, bus, _n):  # kept by the stop
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            shown = "Door open" if now_on else sent  # by the setting of now
+            assert [e["text"] for e in bus.payloads("/delivery")] == [shown, shown]
+        kept = json.loads(state.read_text(encoding="utf-8"))["outbox"]["messages"]
+        assert [m["nonce"] for m in kept] == [None]  # still unknown
+        async with running(now, third, tmp_path) as (_, bus, _n):
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            third.acknowledge(expected_ack(int(NOW), 2, sent, SELF_KEY))  # its third attempt
+            confirmed = await bus.wait_for("/delivery", lambda d: d["event_type"] == "confirmed")
+            assert confirmed["text"] == sent
+            history = await bus.wait_for("radio1/history", lambda h: bool(h["messages"]))
+            (entry,) = history["messages"]
+            assert (entry["text"], entry["nonce"]) == (sent, None)
 
     scenario(main)
 
