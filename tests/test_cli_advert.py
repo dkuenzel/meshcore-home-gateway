@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -78,6 +79,27 @@ def run(tmp_path: Path, broker: Broker, *args: str) -> int:
     return main(["advert", "--config", str(broker_config(tmp_path, broker)), *args])
 
 
+def retained_requests(broker: Broker) -> list[bytes]:
+    """What the broker keeps on `advert/send` for a client that subscribes now: a retained
+    request reaches the gateway's live subscription without the retain flag, and again, flagged,
+    at each of its reconnects."""
+    kept: list[bytes] = []
+    subscribed = threading.Event()
+    client = paho.Client(callback_api_version=CallbackAPIVersion.VERSION2)
+    client.on_subscribe = lambda *_: subscribed.set()
+    client.on_message = lambda _c, _u, m: kept.append(bytes(m.payload)) if m.retain else None
+    client.connect(broker.host, broker.port)
+    client.loop_start()
+    try:
+        client.subscribe(f"{ROOT}/advert/send", qos=1)
+        assert subscribed.wait(5)
+        time.sleep(0.5)  # a retained message comes right after the subscription
+    finally:
+        client.disconnect()
+        client.loop_stop()
+    return kept
+
+
 @pytest.mark.broker
 def test_a_sent_advert_prints_its_event_and_names_the_name(
     tmp_path: Path, broker: Broker, capsys: pytest.CaptureFixture[str]
@@ -91,6 +113,7 @@ def test_a_sent_advert_prints_its_event_and_names_the_name(
     ((topic, payload, retained, qos),) = gateway.requests
     request = json.loads(payload)
     assert (topic, retained, qos) == (f"{ROOT}/advert/send", False, 1)
+    assert retained_requests(broker) == []  # not left on the broker
     assert set(request) == {"id"}
     assert re.fullmatch(r"cli-[0-9a-f]{8}", request["id"])
     captured = capsys.readouterr()

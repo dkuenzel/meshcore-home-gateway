@@ -22,6 +22,7 @@ from meshcore_home_gateway.core.airtime import (
     self_advert_bytes,
     time_on_air_s,
 )
+from meshcore_home_gateway.ports import AdvertRequest, NotSentError, RadioPort
 from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES
 from meshcore_home_gateway.protocol.codes import Command
 from meshcore_home_gateway.radio.profile import RadioProfile
@@ -534,6 +535,72 @@ def test_a_radio_lost_while_its_clock_is_read_is_no_radio(tmp_path: Path) -> Non
     scenario(main)
 
 
+def test_a_radio_lost_before_the_worker_takes_the_request_is_no_radio(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The radio can go between the checks and the worker: refused, nothing written, nothing
+    counted."""
+    radio = EmulatedRadio()
+    real = advertiser_module.Advertiser._checked
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path) as (bridge, bus, _n):
+
+            def checked(self: advertiser_module.Advertiser, request: AdvertRequest) -> RadioPort:
+                session = real(self, request)
+                monkeypatch.setattr(bridge.radio, "live", lambda: None)  # gone right after
+                return session
+
+            monkeypatch.setattr(advertiser_module.Advertiser, "_checked", checked)
+            since = len(radio.received)
+            ask(bus)
+            event = await outcome(bus)
+            monkeypatch.undo()
+            assert (event["event_type"], event["reason"], event["next_at"]) == (
+                "refused",
+                "no_radio",
+                None,
+            )
+            assert written(radio, since) == []
+            assert bridge.outbox.budget.used_s(time.monotonic()) == 0
+
+    scenario(main)
+
+
+def test_a_session_closed_before_the_advert_is_written_is_no_radio(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The session ended while the advert waited for the radio: nothing was written, so the
+    request is refused, nothing is charged and the 10 minutes do not start."""
+    radio = EmulatedRadio()
+    real = CompanionSession.send_self_advert
+    closed = {"times": 1}
+
+    async def send(session: CompanionSession, *, unless: Any = None) -> bool:
+        if closed["times"]:
+            closed["times"] -= 1
+            raise NotSentError("session closed")
+        return await real(session, unless=unless)
+
+    monkeypatch.setattr(CompanionSession, "send_self_advert", send)
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path) as (bridge, bus, _n):
+            ask(bus)
+            event = await outcome(bus)
+            assert (event["event_type"], event["reason"], event["next_at"]) == (
+                "refused",
+                "no_radio",
+                None,
+            )
+            assert bridge.outbox.budget.used_s(time.monotonic()) == 0
+            ask(bus)
+            assert (await outcome(bus, 2))["event_type"] == "sent"
+            assert radio.adverts == [b"\x07"]
+
+    scenario(main)
+
+
 # --- failed ---------------------------------------------------------------------------------------
 
 
@@ -657,6 +724,47 @@ def test_a_copy_of_a_request_in_progress_or_sent_gets_no_second_event(tmp_path: 
             assert (second["id"], second["reason"]) == ("cli-5e6f7a8b", "too_soon")
             assert len(events(bus)) == 2
             assert radio.adverts == [b"\x07"]
+
+    scenario(main)
+
+
+def test_a_copy_is_a_request_of_its_own_after_ten_minutes(tmp_path: Path) -> None:
+    """The ids are kept for 10 minutes: the same id after them is a new request."""
+    radio = EmulatedRadio()
+    clock = Clock()
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path, monotonic=clock) as (_, bus, _n):
+            ask(bus, {"id": "x1"})
+            assert (await outcome(bus))["event_type"] == "sent"
+            clock.offset += 600
+            ask(bus, {"id": "x1"})
+            again = await outcome(bus, 2)
+            assert (again["id"], again["event_type"]) == ("x1", "sent")
+            assert radio.adverts == [b"\x07", b"\x07"]
+
+    scenario(main)
+
+
+def test_only_the_ids_of_the_newest_requests_taken_are_kept(tmp_path: Path) -> None:
+    """A request taken and then refused by the worker starts no 10 minutes, so many can be taken
+    within them: only the newest KEPT_IDS ids are kept as copies to ignore."""
+    radio = EmulatedRadio()
+    kept = advertiser_module.KEPT_IDS
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path) as (_, bus, _n):
+            radio.clock = int(NOW) + 61  # every request is taken, then refused by the worker
+            for count in range(1, kept + 2):
+                ask(bus, {"id": f"x{count - 1}"})
+                assert (await outcome(bus, count))["reason"] == "clock_ahead"
+            ask(bus, {"id": f"x{kept}"})  # the newest: still a copy
+            ask(bus, {"id": "x0"})  # the oldest: no longer kept, so a request of its own
+            again = await outcome(bus, kept + 2)
+            assert (again["id"], again["reason"]) == ("x0", "clock_ahead")
+            await asyncio.sleep(0.1)
+            assert len(events(bus)) == kept + 2
+            assert radio.adverts == []
 
     scenario(main)
 

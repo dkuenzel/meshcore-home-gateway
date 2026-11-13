@@ -889,6 +889,33 @@ async def test_the_advert_line_says_what_became_of_the_last_advert_for_ten_minut
     assert problems(caplog) == []
 
 
+async def test_the_advert_line_names_the_next_time_only_after_too_soon_and_the_key_when_known(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The time from which the next advert may go follows only a too_soon refusal, although a
+    refusal for another reason within the 10 minutes carries it too; the help's item with the
+    first digits of the radio's key is left out while the key is unknown."""
+    config = make_config()
+    loaded, _ = await household_page(hass, hass_ws_client, config, tmp_path, ALICE_NODE)
+    line = card(cards(loaded, "contacts"), ADVERT)
+    topics = topics_of(config)
+    lost = self_advert_event("refused", "a1", reason="no_radio", next_at=time.time() + 600)
+    await fire(hass, topics.advert_event, lost)
+    assert render(hass, line).startswith(
+        '<div><ha-alert alert-type="warning"><b>No advert sent: no radio.</b></ha-alert></div>\n'
+    )
+    starts = "In the app, this home's radio has a key that starts with"
+    assert f"{starts} c3c3c3c3." in render(hass, line)
+    await fire(hass, topics.state, state_document(known=False))  # the radio's key unknown
+    assert starts not in render(hass, line)
+    assert problems(caplog) == []
+
+
 # --- every control as a household user (contract item 12) ---------------------------------------
 
 

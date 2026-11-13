@@ -26,6 +26,7 @@ from meshcore_home_gateway.core.profile import ProfileReport
 from meshcore_home_gateway.mqtt.contact_devices import contact_payload, removal_payload
 from meshcore_home_gateway.mqtt.discovery import (
     RADIO_CONNECTED,
+    controls_off,
     device_name,
     discovery_payload,
     discovery_topic,
@@ -393,6 +394,18 @@ def test_without_radio_controls_or_controls_the_advert_button_is_unavailable(
     on = discovery_payload(CONFIG, TOPICS)["cmps"]["send_advert"]
     off = discovery_payload(_homeassistant(**settings), TOPICS)["cmps"]["send_advert"]
     assert off == on | {"availability": [*on["availability"], never_available(TOPICS)]}
+
+
+def test_radio_controls_off_leaves_every_other_control_as_it_is() -> None:
+    """`radio_controls = false` takes only the button that makes the radio transmit away from
+    Home Assistant: the contact controls stay as they are, which only `controls` turns off."""
+    config = _homeassistant(radio_controls=False)
+    assert controls_off(config, TOPICS) == []
+    on = discovery_payload(CONFIG, TOPICS)["cmps"]
+    off = discovery_payload(config, TOPICS)["cmps"]
+    assert {k: v for k, v in off.items() if k != "send_advert"} == {
+        k: v for k, v in on.items() if k != "send_advert"
+    }
 
 
 def test_the_advert_event_is_always_announced() -> None:
