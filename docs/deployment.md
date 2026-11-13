@@ -342,6 +342,12 @@ pct stop 105 && pct destroy 105
   Home Assistant's *Message history* leave them out. To be rid of them at once, stop the service
   and delete `/var/lib/meshcore-home-gateway/history.sqlite3` with its `-wal` and `-shm` files:
   the gateway starts a new history, without the rest of the old one.
+* **The advert button after an update to 2.2:** Home Assistant gets *Send advert nearby*, which
+  anyone who uses it can press ([home-assistant.md](home-assistant.md#advert-nearby)). With a
+  broker ACL, Home Assistant's user needs `topic write <base_topic>/<node_id>/advert/send` for it
+  ([mqtt-api.md](mqtt-api.md#securing-the-broker)): the example ACL of earlier versions lacks it,
+  and without it the button does nothing. To keep it from Home Assistant's users, set
+  `[homeassistant] radio_controls = false` before the update.
 * **Telemetry after an update** from 1.0.0, or from 1.1.0a1 with telemetry off, with
   `[telemetry] ask = "all"`: telemetry is on from 1.1.0a2 on, and the first time it runs on the
   state directory it asks nobody for an hour

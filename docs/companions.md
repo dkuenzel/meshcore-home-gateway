@@ -38,7 +38,11 @@ versions.
 
 4. Add the gateway as a contact: scan its QR code (a card in Home Assistant shows it,
    [home-assistant.md](home-assistant.md#adding-and-removing-contacts); the link is
-   `state.contact_link`).
+   `state.contact_link`), or, near the house, ask someone at home to press *Send advert nearby*
+   and add the gateway from the nodes the app heard
+   ([home-assistant.md](home-assistant.md#advert-nearby)). Compare the key the app shows with
+   the gateway's, whose first digits the dashboard shows under *Let someone add this home*:
+   anyone in range can advertise a node of the same name.
 5. *Settings → Telemetry Settings*: "Allow Telemetry Requests?" **From Specific Contacts**;
    "Include Location in your Telemetry?" and "Include Environment in your Telemetry?" **For
    Specific Contacts**.

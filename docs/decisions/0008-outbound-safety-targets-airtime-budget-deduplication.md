@@ -91,3 +91,7 @@ check queue expiry and retries with an emulated radio.
   gateway asks the radio to send.
 * Revisit if the firmware exposes its own airtime accounting over the companion protocol; the
   bridge could then use measured instead of estimated airtime.
+* Amended on 2026-11-13 by [ADR 0033](0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md): an advert the gateway asks its radio for
+  (`advert/send`, zero hop, at most one every 10 minutes) is charged to this budget like a
+  message, and refused when the budget cannot pay it at once and still hold one long message
+  beside it, or while a message is on its way; the radio's other adverts stay uncounted.

@@ -22,7 +22,7 @@ the history holds: treat both as the history itself.
 | --- | --- | --- |
 | Retained topics on the broker (`meshcore/<node_id>/…`) | every client the broker lets read them ([securing the broker](mqtt-api.md#securing-the-broker)) | until the gateway replaces or clears them; after the gateway is removed, until you clear them (`meshcore-home-gateway retire`, [operations](deployment.md#4-operations)) |
 | With `[homie] enabled`: the retained topics of the Homie device (`homie/meshcore-<node_id>/…`): its contacts' names, battery, last heard and position | every client the broker lets read them ([Homie](mqtt-api.md#homie-homiehomie_device)) | until the gateway replaces or clears them; the node of a contact removed while the gateway was stopped, and the whole device after `[homie]` is switched off or the gateway is removed, until you clear them (`meshcore-home-gateway retire` clears them also with `[homie]` off, while the broker still lets the gateway's user read and write `homie/meshcore-<node_id>/#`; by hand: `mosquitto_sub -t 'homie/meshcore-radio1/#' --retained-only --remove-retained -W 2`) |
-| Events on the broker (`received`, `contacts/<key>/received`, `delivery`, `command`, `node`, `contact`, `rx`, …) | the clients subscribed at the time | not kept by the broker |
+| Events on the broker (`received`, `contacts/<key>/received`, `delivery`, `command`, `node`, `contact`, `advert`, `rx`, …) | the clients subscribed at the time | not kept by the broker |
 | `history.sqlite3` in `/var/lib/meshcore-home-gateway/` | the service, and whoever has the container or a backup | per kind, below ([`[history]`](configuration.md#history)) |
 | `state.json` and `telemetry-excluded.json` beside it | as the history | while the gateway needs them ([what each holds](deployment.md#4-operations)) |
 | Home Assistant's recorder and `.storage/core.restore_state` | Home Assistant's users and backups | the recorder's `purge_keep_days` (10 days by default); the long-term statistics of sensors without end ([Home Assistant](home-assistant.md#privacy)) |
@@ -38,6 +38,7 @@ the history holds: treat both as the history itself.
 | The newest accepted command time of each sender, and the times of its wrong codes within the last hour | `state.json` | while the sender is one; the times of its wrong codes until a later wrong code finds them an hour old | — |
 | Messages on their way, accepted and not sent or given up yet: target, recipient's name and text | `pending` (retained) and Home Assistant's *Messages on their way*; `state.json` from the start of a stop | until each is final; in `state.json` until the next start of 2.0 or later queues them again or ends them (a roll back to 1.x keeps them meanwhile, [deployment.md](deployment.md#update-reconfigure-remove)) | Home Assistant's recorder: [exclusions](home-assistant.md#privacy) |
 | The settings in effect: the targets with their aliases, prefixes and suffixes and the first 8 digits of a contact target's key, hidden ones included; never hosts, passwords, keys or command words | `config` (retained) and Home Assistant's *Configuration* | until the gateway publishes it again: at the next start or radio connect | — (it holds no message and no position); every user of Home Assistant and every broker client that may read `meshcore/<node>/#` reads it |
+| The radio's name, public key and clock, in an advert sent on request (*Send advert nearby*, `advert/send`, `meshcore-home-gateway advert`); never a position | every radio in direct range when it goes out; their apps keep it as a heard node or a contact, and may pass it on with *Share* or an export, as anyone can the QR code | as long as they keep it | do not send it; `[homeassistant] radio_controls = false` makes the button unavailable ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)) |
 | Drafts of Home Assistant's chats: text a user wrote and has not sent | the gateway's memory, `homeassistant/draft/<kind>/<chat>` (retained, also in the broker's persistence file such as `mosquitto.db`) and the text entities *Write to …* and *Write* | until it is sent; emptied after 15 minutes without a change and at a clean stop of the gateway | Home Assistant's recorder: [exclusions](home-assistant.md#privacy); every user of Home Assistant and every broker client that may read `meshcore/<node>/#` reads them |
 
 ## Other people
@@ -57,4 +58,7 @@ heard node whose name is taken: someone may pass for a member of the household
 
 The gateway sends nothing it learns on the mesh back to the mesh. As the managed profile keeps
 it, its radio puts no position into its adverts and answers no one's telemetry requests
-([configuration](configuration.md#radioprofile)).
+([configuration](configuration.md#radioprofile)). An advert sent on request carries the radio's
+name and key to everyone in range and never a position: the gateway refuses it while the radio
+would put one in ([advert nearby](mqtt-api.md#advert-nearby-advertsend-and-advert)). Choose a radio
+name that says no more than you want everyone in range to read.

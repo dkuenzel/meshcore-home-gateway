@@ -264,3 +264,8 @@ Assistant, [testing.md](../testing.md#the-dashboard-in-a-browser)).
   line no longer quotes the text: the field keeps a refused draft, and a text sent twice is in
   the thread. Rule 18 checks the place
   ([platform-notes.md](../platform-notes.md#home-assistant-dashboards)).
+* Amended on 2026-11-13 by [ADR 0033](0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md): Home Assistant gains a control beside sending and
+  the contacts', *Send advert nearby*, behind the new setting `[homeassistant] radio_controls`
+  (on by default; anyone who uses Home Assistant may press it); *Contacts* shows it under *Let
+  someone add this home* and *Settings* shows the setting. The Decision's "no setting is added"
+  no longer holds for this control.
