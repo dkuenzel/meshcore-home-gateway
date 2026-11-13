@@ -2005,6 +2005,33 @@ msgctxt "dashboard"
 msgid "Adding or removing did not work; the reason in brackets says why."
 msgstr ""
 
+#. the settings of the contacts in Home Assistant; devices is a whole number
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Advert button in Home Assistant"
+msgstr ""
+
+#. time is a clock time such as 10:31; called is this home's radio's name as the advert carried it
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "Advert sent at {time} with the name {called}."
+msgstr ""
+
+#. the label of the row that makes this home's radio send its advert
+#. once, which only the radios in direct range hear
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Advert to radios nearby"
+msgstr ""
+
+#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "After the radio got a new name, the advert shows it to the radios nearby that have this home as a contact."
+msgstr ""
+
 #. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -2532,6 +2559,12 @@ msgctxt "dashboard"
 msgid "Everyone in this home who uses Home Assistant shares this field. What someone else leaves in it is what Send sends, and their text can replace yours while you type. Read the field before you tap Send."
 msgstr ""
 
+#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Everyone who uses Home Assistant here can send it."
+msgstr ""
+
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Everyone who uses Home Assistant here sees every chat, position, setting and unsent text, and can write to every chat."
@@ -2725,12 +2758,14 @@ msgstr ""
 
 #. security text (docs/translations.md): what a tick proves and what it does not; a confirmation that came too soon may be forged
 #. Return (↵) is the keyboard's key: the same word as in the name beside a chat's Send button (Return, then Send); Add at once names the list above as its label begins
+#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Help"
 msgstr ""
 
 #. Return (↵) is the keyboard's key: the same word as in the name beside a chat's Send button (Return, then Send); Add at once names the list above as its label begins
+#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Help explains each word."
@@ -2870,6 +2905,13 @@ msgctxt "dashboard"
 msgid "In the MeshCore app: Contacts, Add, Scan QR code."
 msgstr ""
 
+#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "In the app, this home's radio has a key that starts with {key}. A node with this name and another key is someone else."
+msgstr ""
+
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #. the settings of the contacts in Home Assistant; devices is a whole number
@@ -2918,6 +2960,12 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "It needs no internet: radios reach each other directly or through repeaters."
+msgstr ""
+
+#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "It never carries a position. It goes out at most once every 10 minutes, and its airtime counts against this home's hourly budget."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -3068,6 +3116,11 @@ msgctxt "dashboard"
 msgid "Message history"
 msgstr ""
 
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Messages go first, and the radio may send only so much per hour. Try again in a few minutes."
+msgstr ""
+
 #. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -3157,6 +3210,13 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "New: a message arrived less than 15 minutes ago."
+msgstr ""
+
+#. reason says why, such as only one advert every 10 minutes; next is a clock time such as 10:41
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "No advert sent: {reason}."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -3332,6 +3392,12 @@ msgstr ""
 #. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "On Contacts, under Let someone add this home: the radio tells the radios in direct range its name and key, once."
+msgstr ""
+
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "On Contacts: adds the node you pick to the radio at once."
 msgstr ""
 
@@ -3393,6 +3459,12 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "On: direct messages end in a short code such as #1a2b3c4d; it makes a faked confirmation harder. The chat hides it."
+msgstr ""
+
+#. the settings of the contacts in Home Assistant; devices is a whole number
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "On: everyone who uses Home Assistant here can make the radio send its advert to the radios nearby (Contacts)."
 msgstr ""
 
 #. the settings of the contacts in Home Assistant; devices is a whole number
@@ -3639,6 +3711,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "Radios nearby would ignore this radio's later adverts. The gateway sets the clock back; if it stays, tell your administrator."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "Readings count for an hour after the last answer; then they show as –."
 msgstr ""
 
@@ -3699,6 +3776,8 @@ msgctxt "dashboard"
 msgid "Same text again"
 msgstr ""
 
+#. the label of the button that sends the advert, as a chat's Send
+#. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send)
 #. the label on a chat's send button; keep it one short word
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -3810,6 +3889,12 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "Someone missing: see Where everyone is."
+msgstr ""
+
+#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Someone nearby can then add this home in the MeshCore app without the QR code: the app lists it among the nodes it heard."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -3935,6 +4020,18 @@ msgctxt "dashboard"
 msgid "That person's device tells everyone nearby where it is; Overview says what to do."
 msgstr ""
 
+#. reason says why, such as only one advert every 10 minutes; next is a clock time such as 10:41
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "The advert may not have gone out: {reason}."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The advert may or may not have gone out. Try again in 10 minutes."
+msgstr ""
+
 #. name is the person's name or the chat's title; short the first 8 digits of the key; hops a whole number; snr the signal in dB, such as 6.25, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -4033,6 +4130,11 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The gateway asks the devices of people who agreed for their position and battery. It pauses by itself when asking could harm the household's privacy or the airtime."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The gateway cannot use its radio for this now; Gateway shows why."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -4236,6 +4338,12 @@ msgctxt "dashboard"
 msgid "The law allows a radio only a share of each hour; messages wait when it is used up."
 msgstr ""
 
+#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The line above says what happened in the last 10 minutes."
+msgstr ""
+
 #. Return (↵) is the keyboard's key: the same word as in the name beside a chat's Send button (Return, then Send); Add at once names the list above as its label begins
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -4289,6 +4397,13 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "The newest event of each kind, in full. Home Assistant keeps only the newest of each here."
+msgstr ""
+
+#. reason says why, such as only one advert every 10 minutes; next is a clock time such as 10:41
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "The next one is possible from {next}."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -4351,6 +4466,17 @@ msgstr ""
 #, python-brace-format
 msgctxt "dashboard"
 msgid "The radio no longer has {name} as a contact, or someone hid the contact by deleting its device in Home Assistant. This page's field went with the device."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The radio sends at most one advert every 10 minutes; the line below the button says from when the next one goes."
+msgstr ""
+
+#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The radio tells the radios in direct range its name and key, once. Repeaters do not pass it on."
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -4535,6 +4661,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "This home's radio would put its position into the advert, or has no name, so the gateway sends none. Tell your administrator."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "This kind of node cannot be added."
 msgstr ""
 
@@ -4693,6 +4824,12 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "What removing does"
+msgstr ""
+
+#. security text (docs/translations.md): key is the first 8 hex digits of this home's radio's key
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "What the advert does"
 msgstr ""
 
 #. Needs a look is the start of the first line in yellow, and Help the page of that name: say both as translated there
@@ -4955,6 +5092,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "Why no advert was sent"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "Why nobody is asked"
 msgstr ""
 
@@ -5093,6 +5235,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "Your administrator turned the advert off for Home Assistant; the QR code above still works."
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "Your administrator turned these controls off: contacts are managed outside Home Assistant."
 msgstr ""
 
@@ -5155,6 +5302,11 @@ msgstr ""
 #, python-brace-format
 msgctxt "dashboard"
 msgid "and {more} more"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "another advert is being sent"
 msgstr ""
 
 #. security text (docs/translations.md): a command needs the sender's current code; a sender without a code secret is refused while the gateway ignores a secret of a key that is no sender; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
@@ -5355,6 +5507,11 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "empty request"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "empty text"
 msgstr ""
 
@@ -5476,6 +5633,11 @@ msgstr ""
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "message history broken"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "messages are on their way"
 msgstr ""
 
 #. the privacy settings; messages, positions and readings are whole numbers of days
@@ -5730,6 +5892,11 @@ msgctxt "dashboard"
 msgid "only automations write here"
 msgstr ""
 
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "only one advert every 10 minutes"
+msgstr ""
+
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -5841,6 +6008,7 @@ msgctxt "dashboard"
 msgid "request refused"
 msgstr ""
 
+#. why the gateway sent no advert, after No advert sent
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "request too large"
@@ -5969,12 +6137,32 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "the radio did not answer"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "the radio has no name"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "the radio sent a lot in the last hour"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "the radio would send its position"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "the radio's clock"
+msgstr ""
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "the radio's clock is ahead"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml

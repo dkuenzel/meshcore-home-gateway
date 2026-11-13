@@ -8,6 +8,10 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+For the administrator: make the dashboard again after the update. With a broker ACL, Home
+Assistant's user needs `topic write <base_topic>/<node_id>/advert/send` for *Send advert nearby*
+([deployment.md](docs/deployment.md#update-reconfigure-remove)).
+
 ### Added
 
 - Advert nearby: the gateway makes its radio send its advert once to the radios in direct range,
@@ -39,6 +43,12 @@ format, the command line and Home Assistant discovery are public interfaces
 - `[homeassistant] radio_controls` (default `true`), also in the `config` document: with `false`
   Home Assistant shows *Send advert nearby* unavailable (announced, not removed), as
   `controls = false` does too; `advert/send` on MQTT and the command line keep working.
+- Dashboard: on *Contacts*, under the QR code of *Let someone add this home*, the row *Advert to
+  radios nearby* with *Send* while the button can be pressed, and a line that says for 10
+  minutes what became of the last advert (sent with its time and name, or why not, in words,
+  and when the next one may go); its help names the first digits of the radio's key to compare
+  with. *Settings* shows *Advert button in Home Assistant*; *Help* names the row and explains
+  each reason in *Why no advert was sent*. German texts.
 
 ## [2.1.1] - 2026-11-13
 

@@ -34,6 +34,8 @@ and example automations are in [`home-assistant.md`](home-assistant.md).
 | Contact with remote access, Companion position in adverts | `binary_sensor` (problem) | `contacts` → `remote_cli_total`, `advert_carries_position_total` |
 | Look-alike node heard | `binary_sensor` (problem) | `nodes` → `look_alike_total` |
 | Show hidden contacts | `button` | → `homeassistant/show_hidden` |
+| Send advert nearby | `button`, QoS 0; unavailable while the gateway is offline or the radio not connected, and with `[homeassistant] radio_controls = false` or `controls = false` (announced, never removed) | → `advert/send` ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)) |
+| Advert nearby | `event` (`sent`, `refused`, `failed`) | `advert` |
 | Add heard node | `select`, its own document | the heard nodes' labels → `homeassistant/add_node` |
 | Add contact (key or link) | `text`, its own document | → `add_contact` |
 | Remove from radio | `button` on each contact's device | → `contacts/<key>/remove` |
@@ -144,7 +146,11 @@ their way, a draft and its *Send* for each chat and the configuration
   each problem while it exists, the latest chats, where everyone is), *Chats* (every chat with
   its newest message, and all messages as one thread) and *Contacts* (the contacts by their
   devices, the sensors' readings, each switch *Ask for position and battery*, *Add or remove*
-  with each contact's *Remove*, which asks first, the nodes heard nearby). The other pages have
+  with each contact's *Remove*, which asks first, the nodes heard nearby). Since 2.2 *Let
+  someone add this home* has, under the QR code, *Advert to radios nearby* with *Send* and the
+  line that says what became of the last advert for 10 minutes: its purpose is the QR code's, a
+  neighbour adding this home, so it stands where a household member looks for that
+  ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)). The other pages have
   no tab (`subview: true`): a page for each chat, *Map* (the contacts' trackers with 24 hours of
   traces), *Gateway* (health, the radio, its settings, the latest event of each kind),
   *Settings* (the configuration document, read only) and *Help*. A row of links under

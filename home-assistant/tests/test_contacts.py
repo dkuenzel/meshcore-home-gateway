@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from freezegun.api import FrozenDateTimeFactory
 from ha_plugin import CLIENT_ID, async_fire_time_changed
 from homeassistant.auth.const import GROUP_ID_USER
 from homeassistant.core import HomeAssistant
@@ -36,7 +37,13 @@ from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core.mesh import Node, Readings
 from meshcore_home_gateway.mqtt.discovery import discovery_payload, discovery_topic
 from meshcore_home_gateway.protocol.codes import NodeType
-from meshcore_home_gateway.views import config_document, contact_document, contact_event, iso
+from meshcore_home_gateway.views import (
+    config_document,
+    contact_document,
+    contact_event,
+    iso,
+    self_advert_event,
+)
 from test_contact_devices import ALICE, ALICE_NODE, COMPANION, HILL_NODE, NOW, Broker
 from test_dashboard import (
     BOB,
@@ -54,9 +61,12 @@ from test_dashboard import (
     markdown,
     page,
     render,
+    said,
     shows_nothing,
+    speaking,
     topics_of,
 )
+from test_telemetry import elapse
 
 # the cards of Contacts, by a part of their template
 PEOPLE = "set c = namespace(heard='', word='', battery=none, path='')"
@@ -64,12 +74,15 @@ SENSORS = "set c = namespace(heard='', word='', values=[], readings=0)"
 ASKING = "(is_state(radio, 'unavailable') or off) -%}"  # why the switches are missing
 # why adding does not work
 ADDING = "(is_state(radio, 'unavailable') or is_state(radio, 'off') or off or code) -%}"
-RESULT = "set e = 'event."
+RESULT = f"set e = 'event.{PREFIX}_contact'"
 FOREIGN = "set ns = namespace(items=[], found=[])"  # controls under another ID (D-30)
 UNLISTED = "set ns = namespace(keys=[], names=[])"
 SHED = "c3" * 32
 HEARD = "_add_node', 'options'"  # Nodes heard nearby
 OFFLINE = '<div><ha-alert alert-type="error">The gateway is offline. These controls come back'
+# the advert nearby under Let someone add this home (ADR 0033): its row, and the line under it
+SEND_ADVERT = f"button.{PREFIX}_send_advert"
+ADVERT = f"set e = 'event.{PREFIX}_advert'"
 
 
 def rows(view: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -740,6 +753,142 @@ async def test_the_result_of_adding_says_what_happened_under_the_field(
     assert problems(caplog) == []
 
 
+# --- the advert nearby (ADR 0033) ----------------------------------------------------------------
+
+
+def with_settings(config: Config, **homeassistant: Any) -> Config:
+    return dataclasses.replace(
+        config, homeassistant=dataclasses.replace(config.homeassistant, **homeassistant)
+    )
+
+
+async def test_the_advert_row_shows_while_its_button_can_be_pressed(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Advert to radios nearby, under the QR code, shows for a household user while the button
+    is there and can be pressed; it hides while the radio is not connected, with
+    `radio_controls` or `controls` off (each at once, both ways), while the gateway is offline,
+    and without the entity (a gateway before 2.2)."""
+    config = make_config()
+    loaded, viewer = await household_page(hass, hass_ws_client, config, tmp_path, ALICE_NODE)
+    view = page(loaded, "contacts")
+    row = entities_card(view, SEND_ADVERT)
+    topics = topics_of(config)
+    assert await viewer.shown(view, row)
+    await fire(hass, topics.state, state_document(known=False))
+    assert not await viewer.shown(view, row)
+    await connected(hass, config)
+    assert await viewer.shown(view, row)
+    for off in ({"radio_controls": False}, {"controls": False}):
+        document = discovery_payload(with_settings(config, **off), topics, RADIO)
+        await fire(hass, discovery_topic(config), document)
+        assert not await viewer.shown(view, row), off
+        await fire(hass, discovery_topic(config), discovery_payload(config, topics, RADIO))
+        assert await viewer.shown(view, row), off
+    await fire(hass, topics.availability, "offline")
+    assert not await viewer.shown(view, row)
+    await fire(hass, topics.availability, "online")
+    assert await viewer.shown(view, row)
+    hass.states.async_remove(SEND_ADVERT)  # as with a gateway before 2.2
+    assert not await viewer.shown(view, row)
+    assert problems(caplog) == []
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+async def test_the_advert_line_says_what_became_of_the_last_advert_for_ten_minutes(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    freezer: FrozenDateTimeFactory,
+    language: str,
+) -> None:
+    """Under the row, the outcome of the last request in the dashboard's language for 10 minutes:
+    sent with the time and the name the advert carried; refused with the reason in words and,
+    after too_soon, when the next one may go; failed as perhaps not gone out; a radio's own
+    error as its code; a hostile name escaped. Then only the help, which names the first digits
+    of the radio's key. With `radio_controls` or `controls` off a blue line says so instead."""
+    config = speaking(language, monkeypatch)
+    loaded, _ = await household_page(hass, hass_ws_client, config, tmp_path, ALICE_NODE)
+    line = card(cards(loaded, "contacts"), ADVERT)
+    topics = topics_of(config)
+    help_ = "<details><summary>" + said(config, "What the advert does") + "</summary>"
+    key = said(
+        config,
+        "In the app, this home's radio has a key that starts with {key}. A node with this name "
+        "and another key is someone else.",
+        key="c3c3c3c3",
+    )
+    assert render(hass, line).startswith(help_)  # no advert yet
+    assert key in render(hass, line)
+
+    def clock(at: str | None = None) -> str:
+        moment = dt_util.utcnow() if at is None else dt_util.parse_datetime(at)
+        assert moment is not None
+        return dt_util.as_local(moment).strftime("%H:%M")
+
+    def warning(text: str, **values: str) -> str:
+        return '<div><ha-alert alert-type="warning"><b>' + said(config, text, **values) + "</b>"
+
+    next_at = iso(time.time() + 600)
+    sent = self_advert_event("sent", "a1", name="Gateway", airtime_s=1.164, next_at=time.time())
+    await fire(hass, topics.advert_event, sent)
+    success = said(
+        config, "Advert sent at {time} with the name {called}.", time=clock(), called="Gateway"
+    )
+    assert render(hass, line).startswith(
+        f'<div><ha-alert alert-type="success">{success}</ha-alert></div>\n{help_}'
+    )
+    refused = self_advert_event("refused", "a2", reason="too_soon", next_at=time.time() + 600)
+    await fire(hass, topics.advert_event, refused)
+    words = said(config, "only one advert every 10 minutes")
+    later = said(config, "The next one is possible from {next}.", next=clock(next_at))
+    assert render(hass, line).startswith(
+        warning("No advert sent: {reason}.", reason=words) + f" {later}</ha-alert></div>\n"
+    )
+    failed = self_advert_event("failed", "a3", reason="outcome_unknown", name="Gateway")
+    await fire(hass, topics.advert_event, failed)
+    unknown = said(config, "the radio did not answer")
+    assert render(hass, line).startswith(
+        warning("The advert may not have gone out: {reason}.", reason=unknown) + "</ha-alert>"
+    )
+    radio = self_advert_event("failed", "a4", reason="table_full", name="Gateway")
+    await fire(hass, topics.advert_event, radio)
+    code = "<code>table_full</code>"
+    assert render(hass, line).startswith(
+        warning("The advert may not have gone out: {reason}.", reason=code) + "</ha-alert>"
+    )
+    hostile = self_advert_event("sent", "a5", name="<b>Gate</b>&way")
+    await fire(hass, topics.advert_event, hostile)
+    assert "&lt;b&gt;Gate&lt;/b&gt;&amp;way" in render(hass, line)
+    assert "<b>Gate</b>" not in render(hass, line)
+    await elapse(hass, freezer, 10 * 60 + 1)
+    assert render(hass, line).startswith(help_)  # the line is gone after 10 minutes
+    blue = (
+        '<div><ha-alert alert-type="info">'
+        + said(
+            config,
+            "Your administrator turned the advert off for Home Assistant; the QR code above "
+            "still works.",
+        )
+        + "</ha-alert></div>\n"
+    )
+    for off in ("radio_controls", "controls"):
+        document = config_document(time.time(), [], {"homeassistant": {off: False}})
+        await fire(hass, topics.config, document)
+        await fire(hass, topics.advert_event, sent)
+        assert render(hass, line).startswith(blue + help_), off
+    assert problems(caplog) == []
+
+
 # --- every control as a household user (contract item 12) ---------------------------------------
 
 
@@ -753,9 +902,9 @@ async def test_every_control_works_for_a_user_who_is_no_administrator(
 ) -> None:
     """Contract item 12: each control of the dashboard as a household user calls it: a chat's
     field and its Send button (the drafts of 2.1), Add by key or contact link, Add at once, a
-    switch both ways, the remove row's own action and Hidden contacts' Show again, each
-    publishing to the gateway; the remove row's and Show again's actions are those the
-    dashboard names. None is for administrators only."""
+    switch both ways, the remove row's own action, Hidden contacts' Show again and Advert to
+    radios nearby's Send, each publishing to the gateway; the remove row's, Show again's and
+    Send's actions are those the dashboard names. None is for administrators only."""
     config = make_config()
     bob = Node(BOB, "Bob", COMPANION)
     loaded, _ = await household_page(hass, hass_ws_client, config, tmp_path, ALICE_NODE, bob)
@@ -770,6 +919,8 @@ async def test_every_control_works_for_a_user_who_is_no_administrator(
     (show,) = [
         r["tap_action"] for r in walk(view) if r.get("entity") == f"button.{PREFIX}_show_hidden"
     ]
+    (advert,) = [r["tap_action"] for r in walk(view) if r.get("entity") == SEND_ADVERT]
+    assert "confirmation" not in advert
     assert remove["confirmation"]["text"].startswith("Bob can then no longer write")
     assert "confirmation" not in show
     options = hass.states.get(f"select.{PREFIX}_add_node").attributes["options"]
@@ -788,6 +939,7 @@ async def test_every_control_works_for_a_user_who_is_no_administrator(
         ("switch", "turn_on", {}, {"entity_id": switch}),
         (*remove["perform_action"].split("."), {}, remove["target"]),  # type: ignore[list-item]
         (*show["perform_action"].split("."), {}, show["target"]),  # type: ignore[list-item]
+        (*advert["perform_action"].split("."), {}, advert["target"]),  # type: ignore[list-item]
     ]
     for domain, service, data, target in calls:
         mqtt.async_publish.reset_mock()

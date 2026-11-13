@@ -32,6 +32,7 @@ from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.outbox import Delivery
 from meshcore_home_gateway.protocol.codes import NodeType
 from meshcore_home_gateway.state import ContactDeviceRecords, JsonStateFile
+from meshcore_home_gateway.views import SELF_ADVERT_REASONS
 from tests import dashboard_rules as rules
 from tests.i18n_helpers import PSEUDO_MARK, compiled, pseudo, speaking
 from tests.test_contact_devices import (
@@ -1028,7 +1029,7 @@ def test_the_shipped_template_keeps_its_rules() -> None:
         "what",
     } <= names
     assert {line for _, line in _lines(template) if rules.NUM_MACRO.search(line)} == {NUM}
-    assert template.count(MACRO) == 42
+    assert template.count(MACRO) == 43
     assert template.count(NUM) == 7
     # the number fields of rule 22: those the template sets through num()
     assert {
@@ -1115,7 +1116,7 @@ def _cards(template: str) -> Iterator[list[str]]:
 def test_every_card_that_prints_a_value_defines_the_macro_first() -> None:
     """After a problem card's class (rule 9)."""
     printing = [card for card in _cards(shipped()) if any(re.search(r"\bm\(", t) for t in card)]
-    assert len(printing) == 42
+    assert len(printing) == 43
     assert all(card[_CLASS.fullmatch(card[0]) is not None] == MACRO for card in printing)
     assert sum(_CLASS.fullmatch(card[0]) is not None for card in printing) == 8
 
@@ -2716,7 +2717,7 @@ def test_contacts_lists_people_then_asks_adds_and_removes() -> None:
         "./help",
     ]
     add = kinds(contacts).index("heading Add or remove")
-    assert kinds(contacts)[add : add + 9] == [
+    assert kinds(contacts)[add : add + 11] == [
         "heading Add or remove",
         "markdown",  # why adding or removing does not work now (D-29)
         "heading Add a contact",
@@ -2724,6 +2725,8 @@ def test_contacts_lists_people_then_asks_adds_and_removes() -> None:
         "markdown",  # the result and the Return line (D-65)
         "heading Let someone add this home",
         "markdown",  # the QR code
+        "entities",  # Advert to radios nearby (ADR 0033)
+        "markdown",  # what became of the last advert, and its help
         "heading Remove a contact",
         "entities",
     ]
@@ -2741,6 +2744,90 @@ def test_contacts_lists_people_then_asks_adds_and_removes() -> None:
     qr = [t for t in rules.texts(contacts) if "<ha-qr-code" in t]
     assert len(qr) == 1
     assert "Add this home's radio in the MeshCore app" in qr[0]
+
+
+ADVERT_BUTTON = f"button.{rules.GW}_send_advert"
+
+
+def _advert_cards(contacts: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The row of Advert to radios nearby and the card after it, on Contacts."""
+    listed = [c for section in contacts["sections"] for c in section["cards"]]
+    (row,) = [n for n, c in enumerate(listed) if ADVERT_BUTTON in json.dumps(c.get("entities"))]
+    return listed[row], listed[row + 1]
+
+
+def test_the_advert_row_shows_while_its_button_can_be_pressed() -> None:
+    """ADR 0033: under the QR code of Let someone add this home, the row Advert to
+    radios nearby with Send, which presses the gateway's button without asking (one advert, at
+    most every 10 minutes); the row shows only while the button is there and not unavailable:
+    with `radio_controls` or `controls` off, the gateway offline or the radio not connected it
+    is unavailable, and a row that stays pressable would do nothing."""
+    card, _ = _advert_cards(view_of("contacts"))
+    assert card["visibility"] == [
+        {
+            "condition": "template",
+            "value_template": (
+                f"{{{{ states['{ADVERT_BUTTON}'] is not none\n"
+                f"   and not is_state('{ADVERT_BUTTON}', 'unavailable') }}}}"
+            ),
+        }
+    ]
+    (row,) = card["entities"]
+    assert row == {
+        "type": "button",
+        "entity": ADVERT_BUTTON,
+        "name": "Advert to radios nearby",
+        "icon": "mdi:broadcast",
+        "action_name": "Send",
+        "tap_action": {
+            "action": "perform-action",
+            "perform_action": "button.press",
+            "target": {"entity_id": ADVERT_BUTTON},
+        },
+    }
+
+
+def test_the_advert_line_reads_the_event_and_names_every_reason() -> None:
+    """The card under the row says what became of the last advert for 10 minutes, a refusal in
+    words for each reason the gateway gives (a radio's own error stays a code), and holds the
+    row's help: what the advert does, that everyone here can send it, and the key's first digits
+    to compare with."""
+    _, line = _advert_cards(view_of("contacts"))
+    content = line["content"]
+    assert line["text_only"] is True
+    assert content.split("\n")[-1].startswith("<details><summary>What the advert does</summary>")
+    assert f"set e = 'event.{rules.GW}_advert'" in content
+    assert "now() - at < timedelta(minutes=10)" in content.replace("clock", "now()")
+    for reason in SELF_ADVERT_REASONS:
+        assert f"v == '{reason}'" in content, reason
+    assert "{%- else -%}<code>{{ m(v) }}</code>" in content
+    assert "Everyone who uses Home Assistant here can send it." in content
+    assert "A node with this name and another key is someone else." in content
+
+
+def test_help_says_why_no_advert_was_sent_and_names_the_row() -> None:
+    """Help: the row and its button among every button and switch, and a fold with the words of
+    each reason the line under the row can give."""
+    said = " ".join(rules.texts(view_of("help")))
+    assert "<b>Advert to radios nearby</b>, <b>Send</b>: On Contacts, under Let someone" in said
+    (fold,) = [t for t in rules.texts(view_of("help")) if "Why no advert was sent" in t]
+    _, line = _advert_cards(view_of("contacts"))
+    words = re.findall(r"-%\}([^{]+)\n", line["content"].split("macro cause(v)")[1])
+    assert len(words) == len(SELF_ADVERT_REASONS)
+    for word in words:
+        assert f"<b>{word}</b>" in fold, word
+
+
+def test_settings_show_whether_the_advert_button_can_be_pressed() -> None:
+    """Off when `radio_controls` or `controls` is off, on with the key, a dash for
+    a gateway before 2.2, whose document has no such key."""
+    settings = " ".join(rules.texts(view_of("settings")))
+    assert (
+        "<tr><td>Advert button in Home Assistant</td><td>{% if a.get('radio_controls') == false "
+        "or a.get('controls') == false %}off{% elif a.get('radio_controls') == true %}on"
+        "{% else %}\u2013{% endif %}</td>"
+    ) in settings
+    assert "<code>[homeassistant]</code> <code>radio_controls</code>" in settings
 
 
 def test_adding_by_key_says_return_and_never_enter() -> None:
@@ -3020,6 +3107,7 @@ def test_help_names_every_page_and_every_control() -> None:
         "Remove",
         "Hidden contacts",
         "Show again",
+        "Advert to radios nearby",
         "Background noise",
         "Radio battery",
     ):

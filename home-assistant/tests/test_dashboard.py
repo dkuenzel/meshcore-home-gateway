@@ -603,7 +603,8 @@ async def test_the_dashboard_loads_as_a_yaml_mode_dashboard(
             and id(c) not in rows
             and c.get("heading") != ""  # the badges' own heading on Contacts has no title
         ]
-        assert len(titles) == 33, titles  # the headings of every page, Hidden contacts
+        # the headings of every page, Hidden contacts, Advert to radios nearby
+        assert len(titles) == 34, titles
         for title in titles:
             if language == "xx":
                 assert title.startswith("‹xx: ")

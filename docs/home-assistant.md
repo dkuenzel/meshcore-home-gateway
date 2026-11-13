@@ -796,7 +796,12 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   *Add or remove*: *Add at once: pick a node heard nearby* and *Add by key or contact link*
   (paste it, then tap Return), the result of the last request below them,
   the QR code of the gateway under *Let someone add this home*
-  ([above](#adding-and-removing-contacts)), a *Remove* for each contact, which asks first, and
+  ([above](#adding-and-removing-contacts)), and below it *Advert to radios nearby* with *Send*
+  while the button can be pressed, and a line that says for 10 minutes what became of the last
+  advert: sent, with its time and the name it carried, or why not, in words, and from when the
+  next one may go ([advert nearby](#advert-nearby)); with `radio_controls` or `controls` off a
+  blue line says so instead, and its help names the first digits of the radio's key to compare
+  with. Then a *Remove* for each contact, which asks first, and
   *Hidden contacts* with *Show again*; and *Nodes heard nearby*, the nodes you can add. While the
   controls cannot act, a line above them says why: the gateway offline or the radio disconnected
   (in red, as on *Overview*), `controls = false`, contact management off, the radio not reported
@@ -825,7 +830,8 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   attributes of an unavailable entity, so they would read as never reported.
 * *Settings*: what your administrator set, read only, from the gateway's *Configuration*:
   chats and messages, privacy, contacts and Home Assistant, the radio and airtime, each setting
-  with its section and key of the configuration file, such as `[messages]` `truncate`; and the
+  with its section and key of the configuration file, such as `[messages]` `truncate`, among them
+  *Advert button in Home Assistant* (off with `radio_controls` or `controls` off); and the
   versions of the dashboard, the gateway and the
   radio. A gateway before 2.1 reports no settings, and the page says so and shows only what it
   can tell; offline, it says that instead.
