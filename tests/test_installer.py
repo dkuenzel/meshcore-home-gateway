@@ -588,10 +588,11 @@ def test_unattended_install_creates_and_configures_the_container(host: Host) -> 
     }
     assert config.commands.senders == frozenset({ALICE})
     assert config.commands.words == frozenset({"status", "arm"})
-    # a new installation publishes only the channels the household chose (SEC-012), and of
-    # other people's radios their keys (SEC-015)
+    # a new installation publishes only the channels the household chose (SEC-012); of other
+    # people's radios it keeps what the default keeps (ADR 0032), as the installer writes none
     assert config.messages.publish_channels == "targets"
-    assert config.contacts.heard_nodes == "keys"
+    assert config.contacts.heard_nodes == "full"
+    assert "heard_nodes" not in host.pushed("meshcore-home-gateway-answers")
     assert config.telemetry.ask == "household"  # SEC-016
     assert "s3cret" not in result.stderr + host.log_text()  # the password is never logged
 

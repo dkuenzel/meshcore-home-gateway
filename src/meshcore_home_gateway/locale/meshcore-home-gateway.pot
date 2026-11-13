@@ -5409,13 +5409,13 @@ msgstr ""
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "keys and names"
+msgid "keys only"
 msgstr ""
 
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "keys only"
+msgid "keys, names, times and signal"
 msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml

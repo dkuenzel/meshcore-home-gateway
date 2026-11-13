@@ -10,11 +10,11 @@ Data protection law usually exempts what a household keeps for itself (in the EU
 GDPR); the exemption does not cover what leaves the household, and the Court of Justice held that
 a home camera filming public space falls outside it (Ryneš, C-212/13): recording every radio that
 passes the house is closer to that than to a phone's contacts, which is why `[contacts]
-heard_nodes` can keep less of strangers. This is not legal advice. Do not post dashboards,
-screenshots or copies of the history that show other people's names, keys or messages, and keep
-backups private and encrypted ([state and backup](deployment.md#4-operations)). The archive of
-`meshcore-home-gateway backup` holds all of the state, and what `history export` prints holds what
-the history holds: treat both as the history itself.
+heard_nodes` can keep less of strangers than its default does. This is not legal advice. Do not
+post dashboards, screenshots or copies of the history that show other people's names, keys or
+messages, and keep backups private and encrypted ([state and backup](deployment.md#4-operations)).
+The archive of `meshcore-home-gateway backup` holds all of the state, and what `history export`
+prints holds what the history holds: treat both as the history itself.
 
 ## Where
 
@@ -44,7 +44,7 @@ the history holds: treat both as the history itself.
 
 | What | Where | How long | Off |
 | --- | --- | --- | --- |
-| Nodes heard but not added: key and type; the history also keeps when each was first and last heard, how, and the time its last advert carried; with `[contacts] heard_nodes = "full"` also the name its owner chose, hops, SNR and RSSI, and the times and how are published too; never a position | `nodes` (retained, the last 50), `node` events, Home Assistant's *Nodes heard*, *New node* and *Look-alike node heard*, the history | 7 days after the last time heard, in memory and in the history | `[contacts] heard_nodes = "off"` keeps nothing but the keys of look-alikes of contacts and protected keys, and of heard nodes whose name a contact, the gateway or another heard node has (`name_taken`) ([configuration](configuration.md#contacts)) |
+| Nodes heard but not added: key, type, the name its owner chose, when each was first and last heard, how, hops, SNR and RSSI (`[contacts] heard_nodes = "full"`, the default since 2.2); the history also keeps the time its last advert carried; never a position | `nodes` (retained, the last 50), `node` events, Home Assistant's *New node* (its attributes), *Add heard node* (its options name the nodes), *Nodes heard* (a count) and *Look-alike node heard* (keys), the history | 7 days after the last time heard, in memory and in the history; Home Assistant's recorder keeps the *New node* events, and `.storage/core.restore_state` the last of them and the last options of *Add heard node*, up to 20 labels with names, also in Home Assistant's backups (below) | `"keys"` publishes and keeps the key and type only, and in the history besides them when each was first and last heard, how, and the time its last advert carried; `"off"` keeps nothing but the keys of look-alikes of contacts and protected keys, and of heard nodes whose name a contact, the gateway or another heard node has (`name_taken`) ([configuration](configuration.md#contacts)) |
 | Messages on the channels that are a target: text and the name the sender claims; with `[messages] publish_channels = "all"` on every channel | `received` events, `history` (retained) and Home Assistant's *Message history*, the history | 30 days | a channel that is not a target is dropped (`[messages] publish_channels = "targets"`, the default); `ignore_channels` leaves out single ones ([configuration](configuration.md#messages)) |
 | Other people's companions among the radio's contacts | as the household's | as the household's | none of them is asked until included (`[telemetry] ask = "household"`, the default); with `"all"` exclude them ([telemetry](configuration.md#telemetry)) |
 | Every packet the radio receives: raw bytes with other people's ciphertext and the positions in their adverts, and the signal | `rx` events; Home Assistant's *Last packet RSSI* and *Last packet SNR* (disabled by default) | not kept by the gateway | off unless `[diagnostics] publish_rx_log = true`: a diagnostic, it shows the packets as received, positions included |
@@ -54,6 +54,31 @@ A look-alike, a node with the first 6 bytes of a contact's key, is kept even wit
 ([ADR 0009](decisions/0009-inbound-commands-from-allowlisted-contacts.md)). So is the key of a
 heard node whose name is taken: someone may pass for a member of the household
 ([mqtt-api.md](mqtt-api.md#nodes-heard-nodes)).
+
+By default the gateway keeps the names of the radios around the house, and when and how strongly
+each was heard: a name is in every advert in the clear, and the times and the signal tell how
+often and how near a radio is
+([ADR 0032](decisions/0032-heard-nodes-kept-with-name-signal-and-time-by-default.md)).
+To keep less, set `heard_nodes = "keys"` or `"off"` and restart: the rows the history holds lose
+name and signal at the start with `"keys"`, and go with the next hourly purge with `"off"`.
+Home Assistant's recorder keeps each *New node* event with its attributes, the name, hops, SNR,
+RSSI and when, and the last one also in `.storage/core.restore_state`. It does not record the
+options of *Add heard node*, but it keeps the last of them, the labels of up to 20 heard nodes
+with their names, in `.storage/core.restore_state` too, and so in its backups
+([platform notes](platform-notes.md#home-assistant-mqtt)). An administrator who wants the heard
+nodes out of Home Assistant's history, while the gateway still keeps them, adds this pattern to
+the recorder's exclusions ([Home Assistant](home-assistant.md#privacy)); the `*` stands for any
+`node_id`:
+
+```yaml
+recorder:
+  exclude:
+    entity_globs:
+      - event.meshcore_home_gateway_*_node
+```
+
+The exclusion does not reach `core.restore_state`: only `heard_nodes = "keys"` or `"off"` keeps
+the names out of Home Assistant.
 
 The gateway sends nothing it learns on the mesh back to the mesh. As the managed profile keeps
 it, its radio puts no position into its adverts and answers no one's telemetry requests

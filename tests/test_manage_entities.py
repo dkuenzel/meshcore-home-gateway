@@ -243,6 +243,26 @@ def test_a_node_with_a_taken_name_is_marked() -> None:
     assert any(o.endswith("MeshCore radio (room) (name taken)") for o in bus.options()[-1])
 
 
+def test_by_default_the_options_name_the_nodes() -> None:
+    """The default of `[contacts] heard_nodes` since 2.2 (ADR 0032): the labels carry each
+    node's name, ordered by it."""
+    config = parse_config(
+        '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
+        'host = "192.0.2.10"\n[mqtt]\nhost = "broker.example.org"\nnode_id = "radio1"\n'
+    )
+    mesh = Mesh()
+    heard(mesh, ROOM, "Club", node_type=3)
+    heard(mesh, CAROL, "Carol")
+    bus = Recorder()
+    entities = ManageEntities(
+        config, TOPICS, bus, mesh, monotonic=Clock(), wall_clock=lambda: NOW, call_later=Timers()
+    )
+    entities.announce()
+    assert bus.options() == [
+        [f"{CAROL[:12]}…{CAROL[-8:]} Carol", f"{ROOM[:12]}…{ROOM[-8:]} Club (room)"]
+    ]
+
+
 def test_with_heard_nodes_keys_or_off_the_options_name_no_node() -> None:
     """`[contacts] heard_nodes` (SEC-015): the labels of `keys` carry the key's digits only, as
     the household compares them; `off` offers none, also in the announcement."""

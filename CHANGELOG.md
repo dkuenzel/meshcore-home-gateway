@@ -8,6 +8,28 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Changed
+
+- `[contacts] heard_nodes` defaults to `"full"`: of the nodes heard but not added, other
+  people's radios, the gateway publishes and keeps the name its owner chose, when each was first
+  and last heard, how, and its hops, SNR and RSSI, never a position: in `nodes`, the `node`
+  events, the history, the options of *Add heard node* and the attributes of the *New node*
+  event. Home Assistant's recorder keeps the events, and `.storage/core.restore_state`, beyond
+  the reach of a recorder exclusion, the last event and the last options, up to 20 names
+  ([ADR 0032](docs/decisions/0032-heard-nodes-kept-with-name-signal-and-time-by-default.md),
+  [privacy.md](docs/privacy.md#other-people)). Names are in every advert in the clear; when and
+  how strongly a node was heard show how often and how near it is. Since 2.0.0 the default was
+  `"keys"`, keys and types only. A configuration that sets `heard_nodes` keeps its value, and one
+  that set `"full"` can drop the line; to keep what 2.0 and 2.1 kept, set `heard_nodes = "keys"`
+  before the update ([deployment.md](docs/deployment.md#update-reconfigure-remove)). A node kept
+  under `"keys"` gets its name back with its next advert. With `"keys"`, after a restart a heard
+  node has no name until its next advert, as before: until then a node named like a contact is
+  not flagged, and an add names the contact with the first 12 digits of its key
+  ([configuration.md](docs/configuration.md#contacts)).
+- The dashboard's *Settings* say all that `heard_nodes = "full"` keeps of the nodes heard nearby:
+  keys, names, times and signal (before: keys and names). Make the dashboard again after the
+  update.
+
 ### Fixed
 
 - The dashboard's *Remove a contact* stood as a heading alone when no contact could be removed,

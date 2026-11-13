@@ -104,3 +104,7 @@ entities.
 * Amended on 2026-11-05: the defaults of 2.0.0 are decided. Every configuration that does not set
   them gets `[telemetry] ask = "household"`, `[messages] publish_channels = "targets"` and
   `[contacts] heard_nodes = "keys"`; before, only the installer wrote them on a new installation.
+* Amended on 2026-11-11 by [ADR 0032](0032-heard-nodes-kept-with-name-signal-and-time-by-default.md):
+  it supersedes the `heard_nodes` part of the amendment of 2026-11-05. From 2.2 on, a
+  configuration that does not set it gets `[contacts] heard_nodes = "full"`; the other two
+  defaults stay.

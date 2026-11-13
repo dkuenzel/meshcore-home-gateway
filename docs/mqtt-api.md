@@ -559,11 +559,12 @@ radio does not report, from a log of its key within 10 s. That log is not authen
 them as a hint.
 
 The nodes are other people's radios ([What the gateway keeps](privacy.md)). By default
-(`[contacts] heard_nodes = "keys"`) each entry has its key, prefix, type, `look_alike` and
-`name_taken` only: `name`, `first_heard_at`, `heard_at`, `heard_via`, `hops`, `snr_db` and
-`rssi_dbm` are `null`; `"full"` fills them, as in the example. With `"off"`, `total` is 0 and
-`nodes` empty; `look_alike` and `look_alike_total` still name the look-alikes, and `name_taken`
-and `name_taken_total` the heard nodes whose name is taken
+(`[contacts] heard_nodes = "full"`, since 2.2) each entry is filled, as in the example; a node
+kept while `"keys"` was set has an empty `name` and no signal until its next advert. With
+`"keys"` each entry has its key, prefix, type, `look_alike` and `name_taken` only: `name`,
+`first_heard_at`, `heard_at`, `heard_via`, `hops`, `snr_db` and `rssi_dbm` are `null`. With
+`"off"`, `total` is 0 and `nodes` empty; `look_alike` and `look_alike_total` still name the
+look-alikes, and `name_taken` and `name_taken_total` the heard nodes whose name is taken
 ([configuration](configuration.md#contacts)).
 
 ## History: `history`
@@ -745,9 +746,9 @@ carries. It comes after the contact's document and the index, with `request`, `i
 while the newest advert is not checked, for a further advert that still carries one, when it
 stops, or at a restart. `node` reports a node heard for the first time
 in 7 days; at most one event every 5 seconds on average, in bursts of up to 10, so a flood of
-adverts with invented keys does not flood the bus. By default (`[contacts] heard_nodes = "keys"`)
-its `name`, `hops`, `snr_db`, `rssi_dbm` and `heard_at` are `null`; `"full"` fills them, as in
-the example; with `"off"` there is none.
+adverts with invented keys does not flood the bus. By default (`[contacts] heard_nodes = "full"`,
+since 2.2) it is filled, as in the example; with `"keys"` its `name`, `hops`, `snr_db`,
+`rssi_dbm` and `heard_at` are `null`; with `"off"` there is none.
 `look_alike` and `name_taken` are as in [`nodes`](#nodes-heard-nodes).
 
 ## Managing contacts: `add_contact` and `contacts/<key>/remove`
@@ -988,7 +989,7 @@ default where the file sets none.
               "clean_received": false, "truncate": true, "ascii_only": false,
               "dedup_window_s": 300.0, "queue_size": 20, "queue_ttl_s": 600.0,
               "max_attempts": 3},
- "contacts": {"manage": true, "heard_nodes": "keys"},
+ "contacts": {"manage": true, "heard_nodes": "full"},
  "telemetry": {"enabled": true, "ask": "household", "ask_types": ["chat"]},
  "homeassistant": {"controls": true, "hidden_targets": 0, "contact_entity_prefix": "mesh",
                    "language": "en", "contact_devices": 50},
