@@ -202,10 +202,13 @@ Texts and names are published as they came: control and direction characters inc
 terminal, a file or a page must not take for instructions
 ([development.md](development.md#text-from-the-mesh-and-the-bus)). `[messages] clean_received`
 drops them from texts before publishing, and so from the name a channel message claims
-([configuration.md](configuration.md#messages)); commands are judged on the text as it came. A
-contact's name stays as its adverts gave it, also in `sender_name`, `history` and the device
-names in Home Assistant; the command line prints such characters escaped in JSON and as spaces
-in lists and CSV (#114).
+([configuration.md](configuration.md#messages)); commands are judged on the text as it came.
+Since 2.2 it also cleans the names of contacts and heard nodes, on one line, where the gateway
+takes them from the radio: in `sender_name`, `command` events, `history`, `pending`, the
+contacts' documents, `nodes`, the `node`, `contact` and `telemetry` events, the device names in
+Home Assistant and Homie (#137). Messages the history kept before keep their names. Without it,
+a contact's name stays as its adverts gave it; the command line prints such characters escaped in
+JSON and as spaces in lists and CSV (#114).
 
 ```json
 {"event_type": "contact", "text": "status please", "text_type": "plain",
@@ -561,11 +564,12 @@ radio does not report, from a log of its key within 10 s. That log is not authen
 them as a hint.
 
 The nodes are other people's radios ([What the gateway keeps](privacy.md)). By default
-(`[contacts] heard_nodes = "keys"`) each entry has its key, prefix, type, `look_alike` and
-`name_taken` only: `name`, `first_heard_at`, `heard_at`, `heard_via`, `hops`, `snr_db` and
-`rssi_dbm` are `null`; `"full"` fills them, as in the example. With `"off"`, `total` is 0 and
-`nodes` empty; `look_alike` and `look_alike_total` still name the look-alikes, and `name_taken`
-and `name_taken_total` the heard nodes whose name is taken
+(`[contacts] heard_nodes = "full"`, since 2.2) each entry is filled, as in the example; a node
+kept while `"keys"` was set has an empty `name` and no signal until its next advert. With
+`"keys"` each entry has its key, prefix, type, `look_alike` and `name_taken` only: `name`,
+`first_heard_at`, `heard_at`, `heard_via`, `hops`, `snr_db` and `rssi_dbm` are `null`. With
+`"off"`, `total` is 0 and `nodes` empty; `look_alike` and `look_alike_total` still name the
+look-alikes, and `name_taken` and `name_taken_total` the heard nodes whose name is taken
 ([configuration](configuration.md#contacts)).
 
 ## History: `history`
@@ -607,7 +611,9 @@ outgoing messages the recipient. `state` is the final delivery state of an outgo
 document has only those of the channels that are published (`[messages] publish_channels`,
 `ignore_channels`): since 2.1 also at the start, when the history database still holds messages
 of other channels that an earlier version kept, and it then shows the newest of the rest (#103).
-The gateway's own messages to a channel target are in it, also when that channel is ignored.
+Since 2.2, with `publish_channels = "targets"`, the start deletes those from the history database
+for good, and the log says how many (#136). The gateway's own messages to a channel target stay in
+both, also when that channel is ignored.
 
 Since 2.1 every entry also has these keys, `null` when they do not apply or are not known (a
 message from an earlier version):
@@ -747,9 +753,9 @@ carries. It comes after the contact's document and the index, with `request`, `i
 while the newest advert is not checked, for a further advert that still carries one, when it
 stops, or at a restart. `node` reports a node heard for the first time
 in 7 days; at most one event every 5 seconds on average, in bursts of up to 10, so a flood of
-adverts with invented keys does not flood the bus. By default (`[contacts] heard_nodes = "keys"`)
-its `name`, `hops`, `snr_db`, `rssi_dbm` and `heard_at` are `null`; `"full"` fills them, as in
-the example; with `"off"` there is none.
+adverts with invented keys does not flood the bus. By default (`[contacts] heard_nodes = "full"`,
+since 2.2) it is filled, as in the example; with `"keys"` its `name`, `hops`, `snr_db`,
+`rssi_dbm` and `heard_at` are `null`; with `"off"` there is none.
 `look_alike` and `name_taken` are as in [`nodes`](#nodes-heard-nodes).
 
 ## Managing contacts: `add_contact` and `contacts/<key>/remove`
@@ -1064,7 +1070,7 @@ default where the file sets none.
               "clean_received": false, "truncate": true, "ascii_only": false,
               "dedup_window_s": 300.0, "queue_size": 20, "queue_ttl_s": 600.0,
               "max_attempts": 3},
- "contacts": {"manage": true, "heard_nodes": "keys"},
+ "contacts": {"manage": true, "heard_nodes": "full"},
  "telemetry": {"enabled": true, "ask": "household", "ask_types": ["chat"]},
  "homeassistant": {"controls": true, "hidden_targets": 0, "contact_entity_prefix": "mesh",
                    "language": "en", "contact_devices": 50},
@@ -1128,7 +1134,7 @@ retained with QoS 1, the echo of `send` aside.
 | `$state` | gateway → | yes | `init` while the device is announced, and after a start until 5 s after the radio's first contact table; `ready`; `alert` while the radio is not connected; `disconnected` after a clean stop; `lost` as the last will |
 | `gateway/$name`, `gateway/$type`, `gateway/$properties` | gateway → | yes | `Gateway`, `gateway`, `radio`: the gateway's own node |
 | `gateway/radio`, `gateway/radio/$<attribute>` | gateway → | yes | `connected` or `disconnected`, as `radio` in [`state`](#state-state); `$datatype` `enum`, `$format` `connected,disconnected` |
-| `<key>/$name`, `<key>/$type`, `<key>/$properties` | gateway → | yes | the contact's name and type (as in its document), its properties |
+| `<key>/$name`, `<key>/$type`, `<key>/$properties` | gateway → | yes | the contact's name and type (as in its document; since 2.2 the key's first 12 digits for a name that shows nothing, as the device in Home Assistant), its properties |
 | `<key>/<property>`, `<key>/<property>/$<attribute>` | gateway → | yes | the property's value (below) and its Homie attributes |
 | `<key>/send` | gateway → | no | the echo of a text taken on `send/set` |
 

@@ -113,11 +113,12 @@ every setting in the table.
 | Contacts allowed to send commands, command words | read from the radio; `status` | both |
 | Commands without a user name or TLS: accept (`mqtt.insecure`) | no: no commands | both, only then |
 
-Without a question, an installation keeps of other people's radios their keys and types only
-(the default `contacts.heard_nodes = keys`, [what the gateway keeps](privacy.md)) and asks only
-the companions the household includes for telemetry (`telemetry.ask = household`); the answers
-`contacts.heard_nodes=full`, `telemetry.ask=all` and `messages.publish_channels=all` in an
-answers file keep more.
+Without a question, an installation keeps of other people's radios their keys, types, names,
+when they were heard and their signal (the default `contacts.heard_nodes = full`, since 2.2;
+[what the gateway keeps](privacy.md)) and asks only the companions the household includes for
+telemetry (`telemetry.ask = household`); the answer `contacts.heard_nodes=keys` or
+`contacts.heard_nodes=off` in an answers file keeps less of other people's radios, and
+`telemetry.ask=all` and `messages.publish_channels=all` keep more.
 
 The script asks for confirmation before it creates anything. Then it downloads the newest Debian
 13 template if needed, creates and starts the container, installs the program, checks the
@@ -339,9 +340,28 @@ pct stop 105 && pct destroy 105
   **Breaking:** entries name the settings that keep the old behaviour. The messages that 1.x
   received on other channels stay in the history database (and in `history export` and `backup`)
   until they are `messages_days` old, 30 days by default; since 2.1 the `history` document and
-  Home Assistant's *Message history* leave them out. To be rid of them at once, stop the service
-  and delete `/var/lib/meshcore-home-gateway/history.sqlite3` with its `-wal` and `-shm` files:
-  the gateway starts a new history, without the rest of the old one.
+  Home Assistant's *Message history* leave them out, and since 2.2 the start deletes them (below).
+  To be rid of them at once with 2.0 or 2.1, stop the service and delete
+  `/var/lib/meshcore-home-gateway/history.sqlite3` with its `-wal` and `-shm` files: the gateway
+  starts a new history, without the rest of the old one.
+* **The history after an update to 2.2:** with `[messages] publish_channels = "targets"`, the
+  default, every start deletes from the history database, for good, the messages received on a
+  channel that is no target's or that `ignore_channels` names: those that 1.x kept of every
+  channel, and those kept while `publish_channels` was `"all"`. The gateway's own messages stay.
+  The log says how many went (`history: received messages of channels not published deleted`).
+  Check the targets' `channel_index` before the update: a mistyped one deletes the messages of
+  the channel meant. To keep a copy, export the messages in the container before the update
+  (`meshcore-home-gateway history export > messages.jsonl`;
+  [privacy.md](privacy.md#other-people)).
+* **The heard nodes after an update to 2.2:** a configuration that does not set `[contacts]
+  heard_nodes` keeps and publishes of other people's radios their names, when they were heard and
+  their signal again (`"full"`,
+  [ADR 0032](decisions/0032-heard-nodes-kept-with-name-signal-and-time-by-default.md)); a node
+  kept under 2.0's or 2.1's default gets its name back with its next advert. A configuration that
+  sets `heard_nodes` keeps its value; one that set `"full"` can drop the line. To keep what 2.0
+  and 2.1 kept, add `heard_nodes = "keys"` to `[contacts]` in
+  `/etc/meshcore-home-gateway/config.toml` before the update: both know the setting
+  ([privacy.md](privacy.md#other-people)).
 * **The advert button after an update to 2.2:** Home Assistant gets *Send advert nearby*, which
   anyone who uses it can press ([home-assistant.md](home-assistant.md#advert-nearby)). With a
   broker ACL, Home Assistant's user needs `topic write <base_topic>/<node_id>/advert/send` for it

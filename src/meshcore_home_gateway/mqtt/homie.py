@@ -26,6 +26,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from meshcore_home_gateway.core.contacts import shows_a_name
 from meshcore_home_gateway.core.telemetry import STATES
 from meshcore_home_gateway.mqtt.retained import Cancellable
 from meshcore_home_gateway.mqtt.topics import Topics
@@ -312,7 +313,8 @@ class HomieDevice:
 
     def _node(self, key: str) -> None:
         document, names = self._documents[key], self._properties(key)
-        self._put(f"{key}/$name", str(document.get("name") or key[:12]).encode())
+        name = str(document.get("name") or "")  # as the device in Home Assistant (#137)
+        self._put(f"{key}/$name", (name if shows_a_name(name) else key[:12]).encode())
         self._put(f"{key}/$type", str(document.get("type") or "").encode())
         self._put(f"{key}/$properties", ",".join(names).encode())
         for name in names:

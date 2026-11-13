@@ -81,7 +81,10 @@ broker. The code keeps them data everywhere they go, and new code follows the sa
   ID or an event type.
 * **MQTT:** JSON only; texts are passed on as received (`docs/mqtt-api.md`: consumers treat them
   as plain data, never as markup), or with `[messages] clean_received` without control and
-  direction characters, as outgoing texts are; commands are judged on the text as received.
+  direction characters, as outgoing texts are; commands are judged on the text as received. The
+  names of contacts and heard nodes are cleaned where they enter (`core.text.clean_name`: the
+  observer's records and restored rows, the inbox's sender, a removal's result), so that every
+  document, event and front end has the same name.
 
 ### Adding a protocol message
 

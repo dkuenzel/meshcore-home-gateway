@@ -186,6 +186,11 @@ last advert the gateway checked carried it, or, before it has checked one (after
 while the radio's record holds one (press *Advert* near the gateway after the update and after
 switching sharing off, [companions.md](companions.md#positions-in-adverts)).
 
+* **Device names** are the contacts' names as the radio's table has them, with `[messages]
+  clean_received` without control and direction characters. A name that shows nothing gives the
+  device the first 12 digits of the key, as an empty name always did; since 2.2 also a name made
+  only of invisible characters, such as a zero-width space, or drawn as nothing, such as a Hangul
+  filler. A name another device has gets 8 of them ([below](#adding-and-removing-contacts)).
 * **Entity IDs** start with `[homeassistant] contact_entity_prefix` (`mesh` by default, as in the
   table) and `_`, then the contact's name as it was when the device first
   appeared (letters and digits only, `ä` as `a`); a later rename changes the device's name, not the
@@ -279,7 +284,10 @@ sending; clear it before the next one.
 
 **Remove.** *Remove from radio* on the contact's device page (*Configuration*). It is
 `unavailable` for a contact target or command sender (protected), with management off or on
-untested firmware, and while the radio or the gateway is away. After a removal the radio drops the node's direct messages, messages queued to
+untested firmware, and while the radio or the gateway is away. When none can be removed, the
+dashboard's *Remove a contact* says so instead of a row. A protected contact is replaced in the
+configuration: its target's `contact` takes the new key ([configuration.md](configuration.md)),
+and after the restart the old key can be removed. After a removal the radio drops the node's direct messages, messages queued to
 it fail with `unknown_contact`, and its device goes; while it counts as heard, it is offered again
 in *Add heard node*, and adding it back restores the device with its name, area and labels.
 *Delete* on the device page is something else: it hides the contact in Home Assistant only
@@ -1351,11 +1359,16 @@ and kept; with `"all"` every channel's messages become events, history rows and 
 like the household's own. `ignore_channels` leaves out single channels
 ([configuration.md](configuration.md#messages)).
 
-The nodes heard are other people's radios: *Nodes heard*, the *New node* event and *Look-alike
-node heard*. By default (`[contacts] heard_nodes = "keys"`) they show their keys and types only;
-`"full"` adds the name its owner chose and its signal, `"off"` keeps nothing but the look-alikes'
-keys ([configuration.md](configuration.md#contacts)). What the gateway keeps, of whom and for how
-long, is in [privacy.md](privacy.md).
+The nodes heard are other people's radios: *Nodes heard*, the *New node* event, *Look-alike node
+heard* and the select *Add heard node*. By default (`[contacts] heard_nodes = "full"`, since 2.2)
+the *New node* event carries the name its owner chose, when it was heard and its signal, which
+the recorder keeps, and *Add heard node* offers the nodes by name; `"keys"` shows their keys and
+types only, `"off"` keeps nothing but the look-alikes' keys
+([configuration.md](configuration.md#contacts)). The recorder leaves the options of *Add heard
+node* out, but `.storage/core.restore_state` keeps the last of them with the names, as it keeps
+the last *New node* event, and no recorder exclusion reaches it. What the gateway keeps, of whom
+and for how long, and the pattern that keeps the *New node* events out of the recorder, are in
+[privacy.md](privacy.md#other-people).
 
 Message texts, sender keys and sender names are attributes of the event entities, so Home
 Assistant stores them in its history database, and the last event of each entity also in

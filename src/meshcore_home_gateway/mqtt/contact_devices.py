@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Any
 from meshcore_home_gateway import i18n
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core import lpp
-from meshcore_home_gateway.core.contacts import name_key
+from meshcore_home_gateway.core.contacts import name_key, shows_a_name
 from meshcore_home_gateway.core.mesh import Mesh, Tracked, type_name
 from meshcore_home_gateway.core.telemetry import STATES
 from meshcore_home_gateway.i18n import N_ha
@@ -432,10 +432,15 @@ def contact_payload(
             availability_mode="all",
         )
     model = MODELS.get(node.node_type)  # an unknown type is shown as the radio names it
+    name = node.name
+    if not shows_a_name(name):  # no name to read in Home Assistant's lists (#137)
+        name = key[:12]
+    elif name_taken:
+        name = f"{name} ({key[:TAKEN_DIGITS]})"
     return {
         "dev": {
             "ids": [uid],
-            "name": f"{node.name} ({key[:TAKEN_DIGITS]})" if name_taken else node.name or key[:12],
+            "name": name,
             "mf": "MeshCore",
             "mdl": ha_name(model) if model else type_name(node.node_type),
             "sn": key,

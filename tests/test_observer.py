@@ -18,6 +18,7 @@ import pytest
 
 from meshcore_home_gateway import history as history_module
 from meshcore_home_gateway import observer as observer_module
+from meshcore_home_gateway.config import ContactsConfig
 from meshcore_home_gateway.config_checks import protected_keys
 from meshcore_home_gateway.core import lpp
 from meshcore_home_gateway.core.adverts import MAX_LOGGED
@@ -296,28 +297,32 @@ def test_the_history_survives_a_restart(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("messages", "shown"),
+    ("messages", "shown", "kept"),
     [
-        ("", ["to the family", "Hi from Alice", "family news"]),
+        ("", ["to the family", "Hi from Alice", "family news"], 3),
         (
             'publish_channels = "all"',
             ["to the family", "Hi from Alice", "Dave: chatter", "family news"],
+            4,
         ),
         (
             'publish_channels = "all"\nignore_channels = [0]',
             ["to the family", "Hi from Alice", "Dave: chatter"],
+            4,
         ),
     ],
     ids=["targets", "all", "all-but-ignored"],
 )
 def test_the_history_document_shows_only_the_channels_that_are_published(
-    tmp_path: Path, messages: str, shown: list[str]
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, messages: str, shown: list[str], kept: int
 ) -> None:
     """#103: 1.x stored the messages of every channel. With `publish_channels = "targets"` (the
     default since 2.0) the retained `history` document must not bring a stranger's text on the
     Public channel back to the broker at the start; nor the received messages of an ignored
     channel. The gateway's own message to a target's channel stays, as it does while the gateway
-    runs (all-but-ignored). The rows stay in the history, until they are `messages_days` old."""
+    runs (all-but-ignored). #136: with "targets", the start deletes the received rows of the
+    other channels for good, and the log says how many; with "all" they stay, until they are
+    `messages_days` old."""
     path = tmp_path / "history.sqlite3"
     stored = History.open(path)
     assert stored is not None
@@ -346,18 +351,24 @@ def test_the_history_document_shows_only_the_channels_that_are_published(
             for document in documents:
                 assert [m["text"] for m in document["messages"]] == shown
 
+    caplog.set_level(logging.INFO, logger="meshcore_home_gateway.observer")
     scenario(main)
     for history in histories:
-        assert len(history.recent_messages(10)) == 4  # kept: only the documents leave them out
+        assert len(history.recent_messages(10)) == kept
         history.close()
+    deleted = [r.getMessage() for r in caplog.records if "not published" in r.getMessage()]
+    line = "history: received messages of channels not published deleted: 1"
+    assert deleted == ([line] if kept == 3 else [])
 
 
 def test_a_message_sent_to_an_ignored_channel_stays_in_the_history_document_at_a_restart(
-    tmp_path: Path,
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """#103: a target's channel may also be in `ignore_channels` (alerts go to a busy channel,
     whose chatter is not published). The gateway's own message there is in the `history` document
-    while it runs, so the next start must not leave it out."""
+    while it runs, so the next start must not leave it out. #136: the start deletes the chatter
+    an earlier version kept of it, not the gateway's own message; a start that deletes nothing
+    logs nothing."""
     path = tmp_path / "history.sqlite3"
     config = make_config(messages="ignore_channels = [0]")  # the target `alerts` is channel 0
     shown: list[list[str]] = []
@@ -381,11 +392,21 @@ def test_a_message_sent_to_an_ignored_channel_stays_in_the_history_document_at_a
         async with running(config, radio, tmp_path, observer=observer) as (_, bus, _notes):
             shown.append([m["text"] for m in bus.payloads(f"{ROOT}/history")[-1]["messages"]])
 
+    caplog.set_level(logging.INFO, logger="meshcore_home_gateway.observer")
     scenario(first)
+    assert not [r for r in caplog.records if "not published" in r.getMessage()]
+    histories[0].add_message(
+        HistoryEntry(NOW - 1, "in", "channel", "chatter", channel_index=0, name="Dave")
+    )
+    histories[0].close()
     scenario(second)
+    texts = [m.text for m in histories[1].recent_messages(10)]
     for history in histories:
         history.close()
     assert shown == [["Smoke in the barn"], ["Smoke in the barn"]]
+    assert texts == ["Smoke in the barn"]
+    deleted = [r.getMessage() for r in caplog.records if "not published" in r.getMessage()]
+    assert deleted == ["history: received messages of channels not published deleted: 1"]
 
 
 def test_the_history_document_finds_the_published_messages_behind_other_channels_rows(
@@ -664,6 +685,160 @@ def test_a_new_node_named_like_the_gateway_is_flagged() -> None:
     (event,) = bus.payloads(f"{ROOT}/node")
     assert event["name_taken"] is True
     assert last(bus, f"{ROOT}/nodes")["name_taken"] == [CAROL.public_key.hex()]
+
+
+def test_by_default_a_stranger_is_kept_with_its_name_times_and_signal(tmp_path: Path) -> None:
+    """The default of `[contacts] heard_nodes` since 2.2, `full` (ADR 0032): the `node` event, the
+    `nodes` document and the history carry a stranger's name, when it was heard and its signal,
+    never its position."""
+    radio, path = EmulatedRadio(contacts=[ALICE]), tmp_path / "history.sqlite3"
+    histories: list[History] = []
+
+    def observer(bus: FakeBus) -> Observer:
+        history = History.open(path)
+        assert history is not None
+        histories.append(history)
+        return Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW)
+
+    async def main() -> None:
+        async with running(make_config(), radio, tmp_path, observer=observer) as (_, bus, _notes):
+            radio.emit(advert_log(CAROL, hops=3))
+            radio.advertise(CAROL)
+            event = await bus.wait_for(f"{ROOT}/node", lambda e: e["event_type"] == "new")
+            assert (event["name"], event["hops"], event["snr_db"], event["rssi_dbm"]) == (
+                "Carol",
+                3,
+                5.5,
+                -95,
+            )
+            assert [k for k, v in event.items() if v is None] == []
+            nodes = await bus.wait_for(f"{ROOT}/nodes", lambda d: d["total"] == 1)
+            (entry,) = nodes["nodes"]
+            assert (entry["name"], entry["heard_via"], entry["rssi_dbm"]) == (
+                "Carol",
+                "advert",
+                -95,
+            )
+            assert [k for k, v in entry.items() if v is None] == []
+            assert "latitude" not in json.dumps(nodes)
+
+    scenario(main)
+    (row,) = histories[0].nodes()
+    assert (row.name, row.heard.signal) == ("Carol", Signal(3, 5.5, -95))
+    histories[0].close()
+
+
+def test_with_clean_received_a_strangers_name_is_cleaned_everywhere(tmp_path: Path) -> None:
+    """#137: with `[messages] clean_received` and the default `heard_nodes`, a heard node's name
+    is cleaned where the gateway takes it from the radio: the `node` event, the `nodes` document
+    and the history carry it without control and direction characters; a contact's too."""
+    radio, path = EmulatedRadio(contacts=[replace(ALICE, name="Ali\x1bce")]), tmp_path / "h.db"
+    hostile = replace(CAROL, name="Car\x1b[2Jol\u202e")
+    histories: list[History] = []
+
+    def observer(bus: FakeBus) -> Observer:
+        history = History.open(path)
+        assert history is not None
+        histories.append(history)
+        return Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW)
+
+    async def main() -> None:
+        config = make_config(messages="clean_received = true")
+        async with running(config, radio, tmp_path, observer=observer) as (_, bus, _notes):
+            radio.emit(advert_log(hostile, hops=3))
+            radio.advertise(hostile)
+            event = await bus.wait_for(f"{ROOT}/node", lambda e: e["event_type"] == "new")
+            assert (event["name"], event["hops"]) == ("Car[2Jol", 3)
+            nodes = await bus.wait_for(f"{ROOT}/nodes", lambda d: d["total"] == 1)
+            assert nodes["nodes"][0]["name"] == "Car[2Jol"
+            assert last(bus, f"{ROOT}/contacts/{ALICE.public_key.hex()}")["name"] == "Alice"
+
+    scenario(main)
+    (row,) = histories[0].nodes()
+    assert row.name == "Car[2Jol"
+    histories[0].close()
+
+
+def test_with_clean_received_a_restored_strangers_name_is_cleaned(tmp_path: Path) -> None:
+    """#137: a row kept before 2.2 or with `clean_received` off holds the name as it came: the
+    gateway cleans it as it takes the node back."""
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    key = CAROL.public_key.hex()
+    history.node_heard(key, "Car\x07ol\u202e", 2, Heard(NOW, "advert"), int(NOW))
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW + 60)
+    observer.clean_names = True
+    observer.radio_event(ContactsRead({}, NOW + 60))
+    (entry,) = last(bus, f"{ROOT}/nodes")["nodes"]
+    assert entry["name"] == "Carol"
+    history.close()
+
+
+@pytest.mark.parametrize(("clean", "taken"), [(False, False), (True, True)])
+def test_a_stranger_named_like_a_contact_with_a_control_character(clean: bool, taken: bool) -> None:
+    """SEC-007 with #137: a control character kept in a name reads as a space (`name_key`), so
+    "Ali<BEL>ce" is not Alice; once `clean_received` takes it out, the name is Alice's, and the
+    node is flagged."""
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, wall_clock=lambda: NOW)
+    observer.clean_names = clean
+    observer.radio_event(ContactsRead({ALICE.public_key.hex(): contact_record(ALICE)}, NOW))
+    twin = contact_record(EmulatedContact(b"\xee" * 32, "Ali\x07ce", last_advert=int(NOW) - 5))
+    observer.radio_event(AdvertHeard(codec.Advert(twin.public_key, True, twin), NOW))
+    (event,) = bus.payloads(f"{ROOT}/node")
+    assert (event["name"], event["name_taken"]) == ("Alice" if clean else "Ali\x07ce", taken)
+    flagged = [twin.public_key.hex()] if taken else []
+    assert last(bus, f"{ROOT}/nodes")["name_taken"] == flagged
+
+
+def test_by_default_a_taken_name_is_still_flagged_after_a_restart(tmp_path: Path) -> None:
+    """SEC-007 across a restart: with the default the history keeps the name, so a node named
+    like a contact is flagged before its next advert (with `keys` only after it)."""
+    path = tmp_path / "history.sqlite3"
+    history = History.open(path)
+    assert history is not None
+    first = Observer(FakeBus(), TOPICS, history=history, wall_clock=lambda: NOW)
+    first.heard_nodes = ContactsConfig().heard_nodes  # the run before the restart
+    first.radio_event(ContactsRead({}, NOW))
+    twin = contact_record(EmulatedContact(b"\xee" * 32, "Carol", last_advert=int(NOW) - 5))
+    first.radio_event(AdvertHeard(codec.Advert(twin.public_key, True, twin), NOW))
+    stranger = twin.public_key.hex()
+    history.close()
+
+    history = History.open(path)
+    assert history is not None
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW + 60)
+    observer.heard_nodes = ContactsConfig().heard_nodes
+    observer.radio_event(ContactsRead({CAROL.public_key.hex(): contact_record(CAROL)}, NOW + 60))
+    assert observer.mesh.nodes[stranger].node.name == "Carol"
+    assert last(bus, f"{ROOT}/nodes")["name_taken"] == [stranger]
+    history.close()
+
+
+def test_by_default_a_node_kept_under_keys_gets_its_name_back_with_its_next_advert(
+    tmp_path: Path,
+) -> None:
+    """The rows a run with `keys` kept have no name or signal; after the update to the default
+    the node's next advert brings its name back, in the `nodes` document and in the history."""
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    key = CAROL.public_key.hex()
+    history.node_heard(key, "", 2, Heard(NOW - 600, "advert"), CAROL.last_advert - 600)
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW)
+    observer.heard_nodes = ContactsConfig().heard_nodes
+    observer.radio_event(ContactsRead({}, NOW))
+    (entry,) = last(bus, f"{ROOT}/nodes")["nodes"]
+    assert (entry["key"], entry["name"], entry["rssi_dbm"]) == (key, "", None)
+    carol = contact_record(CAROL)
+    observer.radio_event(AdvertHeard(codec.Advert(carol.public_key, True, carol), NOW))
+    (entry,) = last(bus, f"{ROOT}/nodes")["nodes"]
+    assert (entry["name"], entry["heard_at"]) == ("Carol", iso(NOW))
+    (row,) = history.nodes()
+    assert (row.name, row.last_advert) == ("Carol", CAROL.last_advert)
+    history.close()
 
 
 def test_with_heard_nodes_keys_a_stranger_has_no_name_times_or_signal(tmp_path: Path) -> None:
@@ -1584,6 +1759,41 @@ def test_a_document_of_the_last_run_expires_also_while_the_radio_is_away(tmp_pat
     waiting = {**before[key], **expired, "telemetry_state": "waiting"}
     assert last(bus, f"{ROOT}/contacts/{key}") == waiting
     assert on_disk(store) == {key: waiting}
+
+
+def test_with_clean_received_a_document_of_the_last_run_is_published_cleaned(
+    tmp_path: Path,
+) -> None:
+    """#137: a run with `clean_received` off stored its contact's name as it came; the next run
+    with the setting on cleans it in the stored document before the first table read too, while
+    the radio stays away, and stores it so at once."""
+    named = replace(ALICE, name="Ali\x1b[2J\u202ece")
+    store, before = last_run(tmp_path, named)
+    key = named.public_key.hex()
+    assert before[key]["name"] == "Ali\x1b[2J\u202ece"
+    observer, bus = restarted(store, {key: "answering"})
+    observer.clean_names = True
+    observer.publish_all()  # the broker connected
+    cleaned = {**before[key], "name": "Ali[2Jce"}
+    assert last(bus, f"{ROOT}/contacts/{key}") == cleaned
+    assert on_disk(store) == {key: cleaned}
+    observer.tick()
+    assert len(retained(bus, f"{ROOT}/contacts/{key}")) == 1  # unchanged since
+
+
+@pytest.mark.parametrize("clean", [False, True])
+def test_without_clean_received_a_document_of_the_last_run_keeps_its_name(
+    tmp_path: Path, clean: bool
+) -> None:
+    """The other way round: off, the stored name stays as it came; a clean name stays as it is."""
+    name = "Alice" if clean else "Ali\x1b[2Jce"
+    store, before = last_run(tmp_path, replace(ALICE, name=name))
+    key = ALICE.public_key.hex()
+    observer, bus = restarted(store, {key: "answering"})
+    observer.clean_names = clean
+    observer.publish_all()
+    assert last(bus, f"{ROOT}/contacts/{key}") == before[key]
+    assert on_disk(store) == {key: before[key]}
 
 
 def test_an_expiry_the_broker_missed_is_published_at_the_next_connect(tmp_path: Path) -> None:

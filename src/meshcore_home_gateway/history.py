@@ -113,6 +113,12 @@ _POSITIONS_BEYOND_CAP = (
     "AND id NOT IN (SELECT (SELECT id FROM position WHERE contact_key = p.contact_key "
     "ORDER BY at DESC, id DESC LIMIT 1) FROM (SELECT DISTINCT contact_key FROM position) p)"
 )
+# the received messages of the channels not in a JSON list of indexes, also without an index
+# (#136); the gateway's own messages to a channel stay
+_CHANNELS_FORGOTTEN = (
+    "DELETE FROM message WHERE direction = 'in' AND kind = 'channel' AND "
+    "(channel_index IS NULL OR channel_index NOT IN (SELECT value FROM json_each(?)))"
+)
 # the rows of the nodes the gateway forgot: all but those in a JSON list of keys
 _NODES_FORGOTTEN = "DELETE FROM node WHERE key NOT IN (SELECT value FROM json_each(?))"
 # never the rows of a contact's newest answer: those last_readings() reads
@@ -243,6 +249,14 @@ class History:
                 ("DELETE FROM position WHERE contact_key = ? AND source = 'telemetry'", [(key,)]),
             ]
         )
+
+    def forget_received_channels(self, kept: Iterable[int]) -> int | None:
+        """Delete the received messages of every channel but those `kept`, for good (#136): the
+        rows an earlier version kept of channels that are not published. The gateway's own
+        messages stay. The rows deleted, or None without a working history. A purge that runs
+        is waited for, and the writes it held go first."""
+        self._finish_purge()
+        return self._write_all([(_CHANNELS_FORGOTTEN, [(json.dumps(sorted(set(kept))),)])])
 
     def node_heard(
         self, key: str, name: str, node_type: int, heard: Heard, last_advert: int = 0

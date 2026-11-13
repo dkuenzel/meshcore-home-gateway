@@ -224,6 +224,13 @@ def clean_received(text: str) -> str:
     return _clean(text)
 
 
+def clean_name(name: str) -> str:
+    """A name from the mesh cleaned as a received text, for `[messages] clean_received` (#137):
+    on one line, its line breaks single spaces. Neither normalised nor cut: the name as it came,
+    without what a terminal or a file could take for instructions. Possibly empty."""
+    return _SPACES.sub(" ", _clean(name).replace("\n", " "))
+
+
 def _to_ascii(text: str) -> str:
     """Transliterate; invisible format characters (soft hyphen, zero-width space, joiners) are
     dropped instead of becoming a visible '?'."""

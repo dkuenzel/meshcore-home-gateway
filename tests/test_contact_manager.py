@@ -20,13 +20,14 @@ from meshcore_home_gateway import observer as observer_module
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.contact_manager import ContactManager
 from meshcore_home_gateway.core import lpp
+from meshcore_home_gateway.core.contacts import HeardNodes
 from meshcore_home_gateway.core.mesh import Heard, Node
 from meshcore_home_gateway.core.telemetry import Answer
 from meshcore_home_gateway.history import History
 from meshcore_home_gateway.mqtt import manage_entities
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.observer import Observer
-from meshcore_home_gateway.ports import ContactRequest, ContactsRead
+from meshcore_home_gateway.ports import AdvertHeard, ContactRequest, ContactsRead
 from meshcore_home_gateway.protocol import codec
 from meshcore_home_gateway.protocol.codes import Command, Push
 from meshcore_home_gateway.protocol.links import contact_link
@@ -176,6 +177,50 @@ def test_a_bare_key_gets_a_name_from_its_digits(tmp_path: Path) -> None:
             assert (event["name"], event["type"], len(event["id"])) == (dave[:12], "chat", 8)
 
     scenario(main)
+
+
+@pytest.mark.parametrize(("heard_nodes", "named"), [("full", True), ("keys", False)])
+def test_an_add_after_a_restart_takes_the_name_the_history_kept(
+    tmp_path: Path, heard_nodes: HeardNodes, named: bool
+) -> None:
+    """ADR 0032: with the default the history keeps a heard node's name, so an add after a
+    restart, before the node's next advert, writes its name; with `keys` the history keeps none,
+    and the contact is named with the first 12 digits of its key."""
+    dave = DAVE.public_key.hex()
+    path = tmp_path / "history.sqlite3"
+    history = History.open(path)
+    assert history is not None
+    before = Observer(
+        FakeBus(), Topics("meshcore", "radio1"), history=history, wall_clock=lambda: NOW
+    )
+    before.heard_nodes = heard_nodes  # the run before the restart
+    before.radio_event(ContactsRead({}, NOW - 600))
+    record = codec.decode(DAVE.record())
+    assert isinstance(record, codec.ContactRecord)
+    before.radio_event(AdvertHeard(codec.Advert(record.public_key, True, record), NOW - 600))
+    history.close()
+    radio = EmulatedRadio(contacts=[ALICE, BOB])
+    config = make_config(f'[contacts]\nheard_nodes = "{heard_nodes}"')
+    again = History.open(path)
+    assert again is not None
+
+    def observer(bus: FakeBus) -> Observer:
+        return Observer(bus, Topics("meshcore", "radio1"), history=again, wall_clock=lambda: NOW)
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path, observer=observer) as (_, bus, _n):
+            await bus.wait_for(f"{ROOT}/nodes", lambda d: any(n["key"] == dave for n in d["nodes"]))
+            request(bus, "add", {"contact": dave, "id": "t1"})
+            event = await result(bus, "t1")
+            assert event["event_type"] == "added"
+            (frame,) = contact_writes(radio)
+            name = frame[100:132].rstrip(b"\0").decode()
+            assert (event["name"], name) == (("Dave", "Dave") if named else (dave[:12], dave[:12]))
+
+    try:
+        scenario(main)
+    finally:
+        again.close()
 
 
 # --- refused: nothing is written ---------------------------------------------------------------
@@ -399,6 +444,26 @@ def test_the_radio_refusing_the_write_fails_the_request(tmp_path: Path) -> None:
             request(bus, "add", {"contact": DAVE.public_key.hex(), "id": "err"})
             event = await result(bus, "err")
             assert (event["event_type"], event["reason"]) == ("failed", "table_full")
+
+    scenario(main)
+
+
+@pytest.mark.parametrize("clean", [False, True])
+def test_a_failed_remove_names_the_contact_cleaned_only_when_asked(
+    tmp_path: Path, clean: bool
+) -> None:
+    """#137: the result of a remove names the contact as the radio's table has it; with
+    `[messages] clean_received`, cleaned as everywhere else."""
+    hostile = EmulatedContact(DAVE.public_key, "Da\x1b[2Jve\u202e", last_advert=DAVE.last_advert)
+    radio = EmulatedRadio(contacts=[ALICE, BOB, hostile], errors={Command.REMOVE_CONTACT: 3})
+    config = make_config(messages=f"clean_received = {str(clean).lower()}")
+
+    async def main() -> None:
+        async with running(config, radio, tmp_path) as (_, bus, _n):
+            request(bus, "remove", {"id": "err"}, key=DAVE.public_key.hex())
+            event = await result(bus, "err")
+            name = "Da[2Jve" if clean else hostile.name
+            assert (event["event_type"], event["name"]) == ("failed", name)
 
     scenario(main)
 

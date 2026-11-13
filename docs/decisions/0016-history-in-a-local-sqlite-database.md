@@ -132,3 +132,9 @@ Tests cover schema creation and migration, retention by age and count, a corrupt
   <https://packages.debian.org/trixie/libsqlite3-0> (fetched 2026-10-23).
 * Revisit when the volume grows by orders of magnitude (repeater fleets, long-term network
   statistics) or when a columnar library becomes available from the distribution.
+* Amended on 2026-11-11 (#136): retention by age is not the only deletion. While
+  `[messages] publish_channels = "targets"`, every start deletes, for good, the received messages
+  of every channel that is no target's or that `ignore_channels` names, also those without a
+  channel's index: rows that an earlier version kept of every channel, or that `"all"` kept. The
+  gateway's own messages stay; the log says how many rows went. A mistyped `channel_index` of a
+  target deletes, at the next start, the received messages of the channel it was meant to name.

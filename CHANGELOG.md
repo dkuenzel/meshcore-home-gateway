@@ -50,6 +50,62 @@ Assistant's user needs `topic write <base_topic>/<node_id>/advert/send` for *Sen
   with. *Settings* shows *Advert button in Home Assistant*; *Help* names the row and explains
   each reason in *Why no advert was sent*. German texts.
 
+### Changed
+
+- `[contacts] heard_nodes` defaults to `"full"`: of the nodes heard but not added, other
+  people's radios, the gateway publishes and keeps the name its owner chose, when each was first
+  and last heard, how, and its hops, SNR and RSSI, never a position: in `nodes`, the `node`
+  events, the history, the options of *Add heard node* and the attributes of the *New node*
+  event. Home Assistant's recorder keeps the events, and `.storage/core.restore_state`, beyond
+  the reach of a recorder exclusion, the last event and the last options, up to 20 names
+  ([ADR 0032](docs/decisions/0032-heard-nodes-kept-with-name-signal-and-time-by-default.md),
+  [privacy.md](docs/privacy.md#other-people)). Names are in every advert in the clear; when and
+  how strongly a node was heard show how often and how near it is. Since 2.0.0 the default was
+  `"keys"`, keys and types only. A configuration that sets `heard_nodes` keeps its value, and one
+  that set `"full"` can drop the line; to keep what 2.0 and 2.1 kept, set `heard_nodes = "keys"`
+  before the update ([deployment.md](docs/deployment.md#update-reconfigure-remove)). A node kept
+  under `"keys"` gets its name back with its next advert. With `"keys"`, after a restart a heard
+  node has no name until its next advert, as before: until then a node named like a contact is
+  not flagged, and an add names the contact with the first 12 digits of its key
+  ([configuration.md](docs/configuration.md#contacts)).
+- The dashboard's *Settings* say all that `heard_nodes = "full"` keeps of the nodes heard nearby:
+  keys, names, times and signal (before: keys and names). Make the dashboard again after the
+  update.
+- `[messages] clean_received` also cleans the names of contacts and heard nodes, where the
+  gateway takes them from the radio, the history and the documents of the last run in its state
+  file: without control and direction characters, on one line, in
+  `sender_name` of the `received` and `command` events, the history, `pending`, the contacts'
+  documents, `nodes`, the `node`, `contact` and `telemetry` events, the device names, labels and
+  options in Home Assistant, and Homie. Commands are still judged on the text as it came, and the
+  radio's table keeps the names as they came; messages the history kept before keep their names.
+  The setting stays off by default; with heard nodes' names published by default, switch it on
+  ([configuration.md](docs/configuration.md#messages), #137). A device whose name changes keeps
+  its entity IDs.
+- The device of a contact whose name shows nothing, made only of invisible characters such as a
+  zero-width space or a soft hyphen, or drawn as nothing such as a Hangul filler, is named by the
+  first 12 digits of its key in Home Assistant, and so is its Homie node; before, only an empty
+  name was, and the others left a device without a name to read
+  ([home-assistant.md](docs/home-assistant.md#contacts), #137).
+
+### Fixed
+
+- The dashboard's *Remove a contact* stood as a heading alone when no contact could be removed,
+  as when every contact is a chat's target or a command sender, which the gateway keeps on
+  purpose. It now says that no contact can be removed here, above the fold that says why. Make
+  the dashboard again after the update.
+
+### Security
+
+- With `[messages] publish_channels = "targets"`, the default, every start deletes from the
+  history database the messages received on a channel that is no target's or that
+  `ignore_channels` names: what 1.x kept of every channel, and what was kept while
+  `publish_channels` was `"all"`. Before, they stayed until they were `messages_days` old, in
+  `history export` and in `backup`, although the documents left them out (#103). The deletion
+  is for good, at the first start after the update; the log says how many went. The gateway's
+  own messages stay, also to an ignored channel. Check the targets' `channel_index` before the
+  update: a mistyped one deletes the received messages of the channel it was meant to name. To
+  keep a copy, export the messages before the update ([deployment.md](docs/deployment.md#update-reconfigure-remove), #136).
+
 ## [2.1.1] - 2026-11-13
 
 Fixes of the dashboard found in the maintainer's first use of 2.1.0, and of the radio's clock

@@ -23,6 +23,7 @@ from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import restore_state
 from homeassistant.helpers.template import Template
 from homeassistant.setup import async_setup_component
 from test_contract import (
@@ -131,6 +132,25 @@ async def test_new_options_keep_the_entity(
     await fire(hass, manage_topic(CONFIG), manage_payload(CONFIG, TOPICS, []))  # none heard
     assert hass.states.get(SELECT).attributes["options"] == []
     assert problems(caplog) == []
+
+
+async def test_the_options_with_the_heard_nodes_names_are_kept_as_restore_data(
+    hass: HomeAssistant, mqtt: Any, hass_storage: dict[str, Any]
+) -> None:
+    """The recorder leaves a select's `options` out, but an MQTT select is a RestoreEntity: Home
+    Assistant writes its whole state, the options included, to `.storage/core.restore_state`
+    every 15 minutes and at its stop. With `heard_nodes = "full"` the options name up to 20
+    heard nodes (docs/privacy.md, Other people; docs/platform-notes.md)."""
+    options = node_options(heard((BOB, "Bob", 1), (DAVE, "Club", 3)))
+    assert any("Bob" in option for option in options)
+    await with_controls(hass, options)
+    await restore_state.async_get(hass).async_dump_states()
+    stored = [
+        s["state"]
+        for s in hass_storage[restore_state.STORAGE_KEY]["data"]
+        if s["state"]["entity_id"] == SELECT
+    ]
+    assert [s["attributes"]["options"] for s in stored] == [options]
 
 
 async def test_more_than_100_option_changes_in_an_hour_make_home_assistant_warn(
