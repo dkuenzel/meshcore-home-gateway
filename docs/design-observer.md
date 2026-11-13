@@ -11,8 +11,8 @@ statistics, the packet log), every received message and every final delivery
 core's view of the mesh, writes the history
 ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md)) and publishes the providers'
 documents ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)): `stats`,
-`contacts` and `contacts/<key>`, `nodes`, `history`, `pending`, `config`, and the events
-`contact`, `node` and `telemetry`.
+`contacts` and `contacts/<key>`, `nodes`, `history`, `pending`, `config`, `refused_commands`,
+and the events `contact`, `node` and `telemetry`.
 
 ```mermaid
 flowchart LR
@@ -25,6 +25,10 @@ flowchart LR
     OB -- "retained documents,<br/>events" --> MQ[MQTT]
 ```
 
+* **Refused commands**: `refused_commands` holds the latest five refusals, the newest first,
+  without their words. The command ledger keeps them in the state file; the bridge hands them to
+  the observer at the start, with `clean_received` their senders' names cleaned as the last run's
+  documents are, the inbox after each refusal, and the broker's connects publish them again.
 * **Only changes are published**: the observer remembers the last payload per topic; after a
   reconnect to the broker it publishes them all again. The topic of a contact that left the table
   is cleared with an empty retained message; the keys of published contacts are kept in the state

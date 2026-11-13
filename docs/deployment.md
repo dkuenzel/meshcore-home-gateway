@@ -409,6 +409,22 @@ pct stop 105 && pct destroy 105
   Check the configuration with the old version first (`pct exec 105 -- python3 -I
   /usr/local/lib/meshcore-home-gateway/meshcore-home-gateway-<old version>.pyz check-config`):
   settings added later are refused by older versions.
+* **Roll back to 2.1** from 2.2 leaves the retained topic `refused_commands` on the broker, which
+  2.1 neither publishes nor clears. Once 2.1 runs, clear it with an empty retained message, as
+  the changelog of 2.2 gives it; for node `radio1`, with the broker's address and a user that may
+  write it (`-h`, `-u`, `-P`):
+
+  ```sh
+  mosquitto_pub -r -n -t meshcore/radio1/refused_commands
+  ```
+
+  Then make the dashboard again with 2.1's `meshcore-home-gateway dashboard` and paste it
+  ([home-assistant.md](home-assistant.md#dashboard)): the dashboard of 2.2 reads the refusals
+  from *Refused commands*, which 2.1 removes from Home Assistant as it removes every entity its
+  discovery no longer has. The refusals stay in the state file, where 2.2 finds them again. The
+  history database keeps working; 2.1 leaves the column `nonce` empty in the rows it adds, and
+  the dashboard of 2.2 shows those as it shows a message of 2.1: it cuts their delivery code by
+  the setting of `confirm_nonce` of the time it shows them.
 * **Roll back to 2.0** from 2.1 leaves three kinds of retained topics on the broker that 2.0
   neither publishes nor clears: `pending`, `config` and the drafts of Home Assistant's chats,
   `homeassistant/draft/<kind>/<chat>`, which the stop of 2.1 empties but leaves retained. Once 2.0
@@ -427,19 +443,6 @@ pct stop 105 && pct destroy 105
   2.0 does not announce, and its version card asks to update the gateway. An entity of 2.1 that
   Home Assistant keeps afterwards can be deleted under *Settings → Entities*. The history
   database keeps working; 2.0 leaves the columns 2.1 added empty.
-* **Roll back to 2.1** from 2.2 leaves the retained topic `refused_commands` on the broker, which
-  2.1 neither publishes nor clears. Once 2.1 runs, clear it with an empty retained message, as
-  the changelog of 2.2 gives it; for node `radio1`, with the broker's address and a user that may
-  write it (`-h`, `-u`, `-P`):
-
-  ```sh
-  mosquitto_pub -r -n -t meshcore/radio1/refused_commands
-  ```
-
-  Then make the dashboard again with 2.1's `meshcore-home-gateway dashboard` and paste it
-  ([home-assistant.md](home-assistant.md#dashboard)): the dashboard of 2.2 reads the refusals
-  from *Refused commands*, which 2.1 removes from Home Assistant as it removes every entity its
-  discovery no longer has. The refusals stay in the state file, where 2.2 finds them again.
 * **Roll back to 1.x** from 2.0 or later keeps the state directory, which 1.x reads in its own
   way (#95). 1.x knows no inclusions (`[telemetry] ask` is 2.0's): it asks every companion that
   is not excluded, other people's too. And the first exclusion made under 1.x writes

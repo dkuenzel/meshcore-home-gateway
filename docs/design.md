@@ -595,8 +595,8 @@ core's view of the mesh, writes the history
 documents ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)): `stats`,
 `contacts` and `contacts/<key>`, `nodes`, `history`, `pending` (the outbox's messages on their
 way), `config` (the settings in effect, which the bridge hands it at the start and at each radio
-connect), `refused_commands` (the latest refused commands, which the inbox hands it at the start
-and after each refusal, §6.4), and the events `contact`, `node` and `telemetry`.
+connect), `refused_commands` (the latest refused commands, which the bridge hands it at the start
+and the inbox after each refusal, §6.4), and the events `contact`, `node` and `telemetry`.
 
 The detail is in [design-observer.md](design-observer.md#66-observer-documents-and-history).
 
