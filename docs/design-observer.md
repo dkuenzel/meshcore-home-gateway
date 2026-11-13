@@ -84,6 +84,14 @@ flowchart LR
   `queued_at`, `suspect` and `reason` after a look at its columns, in version 2 as the table
   `reading` was: 2.0 names its columns in every statement, so a downgrade leaves them empty and
   keeps the history.
+* **Channels not published** (#136): with `publish_channels = "targets"` only the messages of the
+  targets' channels are published and stored, but an earlier version kept every channel's, and
+  so does `"all"`. At the start, before the first `history` document, the observer deletes from
+  the table `message` the received messages of every channel but the targets' that are not
+  ignored, also those without a channel's index, in one statement after a purge that runs; the
+  gateway's own messages stay, also to an ignored channel. The deletion is for good, and the
+  log says how many rows went. With `"all"` nothing is deleted: the documents leave the ignored
+  channels out (#103) and their age removes them.
 * **The settings in effect** go to the `config` document: `config_view` takes them from the
   configuration by an allowlist, and the bridge hands them over at the start and again at each
   radio connect, as a channel text's room depends on the radio's name. The targets are a list in

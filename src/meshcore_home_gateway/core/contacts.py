@@ -190,6 +190,12 @@ def name_key(name: str) -> str:
     return key if key or not _shown(name) else _BLANK_NAME
 
 
+def shows_a_name(name: str) -> bool:
+    """Whether a name reads as one where it stands alone, as a device's: not empty, not only
+    invisible characters, not drawn as nothing (a Hangul filler, the braille blank, #89)."""
+    return name_key(name) not in ("", _BLANK_NAME)
+
+
 def _compared(ch: str) -> str:
     """A character of a name as `name_key` compares it: a format character is dropped, a control
     character, a line break or a blank is a space."""

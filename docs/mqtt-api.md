@@ -200,10 +200,13 @@ Texts and names are published as they came: control and direction characters inc
 terminal, a file or a page must not take for instructions
 ([development.md](development.md#text-from-the-mesh-and-the-bus)). `[messages] clean_received`
 drops them from texts before publishing, and so from the name a channel message claims
-([configuration.md](configuration.md#messages)); commands are judged on the text as it came. A
-contact's name stays as its adverts gave it, also in `sender_name`, `history` and the device
-names in Home Assistant; the command line prints such characters escaped in JSON and as spaces
-in lists and CSV (#114).
+([configuration.md](configuration.md#messages)); commands are judged on the text as it came.
+Since 2.2 it also cleans the names of contacts and heard nodes, on one line, where the gateway
+takes them from the radio: in `sender_name`, `command` events, `history`, `pending`, the
+contacts' documents, `nodes`, the `node`, `contact` and `telemetry` events, the device names in
+Home Assistant and Homie (#137). Messages the history kept before keep their names. Without it,
+a contact's name stays as its adverts gave it; the command line prints such characters escaped in
+JSON and as spaces in lists and CSV (#114).
 
 ```json
 {"event_type": "contact", "text": "status please", "text_type": "plain",
@@ -606,7 +609,9 @@ outgoing messages the recipient. `state` is the final delivery state of an outgo
 document has only those of the channels that are published (`[messages] publish_channels`,
 `ignore_channels`): since 2.1 also at the start, when the history database still holds messages
 of other channels that an earlier version kept, and it then shows the newest of the rest (#103).
-The gateway's own messages to a channel target are in it, also when that channel is ignored.
+Since 2.2, with `publish_channels = "targets"`, the start deletes those from the history database
+for good, and the log says how many (#136). The gateway's own messages to a channel target stay in
+both, also when that channel is ignored.
 
 Since 2.1 every entry also has these keys, `null` when they do not apply or are not known (a
 message from an earlier version):
@@ -1053,7 +1058,7 @@ retained with QoS 1, the echo of `send` aside.
 | `$state` | gateway → | yes | `init` while the device is announced, and after a start until 5 s after the radio's first contact table; `ready`; `alert` while the radio is not connected; `disconnected` after a clean stop; `lost` as the last will |
 | `gateway/$name`, `gateway/$type`, `gateway/$properties` | gateway → | yes | `Gateway`, `gateway`, `radio`: the gateway's own node |
 | `gateway/radio`, `gateway/radio/$<attribute>` | gateway → | yes | `connected` or `disconnected`, as `radio` in [`state`](#state-state); `$datatype` `enum`, `$format` `connected,disconnected` |
-| `<key>/$name`, `<key>/$type`, `<key>/$properties` | gateway → | yes | the contact's name and type (as in its document), its properties |
+| `<key>/$name`, `<key>/$type`, `<key>/$properties` | gateway → | yes | the contact's name and type (as in its document; since 2.2 the key's first 12 digits for a name that shows nothing, as the device in Home Assistant), its properties |
 | `<key>/<property>`, `<key>/<property>/$<attribute>` | gateway → | yes | the property's value (below) and its Homie attributes |
 | `<key>/send` | gateway → | no | the echo of a text taken on `send/set` |
 

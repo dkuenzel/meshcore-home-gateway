@@ -182,6 +182,11 @@ last advert the gateway checked carried it, or, before it has checked one (after
 while the radio's record holds one (press *Advert* near the gateway after the update and after
 switching sharing off, [companions.md](companions.md#positions-in-adverts)).
 
+* **Device names** are the contacts' names as the radio's table has them, with `[messages]
+  clean_received` without control and direction characters. A name that shows nothing gives the
+  device the first 12 digits of the key, as an empty name always did; since 2.2 also a name made
+  only of invisible characters, such as a zero-width space, or drawn as nothing, such as a Hangul
+  filler. A name another device has gets 8 of them ([below](#adding-and-removing-contacts)).
 * **Entity IDs** start with `[homeassistant] contact_entity_prefix` (`mesh` by default, as in the
   table) and `_`, then the contact's name as it was when the device first
   appeared (letters and digits only, `ä` as `a`); a later rename changes the device's name, not the

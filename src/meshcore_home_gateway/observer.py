@@ -49,6 +49,7 @@ from meshcore_home_gateway.core.model import (
 )
 from meshcore_home_gateway.core.profile import ProfileReport
 from meshcore_home_gateway.core.telemetry import Answer, TelemetryEvent, TelemetryState
+from meshcore_home_gateway.core.text import clean_name
 from meshcore_home_gateway.health import FAILURES
 from meshcore_home_gateway.history import History, NodeRow
 from meshcore_home_gateway.mqtt.topics import Topics
@@ -157,6 +158,9 @@ class Observer:
         self._names = names
         # what is published and kept of the nodes heard but not added (SEC-015)
         self.heard_nodes: HeardNodes = "full"
+        # `[messages] clean_received`: the names of contacts and heard nodes are cleaned as they
+        # come from the radio and the history (#137), for every document, event and front end
+        self.clean_names = False
         # the node types asked for telemetry, `[telemetry] ask_types`: the poller, the contact
         # manager and the documents read it here
         self.telemetry_types: frozenset[int] = frozenset({NodeType.CHAT})
@@ -229,12 +233,24 @@ class Observer:
         for key, kept in readings.items():
             self._restore_contact(key, None, None, kept)
 
+    def forget_unpublished_channels(self, kept: Iterable[int]) -> None:
+        """Delete from the history, for good, the received messages of every channel but those
+        `kept` (#136): at the start, while only the targets' channels are published, the rows an
+        earlier version kept of the others. The gateway's own messages stay. The log says how
+        many went."""
+        if self._history is None:
+            return
+        rows = self._history.forget_received_channels(kept)
+        if rows:
+            log.info("history: received messages of channels not published deleted: %d", rows)
+
     def show_channels(self, published: Callable[[int | None], bool]) -> None:
         """The channels whose received messages are published (`[messages] publish_channels`,
         `ignore_channels`). Those of the others that the history holds, which an earlier version
         kept of every channel, leave the `history` document, and the newest of the rest take
-        their place; they stay in the history until they are `messages_days` old (#103). The
-        gateway's own messages to a channel stay, as while it runs."""
+        their place (#103); with `publish_channels = "targets"` the start deleted them before
+        (`forget_unpublished_channels`, #136), with "all" they stay until they are `messages_days`
+        old. The gateway's own messages to a channel stay, as while it runs."""
 
         def shown(entry: HistoryEntry) -> bool:
             channel, own = entry.kind == "channel", entry.direction == "out"
@@ -545,7 +561,7 @@ class Observer:
         before = {key: tracked.node for key, tracked in self.mesh.contacts.items()}
         # the heard nodes the radio holds now, with the time of the newest advert it reported
         heard = {k: t.node.last_advert for k, t in self.mesh.nodes.items() if k in records}
-        change = self.mesh.contacts_read((_node(r) for r in records.values()), at)
+        change = self.mesh.contacts_read((_node(r, self.clean_names) for r in records.values()), at)
         joined_or_left = bool(change.added or change.removed)  # the heard nodes change with it
         left = [key for key in self._current if key not in self.mesh.contacts]
         for key in left:  # also one of the last run, at the first table read
@@ -601,7 +617,8 @@ class Observer:
         for row in self._heard_rows:
             if row.key in self.mesh.contacts:
                 continue
-            node = Node(row.key, row.name, row.node_type, last_advert=row.last_advert)
+            name = clean_name(row.name) if self.clean_names else row.name  # as it was kept
+            node = Node(row.key, name, row.node_type, last_advert=row.last_advert)
             tracked = self.mesh.nodes.get(row.key)
             if tracked is None:
                 self.mesh.node_heard(node, row.heard)
@@ -780,7 +797,7 @@ class Observer:
                 self._store_heard(key, tracked.node, heard)
                 self._publish_contact(key)
             return
-        node = _node(advert.record)
+        node = _node(advert.record, self.clean_names)
         new = self.mesh.node_heard(node, heard)
         if key in self.mesh.contacts:  # firmware 1.11: a contact it has just added
             self._pending[key] = pushed
@@ -909,10 +926,14 @@ class Observer:
     def _restate(self, key: str, *, connect: bool = False) -> None:
         """A document of the last run, published again when its contact's state changed (its
         answers expired, it was excluded or included, telemetry is off), also while the radio
-        stays away. Kept in every state until the first table read; each change stored at once."""
+        stays away. Kept in every state until the first table read; each change stored at once.
+        With `clean_received` its contact's name is cleaned, as a run with it off stored it
+        as it came (#137)."""
         stored = self._current[key]
         excluded = key in self.exclusions
         document = restated(stored, self._companion_state(key), excluded=excluded)
+        if self.clean_names and isinstance(document.get("name"), str):
+            document["name"] = clean_name(document["name"])
         if document != stored:
             self._publish(self._topics.contact(key), document)
             self._current[key] = document
@@ -1056,10 +1077,11 @@ def _values(readings: Readings | None) -> dict[str, float]:
     }
 
 
-def _node(record: codec.ContactRecord) -> Node:
+def _node(record: codec.ContactRecord, clean: bool) -> Node:
+    """The radio's record as the observer keeps it; `clean`: its name cleaned (#137)."""
     return Node(
         public_key=record.public_key.hex(),
-        name=record.name,
+        name=clean_name(record.name) if clean else record.name,
         node_type=record.node_type,
         flags=record.flags,
         path_hops=record.path_hops,

@@ -29,6 +29,21 @@ format, the command line and Home Assistant discovery are public interfaces
 - The dashboard's *Settings* say all that `heard_nodes = "full"` keeps of the nodes heard nearby:
   keys, names, times and signal (before: keys and names). Make the dashboard again after the
   update.
+- `[messages] clean_received` also cleans the names of contacts and heard nodes, where the
+  gateway takes them from the radio, the history and the documents of the last run in its state
+  file: without control and direction characters, on one line, in
+  `sender_name` of the `received` and `command` events, the history, `pending`, the contacts'
+  documents, `nodes`, the `node`, `contact` and `telemetry` events, the device names, labels and
+  options in Home Assistant, and Homie. Commands are still judged on the text as it came, and the
+  radio's table keeps the names as they came; messages the history kept before keep their names.
+  The setting stays off by default; with heard nodes' names published by default, switch it on
+  ([configuration.md](docs/configuration.md#messages), #137). A device whose name changes keeps
+  its entity IDs.
+- The device of a contact whose name shows nothing, made only of invisible characters such as a
+  zero-width space or a soft hyphen, or drawn as nothing such as a Hangul filler, is named by the
+  first 12 digits of its key in Home Assistant, and so is its Homie node; before, only an empty
+  name was, and the others left a device without a name to read
+  ([home-assistant.md](docs/home-assistant.md#contacts), #137).
 
 ### Fixed
 
@@ -36,6 +51,18 @@ format, the command line and Home Assistant discovery are public interfaces
   as when every contact is a chat's target or a command sender, which the gateway keeps on
   purpose. It now says that no contact can be removed here, above the fold that says why. Make
   the dashboard again after the update.
+
+### Security
+
+- With `[messages] publish_channels = "targets"`, the default, every start deletes from the
+  history database the messages received on a channel that is no target's or that
+  `ignore_channels` names: what 1.x kept of every channel, and what was kept while
+  `publish_channels` was `"all"`. Before, they stayed until they were `messages_days` old, in
+  `history export` and in `backup`, although the documents left them out (#103). The deletion
+  is for good, at the first start after the update; the log says how many went. The gateway's
+  own messages stay, also to an ignored channel. Check the targets' `channel_index` before the
+  update: a mistyped one deletes the received messages of the channel it was meant to name. To
+  keep a copy, export the messages before the update ([deployment.md](docs/deployment.md#update-reconfigure-remove), #136).
 
 ## [2.1.1] - 2026-11-13
 

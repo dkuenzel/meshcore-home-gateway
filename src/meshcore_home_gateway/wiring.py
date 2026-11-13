@@ -55,7 +55,7 @@ from meshcore_home_gateway.contact_manager import ContactManager
 from meshcore_home_gateway.core.telemetry import LaneFactory
 from meshcore_home_gateway.drafts import Drafts
 from meshcore_home_gateway.history import History, Retention
-from meshcore_home_gateway.inbox import Inbox, channel_published
+from meshcore_home_gateway.inbox import Inbox, channel_published, published_channels
 from meshcore_home_gateway.mqtt.client import MqttBus
 from meshcore_home_gateway.mqtt.contact_devices import ContactDevices
 from meshcore_home_gateway.mqtt.discovery import gateway_device_name, gateway_names
@@ -244,6 +244,9 @@ def _observer(config: Config, observer: Observer) -> Observer:
         config.contacts.heard_nodes,
     )
     observer.telemetry_types = config.telemetry.node_types
+    observer.clean_names = config.messages.clean_received
+    if config.messages.publish_channels == "targets":  # #136: the others' rows go for good
+        observer.forget_unpublished_channels(published_channels(config))
     observer.show_channels(lambda index: channel_published(config, index))
     return observer
 

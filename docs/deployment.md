@@ -340,9 +340,19 @@ pct stop 105 && pct destroy 105
   **Breaking:** entries name the settings that keep the old behaviour. The messages that 1.x
   received on other channels stay in the history database (and in `history export` and `backup`)
   until they are `messages_days` old, 30 days by default; since 2.1 the `history` document and
-  Home Assistant's *Message history* leave them out. To be rid of them at once, stop the service
-  and delete `/var/lib/meshcore-home-gateway/history.sqlite3` with its `-wal` and `-shm` files:
-  the gateway starts a new history, without the rest of the old one.
+  Home Assistant's *Message history* leave them out, and since 2.2 the start deletes them (below).
+  To be rid of them at once with 2.0 or 2.1, stop the service and delete
+  `/var/lib/meshcore-home-gateway/history.sqlite3` with its `-wal` and `-shm` files: the gateway
+  starts a new history, without the rest of the old one.
+* **The history after an update to 2.2:** with `[messages] publish_channels = "targets"`, the
+  default, every start deletes from the history database, for good, the messages received on a
+  channel that is no target's or that `ignore_channels` names: those that 1.x kept of every
+  channel, and those kept while `publish_channels` was `"all"`. The gateway's own messages stay.
+  The log says how many went (`history: received messages of channels not published deleted`).
+  Check the targets' `channel_index` before the update: a mistyped one deletes the messages of
+  the channel meant. To keep a copy, export the messages in the container before the update
+  (`meshcore-home-gateway history export > messages.jsonl`;
+  [privacy.md](privacy.md#other-people)).
 * **The heard nodes after an update to 2.2:** a configuration that does not set `[contacts]
   heard_nodes` keeps and publishes of other people's radios their names, when they were heard and
   their signal again (`"full"`,
