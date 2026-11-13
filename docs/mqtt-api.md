@@ -204,11 +204,11 @@ terminal, a file or a page must not take for instructions
 drops them from texts before publishing, and so from the name a channel message claims
 ([configuration.md](configuration.md#messages)); commands are judged on the text as it came.
 Since 2.2 it also cleans the names of contacts and heard nodes, on one line, where the gateway
-takes them from the radio: in `sender_name`, `command` events, `history`, `pending`, the
-contacts' documents, `nodes`, the `node`, `contact` and `telemetry` events, the device names in
-Home Assistant and Homie (#137). Messages the history kept before keep their names. Without it,
-a contact's name stays as its adverts gave it; the command line prints such characters escaped in
-JSON and as spaces in lists and CSV (#114).
+takes them from the radio: in `sender_name`, `command` events, `refused_commands`, `history`,
+`pending`, the contacts' documents, `nodes`, the `node`, `contact` and `telemetry` events, the
+device names in Home Assistant and Homie (#137). Messages the history kept before keep their
+names. Without it, a contact's name stays as its adverts gave it; the command line prints such
+characters escaped in JSON and as spaces in lists and CSV (#114).
 
 ```json
 {"event_type": "contact", "text": "status please", "text_type": "plain",
@@ -314,7 +314,7 @@ also without command words, then with what an earlier run refused, or none.
 | Key | Meaning |
 | --- | --- |
 | `at` | the gateway's clock when it took the message from the radio, as `received_at` of its `received` event |
-| `sender_key`, `sender_prefix`, `sender_name` | as in its `received` event: the full key and name of the one contact with the prefix, else `null`; with `[messages] clean_received` the name without control and direction characters ([configuration.md](configuration.md#messages)) |
+| `sender_key`, `sender_prefix`, `sender_name` | as in its `received` event: the full key and name of the one contact with the prefix, else `null`; with `[messages] clean_received` the name cleaned, on one line, where the gateway takes it from the radio ([received messages](#received-messages-received)) |
 | `reason` | why, one of the reasons of [`command`](#commands-command); expect new ones |
 
 `total` counts the refusals kept (at most five); the whole document stays within 15 KiB, which
