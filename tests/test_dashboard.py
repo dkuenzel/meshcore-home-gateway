@@ -2884,6 +2884,11 @@ def test_help_says_why_no_advert_was_sent_and_names_the_row() -> None:
     assert f"{busy}: Another press is being handled" in fold  # no next time after busy
     assert f"{soon}: The radio sends at most one advert every 10 minutes" in fold
     assert "<b>the radio was busy</b>: The radio had no room for it just then." in fold
+    # at a slow preset the budget never holds an advert beside a long message: burst_s is raised
+    assert (
+        "<b>airtime used up</b>: Messages go first, and the radio may send only so much per hour. "
+        "Try again in a few minutes; if this stays, tell your administrator.</li>"
+    ) in fold
 
 
 def test_settings_show_whether_the_advert_button_can_be_pressed() -> None:

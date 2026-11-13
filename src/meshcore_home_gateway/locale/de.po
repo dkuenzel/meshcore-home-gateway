@@ -3132,8 +3132,8 @@ msgstr "Nachrichtenverlauf"
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "Messages go first, and the radio may send only so much per hour. Try again in a few minutes."
-msgstr "Nachrichten haben Vorrang, und das Funkgerät darf pro Stunde nur begrenzt senden. Versuche es in ein paar Minuten erneut."
+msgid "Messages go first, and the radio may send only so much per hour. Try again in a few minutes; if this stays, tell your administrator."
+msgstr "Nachrichten haben Vorrang, und das Funkgerät darf pro Stunde nur begrenzt senden. Versuche es in ein paar Minuten erneut; bleibt es so, sag den Admins Bescheid."
 
 #. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
