@@ -11,6 +11,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
@@ -323,17 +324,16 @@ def test_the_readme_says_which_messages_are_published() -> None:
     assert f"{int(RECEIVED_PER_CHANNEL_BURST)} per channel" in receive
 
 
-def test_the_roll_back_to_2_0_clears_every_retained_topic_that_2_1_added() -> None:
-    """2.0 neither publishes nor clears the retained topics 2.1 added: `pending`, `config` and the
-    drafts. The note on the roll back in deployment.md clears each the way the changelog since
-    2.0.0 does, the topics the gateway's retained guard keeps now less those it kept in 2.0."""
+def _retained_since() -> tuple[Any, set[str], set[str], set[str]]:
+    """The topics, those the gateway's retained guard keeps now, and those it kept in 2.0 and 2.1
+    (RetainedTopics in v2.0.0's and v2.1.0's mqtt/retained.py)."""
     from meshcore_home_gateway.mqtt.retained import RetainedTopics
     from meshcore_home_gateway.mqtt.topics import Topics
     from tests.test_retained import Bus
 
     topics, bus = Topics("meshcore", "radio1"), Bus()
     guard = RetainedTopics(topics, bus.publish, bus.call_later, lambda: bus.now, drafts=True)
-    kept_by_2_0 = {  # RetainedTopics in v2.0.0's mqtt/retained.py
+    kept_by_2_0 = {
         topics.availability,
         topics.state,
         topics.stats,
@@ -343,7 +343,34 @@ def test_the_roll_back_to_2_0_clears_every_retained_topic_that_2_1_added() -> No
         topics.settings,
         topics.contact("+"),
     }
-    added = set(guard.filters) - kept_by_2_0
+    kept_by_2_1 = kept_by_2_0 | {topics.pending, topics.config, topics.draft_subscription}
+    return topics, set(guard.filters), kept_by_2_0, kept_by_2_1
+
+
+def test_the_roll_back_to_2_1_clears_every_retained_topic_that_2_2_added() -> None:
+    """2.1 neither publishes nor clears the retained topic 2.2 added, `refused_commands` (#141).
+    The note on the roll back in deployment.md clears each topic the gateway's retained guard
+    keeps now and did not keep in 2.1, the way the changelog since 2.1.0 does."""
+    topics, kept, _, kept_by_2_1 = _retained_since()
+    added = kept - kept_by_2_1
+    assert added == {topics.refused_commands}
+    deployment = _words((ROOT / "docs" / "deployment.md").read_text(encoding="utf-8"))
+    note = deployment.partition("* **Roll back to 2.1**")[2].partition(" * **")[0]
+    since = _words((ROOT / "CHANGELOG.md").read_text(encoding="utf-8").partition("\n## [2.1.0]")[0])
+    for topic in sorted(added):
+        command = f"mosquitto_pub -r -n -t {topic}"
+        assert command in note, topic
+        assert command in since, topic
+    assert "meshcore-home-gateway dashboard" in note
+
+
+def test_the_roll_back_to_2_0_clears_every_retained_topic_that_2_1_added() -> None:
+    """2.0 neither publishes nor clears the retained topics 2.1 added: `pending`, `config` and the
+    drafts. The note on the roll back in deployment.md clears each the way the changelog since
+    2.0.0 does, the topics the gateway's retained guard kept in 2.1 less those it kept in 2.0."""
+    topics, kept, kept_by_2_0, kept_by_2_1 = _retained_since()
+    assert kept >= kept_by_2_1
+    added = kept_by_2_1 - kept_by_2_0
     assert added == {topics.pending, topics.config, topics.draft_subscription}
     deployment = _words((ROOT / "docs" / "deployment.md").read_text(encoding="utf-8"))
     note = deployment.partition("* **Roll back to 2.0**")[2].partition(" * **")[0]

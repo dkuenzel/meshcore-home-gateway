@@ -533,6 +533,10 @@ EU duty cycle for them. Telemetry has two budgets of its own, which never take f
    published, so a crash cannot turn into a replay; if the file cannot be written, the command is
    rejected (`state_unwritable`) and the service carries on. A command refused because the broker
    is unreachable (`broker_unavailable`) stores its timestamp too: its sender was verified.
+   A refusal published on `received` also joins the latest five in the state file and the
+   retained `refused_commands` document, without the command's word (#141): the next message
+   replaces the `received` event in Home Assistant, the document stays until the next refusal.
+   The state file holds them until the status tick writes it, so a crash may lose the newest.
 6. Channels listed in `ignore_channels` are not published (busy public channels).
 
 ### 6.5 MQTT interface
@@ -549,6 +553,7 @@ there).
 | `delivery` | out | no | JSON with `event_type` = delivery state |
 | `received` | out | no | JSON with `event_type` = `contact` or `channel` |
 | `command` | out | no | JSON with `event_type` = command word |
+| `refused_commands` | out | yes | JSON: the latest refused commands, without their words (§6.4) |
 | `rx` | out | no | JSON per received packet: SNR, RSSI, raw bytes (optional) |
 | `stats`, `contacts`, `contacts/<key>`, `nodes`, `history`, `pending` | out | yes | JSON documents of the observer (§6.6) |
 | `config` | out | yes | JSON: the settings in effect, by an allowlist (module `config_view`), at the start and at each radio connect |
@@ -599,7 +604,8 @@ core's view of the mesh, writes the history
 documents ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)): `stats`,
 `contacts` and `contacts/<key>`, `nodes`, `history`, `pending` (the outbox's messages on their
 way), `config` (the settings in effect, which the bridge hands it at the start and at each radio
-connect), and the events `contact`, `node` and `telemetry`.
+connect), `refused_commands` (the latest refused commands, which the bridge hands it at the start
+and the inbox after each refusal, §6.4), and the events `contact`, `node` and `telemetry`.
 
 The detail is in [design-observer.md](design-observer.md#66-observer-documents-and-history).
 
@@ -643,7 +649,7 @@ the file.
 | `meshcore-home-gateway doctor [--state-dir DIR]` | One line per check, `ok`, `warning` or `problem`: the configuration and its warnings, a radio over TCP, TLS, the broker login and whether the broker takes clients without a user name, the gateway online, its radio, a radio clock more than 60 s off, a contested link, untested firmware, the health section, then on this host the free space for the state, automatic security updates and a restart that updates wait for. Exit 1 when a check finds a problem. |
 | `meshcore-home-gateway backup FILE [--with-secrets] [--state-dir DIR]` | Write the configuration, `state.json`, `telemetry-excluded.json`, a copy of `history.sqlite3` made with SQLite's online backup and `MANIFEST.json` (version, time, paths, files, whether the password is in it) into a tar.gz that only its owner can read, while the service runs; never over an existing file. The broker password's line becomes a comment unless `--with-secrets`, which also takes the files `password_file` and `codes_file` name. Exit 1 when a file cannot be read or the archive written. |
 | `meshcore-home-gateway retire [--yes] [--state-dir DIR]` | With the service stopped: remove the gateway, its controls and every contact device (also one whose removal is pending) from Home Assistant, each bound to all components it had first; clear every retained document under the gateway's topics and every retained message of its Homie device `homie/meshcore-<node_id>/…`, also with `[homie]` off now (`$state` first), but not a device whose `$state` says that a gateway is connected to it (`init`, `ready`, `alert`, `sleeping`); leave its availability `offline`; then read them again. It reads them with QoS 0, until none has come for a second (Mosquitto passes on at most 1040 to a subscription with QoS 1, [platform notes](platform-notes.md#mosquitto)). Without `--yes`, count what it would do. Exit 1 while the gateway is online, when the broker refuses, or when a retained message is left after clearing. |
-| `meshcore-home-gateway history export [--table T] [--format F] [--since DATE] [--state-dir DIR]` | Print a table of the history (`messages`, `positions` or `readings`) as JSON lines (`jsonl`) or CSV, oldest first, read only while the service runs. Times in ISO 8601 and UTC; `--since` takes a date or a date and time in ISO 8601 (UTC without a zone). In CSV, control characters become spaces and a text that begins with `=`, `+`, `-` or `@` gets a leading `'`, so that a spreadsheet shows it rather than computes it. Columns that a history not yet migrated lacks stay empty. Since 2.1 `messages` ends with `target`, `delivery_id`, `queued_at` (a time), `suspect` (`true` or `false`) and `reason`, the keys of the `history` document ([mqtt-api.md](mqtt-api.md#history-history)). Exit 1 without a history or with one of a newer version. |
+| `meshcore-home-gateway history export [--table T] [--format F] [--since DATE] [--state-dir DIR]` | Print a table of the history (`messages`, `positions` or `readings`) as JSON lines (`jsonl`) or CSV, oldest first, read only while the service runs. Times in ISO 8601 and UTC; `--since` takes a date or a date and time in ISO 8601 (UTC without a zone). In CSV, control characters become spaces and a text that begins with `=`, `+`, `-` or `@` gets a leading `'`, so that a spreadsheet shows it rather than computes it. Columns that a history not yet migrated lacks stay empty. Since 2.1 `messages` ends with `target`, `delivery_id`, `queued_at` (a time), `suspect` (`true` or `false`) and `reason`, since 2.2 then `nonce` (`true` or `false`), the keys of the `history` document ([mqtt-api.md](mqtt-api.md#history-history)). Exit 1 without a history or with one of a newer version. |
 | `meshcore-home-gateway config render` | Write a validated configuration (TLS files loaded) from `key=value` answers (installer). |
 | `meshcore-home-gateway config answers` | Print a configuration as answers, the inverse of `render` (installer, reconfigure). |
 

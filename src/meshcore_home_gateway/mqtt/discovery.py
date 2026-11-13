@@ -429,6 +429,22 @@ def discovery_payload(
             state_topic=topics.command,
             event_types=sorted(config.commands.words),
         )
+        # the `refused_commands` document (#141): the newest refusal's time, the refusals as
+        # attributes; available as the history is, so that they stay readable while the gateway
+        # is offline
+        components["refused_commands"] = component(
+            "refused_commands",
+            "sensor",
+            # Translators: sensor (timestamp) of the gateway: the latest commands it refused,
+            # with who sent each and why; its state is the time of the newest one
+            ha_name("Refused commands"),
+            device_class="timestamp",
+            icon="mdi:shield-alert",
+            state_topic=topics.refused_commands,
+            value_template="{{ value_json.commands[0].at if value_json.commands else None }}",
+            json_attributes_topic=topics.refused_commands,
+            availability=[{"topic": topics.refused_commands, "value_template": "{{ 'online' }}"}],
+        )
     if config.radio.transport == "tcp":  # USB has no other client
         components["radio_link_contested"] = component(
             "radio_link_contested",

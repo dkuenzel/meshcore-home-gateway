@@ -11,8 +11,8 @@ statistics, the packet log), every received message and every final delivery
 core's view of the mesh, writes the history
 ([ADR 0016](decisions/0016-history-in-a-local-sqlite-database.md)) and publishes the providers'
 documents ([ADR 0015](decisions/0015-provider-neutral-documents-on-the-bus.md)): `stats`,
-`contacts` and `contacts/<key>`, `nodes`, `history`, `pending`, `config`, and the events
-`contact`, `node` and `telemetry`.
+`contacts` and `contacts/<key>`, `nodes`, `history`, `pending`, `config`, `refused_commands`,
+and the events `contact`, `node` and `telemetry`.
 
 ```mermaid
 flowchart LR
@@ -25,6 +25,10 @@ flowchart LR
     OB -- "retained documents,<br/>events" --> MQ[MQTT]
 ```
 
+* **Refused commands**: `refused_commands` holds the latest five refusals, the newest first,
+  without their words. The command ledger keeps them in the state file; the bridge hands them to
+  the observer at the start, with `clean_received` their senders' names cleaned as the last run's
+  documents are, the inbox after each refusal, and the broker's connects publish them again.
 * **Only changes are published**: the observer remembers the last payload per topic; after a
   reconnect to the broker it publishes them all again. The topic of a contact that left the table
   is cleared with an empty retained message; the keys of published contacts are kept in the state
@@ -83,7 +87,11 @@ flowchart LR
   in the state file. The table gets the columns `target`, `delivery_id` (it has an `id`),
   `queued_at`, `suspect` and `reason` after a look at its columns, in version 2 as the table
   `reading` was: 2.0 names its columns in every statement, so a downgrade leaves them empty and
-  keeps the history.
+  keeps the history. Since 2.2 a sent entry also says whether the gateway added
+  `confirm_nonce`'s suffix to its text (`nonce`, #142): the outbox keeps it with each message
+  (`Outgoing.nonce`, in the state file across a stop) and gives it to the delivery's events, not
+  on the `delivery` topic, as the acceptance time; the table gets the column `nonce` the same
+  way, empty in the rows of earlier versions.
 * **Channels not published** (#136): with `publish_channels = "targets"` only the messages of the
   targets' channels are published and stored, but an earlier version kept every channel's, and
   so does `"all"`. At the start, before the first `history` document, the observer deletes from

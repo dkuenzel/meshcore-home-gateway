@@ -1786,8 +1786,8 @@ msgstr "Ein Befehl dieses Absenders endet mit dem 6-stelligen Code einer Authent
 #. security text (docs/translations.md): a command needs the sender's current code; a sender without a code secret is refused while the gateway ignores a secret of a key that is no sender; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "A command the gateway refused shows with its reason after the word refused, but only until the next message arrives. The gateway's log also names a sender refused for too many wrong codes."
-msgstr "Ein Befehl, den das Gateway abgelehnt hat, erscheint mit seinem Grund nach dem Wort „abgelehnt“, aber nur, bis die nächste Nachricht eintrifft. Das Protokoll des Gateways nennt außerdem einen Absender, der wegen zu vieler falscher Codes abgelehnt wird."
+msgid "A command the gateway refused shows with its reason after the word refused, until the gateway accepts a command; its word is left out. The gateway's log also names a sender refused for too many wrong codes."
+msgstr "Ein Befehl, den das Gateway abgelehnt hat, erscheint mit seinem Grund nach dem Wort „abgelehnt“, bis das Gateway einen Befehl annimmt; das Befehlswort steht nicht dabei. Das Protokoll des Gateways nennt außerdem einen Absender, der wegen zu vieler falscher Codes abgelehnt wird."
 
 #. security text (docs/translations.md): who can read a chat, and that a name on a channel proves nothing
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -1897,8 +1897,8 @@ msgstr "Ein Funkgerät in der Nähe hat einen Schlüssel, der wie der eines Kont
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "A refused command shows only until the next message arrives, of any kind."
-msgstr "Ein abgelehnter Befehl erscheint nur, bis die nächste Nachricht eintrifft, egal welcher Art."
+msgid "A refused command shows until the gateway accepts a command after it."
+msgstr "Ein abgelehnter Befehl erscheint, bis das Gateway danach einen Befehl annimmt."
 
 #. security text (docs/translations.md): a command needs the sender's current code; a sender without a code secret is refused while the gateway ignores a secret of a key that is no sender; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -6050,7 +6050,7 @@ msgctxt "dashboard"
 msgid "room"
 msgstr "Raum"
 
-#. why the gateway refused a command, after the command's word
+#. why the gateway refused a command, after the words command refused
 #. security text (docs/translations.md): a command needs the sender's current code; a sender without a code secret is refused while the gateway ignores a secret of a key that is no sender; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -6474,6 +6474,13 @@ msgctxt "dashboard"
 msgid "{sender} in {chat}"
 msgstr "{sender} in {chat}"
 
+#. the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "{sender}: command refused: {reason}"
+msgstr "{sender}: Befehl abgelehnt: {reason}"
+
 #. a channel message in one line: the sender's name, as the sender typed it, then the text
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -6487,13 +6494,6 @@ msgstr "{sender}: {text}"
 msgctxt "dashboard"
 msgid "{sender}: {word}"
 msgstr "{sender}: {word}"
-
-#. the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code
-#: src/meshcore_home_gateway/dashboard.yaml
-#, python-brace-format
-msgctxt "dashboard"
-msgid "{sender}: {word}, refused: {reason}"
-msgstr "{sender}: {word}, abgelehnt: {reason}"
 
 #. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -7052,6 +7052,13 @@ msgstr "Betriebszeit des Funkgeräts"
 msgctxt "home assistant"
 msgid "Receive errors"
 msgstr "Empfangsfehler"
+
+#. sensor (timestamp) of the gateway: the latest commands it refused,
+#. with who sent each and why; its state is the time of the newest one
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Refused commands"
+msgstr "Abgelehnte Befehle"
 
 #. the name of an entity that exists only for a moment, while the gateway
 #. removes it from Home Assistant

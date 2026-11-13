@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from meshcore_home_gateway.core import profile
+from meshcore_home_gateway.core.commands import Refusal
 from meshcore_home_gateway.core.contacts import PREFIX_HEX_DIGITS, HeardNodes, name_key
 from meshcore_home_gateway.core.mesh import AirtimeMeter, Mesh, Node, Tracked, type_name
 from meshcore_home_gateway.core.telemetry import CURRENT, TelemetryEvent, TelemetryState
@@ -598,6 +599,9 @@ class HistoryEntry:
     queued_at: float | None = None  # out: when the gateway accepted it (wall clock)
     suspect: bool | None = None  # out, confirmed: its acknowledgement may be forged (SEC-001)
     reason: str | None = None  # out: why it failed or expired
+    # since 2.2, last: out, whether the gateway added confirm_nonce's code to `text` (#142); None
+    # for a received message and one an earlier version kept (no backfill)
+    nonce: bool | None = None
 
 
 def history_entry(entry: HistoryEntry) -> dict[str, Any]:
@@ -617,6 +621,7 @@ def history_entry(entry: HistoryEntry) -> dict[str, Any]:
         "queued_at": iso(entry.queued_at),
         "suspect": entry.suspect,
         "reason": entry.reason,
+        "nonce": entry.nonce,
     }
 
 
@@ -679,6 +684,31 @@ def pending_document(entries: Collection[PendingEntry]) -> dict[str, Any]:
         (pending_entry(e) for e in entries), PENDING_LIMIT_BYTES - len(encode(head))
     )
     return {"total": total, "truncated": len(kept) < total, "messages": kept}
+
+
+# --- refused commands ---------------------------------------------------------------------------
+
+
+def refusal_entry(refusal: Refusal) -> dict[str, Any]:
+    return {
+        "at": iso(refusal.at),
+        "sender_key": refusal.sender_key,
+        "sender_prefix": refusal.sender_prefix,
+        "sender_name": refusal.sender_name,
+        "reason": refusal.reason,
+    }
+
+
+def refused_document(refusals: Iterable[Refusal]) -> dict[str, Any]:
+    """`refused_commands` (#141): the latest commands the gateway refused, in the order given
+    (the newest first), without their words. The bound counts the whole document, its head too;
+    a cut leaves out the oldest."""
+    entries = list(refusals)
+    head = {"total": len(entries), "truncated": True, "commands": []}
+    kept, total = bounded(
+        (refusal_entry(r) for r in entries), ATTRIBUTE_LIMIT_BYTES - len(encode(head))
+    )
+    return {"total": total, "truncated": len(kept) < total, "commands": kept}
 
 
 # --- the configuration --------------------------------------------------------------------------

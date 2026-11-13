@@ -816,6 +816,7 @@
                     "id": {},
                     "kind": {},
                     "name": {},
+                    "nonce": {},
                     "queued_at": {},
                     "reason": {},
                     "snr_db": {},
@@ -2005,6 +2006,65 @@
         }
       }
     },
+    "refused_commands": {
+      "address": "{base_topic}/{node_id}/refused_commands",
+      "messages": {
+        "refused_commands": {
+          "name": "refused_commands",
+          "contentType": "application/json",
+          "summary": "a document",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "commands": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "at": {},
+                    "reason": {
+                      "x-values": [
+                        "broker_unavailable",
+                        "code_invalid",
+                        "code_locked",
+                        "code_missing",
+                        "code_reused",
+                        "from_the_future",
+                        "replay",
+                        "sender_ambiguous",
+                        "sender_not_allowed",
+                        "sender_unknown",
+                        "sender_unverified",
+                        "state_unwritable",
+                        "too_old"
+                      ]
+                    },
+                    "sender_key": {},
+                    "sender_name": {},
+                    "sender_prefix": {}
+                  }
+                }
+              },
+              "total": {},
+              "truncated": {}
+            }
+          }
+        }
+      },
+      "parameters": {
+        "base_topic": {
+          "description": "`[mqtt] base_topic`",
+          "default": "meshcore"
+        },
+        "node_id": {
+          "description": "`[mqtt] node_id`",
+          "default": "radio1"
+        }
+      }
+    },
     "rx": {
       "address": "{base_topic}/{node_id}/rx",
       "messages": {
@@ -2842,6 +2902,24 @@
       "messages": [
         {
           "$ref": "#/channels/pending/messages/pending"
+        }
+      ]
+    },
+    "receive_refused_commands": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/refused_commands"
+      },
+      "summary": "the gateway reads its own topic, to undo what another client writes there",
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/refused_commands/messages/refused_commands"
         }
       ]
     },
@@ -3868,6 +3946,24 @@
       "messages": [
         {
           "$ref": "#/channels/received/messages/received"
+        }
+      ]
+    },
+    "send_refused_commands": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/refused_commands"
+      },
+      "bindings": {
+        "mqtt": {
+          "qos": 1,
+          "retain": true,
+          "bindingVersion": "0.2.0"
+        }
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/refused_commands/messages/refused_commands"
         }
       ]
     },

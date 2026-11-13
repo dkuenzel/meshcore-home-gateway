@@ -731,6 +731,9 @@ async def _published(tmp: Path) -> tuple[_Paho, _Paho]:
     book = ContactBook([Contact(KEY, "Alice")])
     session = cast(CompanionSession, SimpleNamespace(contacts=book, refresh_contacts=_refreshed))
     await bridge.inbox._on_message(MessageReceived(message, session, 0, False))
+    # the same sender's older command: refused as a replay, into `refused_commands` (#141)
+    replayed = dataclasses.replace(message, sender_timestamp=int(T) - 1, text=f"{WORD} again")
+    await bridge.inbox._on_message(MessageReceived(replayed, session, 0, False))
     bridge._contacts.accept(ContactRequest("add", KEY_N.encode(), retained=True))  # refused
     bridge._contacts.accept(ContactRequest("remove", b"", retained=True, key=KEY))  # refused
     for state in (b"off", b"on"):  # excluded, included
@@ -855,6 +858,7 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
         "received:event_type": [kind.value for kind in MessageKind],
         "received:text_type": [received_payload(m, None, None)["text_type"] for m in texts],
         "received:command.reason": [reason.value for reason in Rejection],
+        "refused_commands:commands.reason": [reason.value for reason in Rejection],
         "contact:request": [r for r in _emitted(published, "contact", "request") if r is not None],
         "settings:mode": [mode.value for mode in profile.Mode],
         "settings:settings": list(views.SETTING_NAMES.values()),

@@ -155,6 +155,21 @@ class CommandDecision:
     late: bool = False
 
 
+REFUSALS_KEPT = 5  # the latest refused commands the bridge keeps and publishes (#141)
+
+
+@dataclass(frozen=True, slots=True)
+class Refusal:
+    """A command the bridge refused, as it keeps it (#141): when, why and who sent it; never its
+    word, arguments or code, which the household's automations alone need to know."""
+
+    at: float  # when the bridge took the message from the radio (wall clock)
+    reason: str  # a Rejection's value; one of a later version is kept as it is
+    sender_prefix: str | None  # the 6-byte prefix the message names its sender by, hex
+    sender_key: str | None = None  # the one contact with that prefix, as `received` names it
+    sender_name: str | None = None  # that contact's name
+
+
 def command_word(message: InboundMessage, rules: CommandRules) -> str | None:
     """The command word if the message may be a command: a plain direct message with a sender
     prefix whose first word is configured. Only such messages need the sender checks."""

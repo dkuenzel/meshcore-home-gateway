@@ -1784,7 +1784,7 @@ msgstr ""
 #. security text (docs/translations.md): a command needs the sender's current code; a sender without a code secret is refused while the gateway ignores a secret of a key that is no sender; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "A command the gateway refused shows with its reason after the word refused, but only until the next message arrives. The gateway's log also names a sender refused for too many wrong codes."
+msgid "A command the gateway refused shows with its reason after the word refused, until the gateway accepts a command; its word is left out. The gateway's log also names a sender refused for too many wrong codes."
 msgstr ""
 
 #. security text (docs/translations.md): who can read a chat, and that a name on a channel proves nothing
@@ -1895,7 +1895,7 @@ msgstr ""
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "A refused command shows only until the next message arrives, of any kind."
+msgid "A refused command shows until the gateway accepts a command after it."
 msgstr ""
 
 #. security text (docs/translations.md): a command needs the sender's current code; a sender without a code secret is refused while the gateway ignores a secret of a key that is no sender; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
@@ -6048,7 +6048,7 @@ msgctxt "dashboard"
 msgid "room"
 msgstr ""
 
-#. why the gateway refused a command, after the command's word
+#. why the gateway refused a command, after the words command refused
 #. security text (docs/translations.md): a command needs the sender's current code; a sender without a code secret is refused while the gateway ignores a secret of a key that is no sender; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -6472,6 +6472,13 @@ msgctxt "dashboard"
 msgid "{sender} in {chat}"
 msgstr ""
 
+#. the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "{sender}: command refused: {reason}"
+msgstr ""
+
 #. a channel message in one line: the sender's name, as the sender typed it, then the text
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -6484,13 +6491,6 @@ msgstr ""
 #, python-brace-format
 msgctxt "dashboard"
 msgid "{sender}: {word}"
-msgstr ""
-
-#. the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code
-#: src/meshcore_home_gateway/dashboard.yaml
-#, python-brace-format
-msgctxt "dashboard"
-msgid "{sender}: {word}, refused: {reason}"
 msgstr ""
 
 #. the parts of the gateway and their states. slow is in seconds and free in MB, such as 0.4 and 5120, written with this language's decimal mark; d how far the clock is off, such as 12 min; why why asking is paused; total and waiting are whole numbers; spare and hour seconds of airtime, such as 9 and 36
@@ -7049,6 +7049,13 @@ msgstr ""
 #: src/meshcore_home_gateway/mqtt/discovery.py
 msgctxt "home assistant"
 msgid "Receive errors"
+msgstr ""
+
+#. sensor (timestamp) of the gateway: the latest commands it refused,
+#. with who sent each and why; its state is the time of the newest one
+#: src/meshcore_home_gateway/mqtt/discovery.py
+msgctxt "home assistant"
+msgid "Refused commands"
 msgstr ""
 
 #. the name of an entity that exists only for a moment, while the gateway

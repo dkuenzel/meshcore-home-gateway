@@ -20,6 +20,7 @@ class Topics:
         self.pending = f"{self.root}/pending"  # the messages accepted and not final yet
         self.settings = f"{self.root}/settings"  # the managed radio profile (ADR 0020)
         self.config = f"{self.root}/config"  # the settings in effect, by an allowlist
+        self.refused_commands = f"{self.root}/refused_commands"  # the latest refused (#141)
         # events
         self.contact_event = f"{self.root}/contact"  # added, removed; hidden or shown in HA
         self.node_event = f"{self.root}/node"  # a node heard for the first time

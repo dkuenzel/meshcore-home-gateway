@@ -27,18 +27,19 @@ from visibility import household_viewer
 
 from meshcore_home_gateway import dashboard
 from meshcore_home_gateway.config_view import shown_settings, target_settings
-from meshcore_home_gateway.core.commands import CommandDecision, Rejection
+from meshcore_home_gateway.core.commands import REFUSALS_KEPT, Refusal
 from meshcore_home_gateway.core.contacts import Contact
 from meshcore_home_gateway.core.mesh import Node
 from meshcore_home_gateway.core.model import InboundMessage, MessageKind, Position
 from meshcore_home_gateway.mqtt.payloads import received_payload
-from meshcore_home_gateway.views import config_document, contact_event, iso
+from meshcore_home_gateway.views import config_document, contact_event, iso, refused_document
 from test_contact_devices import ALICE, ALICE_NODE, COMPANION, Broker
 from test_dashboard import (
     BOB,
     CONFIGURATION,
     NONE,
     PENDING,
+    SHOWS_NOTHING,
     ZED,
     card,
     cards,
@@ -53,7 +54,9 @@ from test_dashboard import (
     render,
     shown_by_content,
     shows_nothing,
+    speaking,
 )
+from test_dashboard import said as text_in
 
 HEALTH = "set ns = namespace(waiting=0, look=[])"
 FACTS = "set transport = cfg.get('transport')"
@@ -295,19 +298,6 @@ async def test_latest_of_each_kind_shows_the_newest_event_of_each(
     assert problems(caplog) == []
 
 
-def refused(word: str, reason: str, sender: Contact | None = None) -> dict[str, Any]:
-    """A command the gateway refused, as `received` carries it (docs/mqtt-api.md, Commands)."""
-    message = InboundMessage(
-        MessageKind.CONTACT, f"{word} now", 1_760_000_000, time.time(), sender_prefix=BOB[:12]
-    )
-    decision = CommandDecision(word, rejection=Rejection(reason) if reason in REASONS else None)
-    payload = received_payload(message, sender, None, decision)
-    return payload | {"command": payload["command"] | {"reason": reason}}
-
-
-REASONS = {reason.value for reason in Rejection}
-
-
 async def test_latest_of_each_kind_shows_a_refused_command_with_its_reason_in_words(
     hass: HomeAssistant,
     mqtt: Any,
@@ -317,24 +307,41 @@ async def test_latest_of_each_kind_shows_a_refused_command_with_its_reason_in_wo
     caplog: pytest.LogCaptureFixture,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """The newest command event of either kind: one the gateway refused, which only `received`
-    carries (command.accepted false), while it came after the newest accepted one, with the
-    reason in words, also code_locked (#79); a reason added later stays a code. A message that
-    is no command, and a command accepted afterwards, leave the row to the accepted one."""
+    """#141: the newest refused command, from the gateway's `refused_commands`, while it came
+    after the newest accepted one: its sender and its reason in words, never its word (ADR 0009),
+    also code_locked (#79); a reason added later stays a code. A message that is no command
+    leaves it there (2.1 read it from `received`, which the next message of any kind replaced);
+    a command accepted afterwards takes the row."""
     config = make_config()
     loaded = await made(hass, hass_ws_client, config, tmp_path)
     topics = await gateway(hass, config)
     latest = card(cards(loaded, "gateway"), LATEST)
-    bob = Contact(BOB, "Bob")
-    freezer.tick(timedelta(seconds=1))
-    await fire(hass, topics.received, refused("arm", "code_locked", bob))
-    assert row(render(hass, latest), "Command").startswith(
-        "Bob: arm, refused: too many wrong codes · "
-    )
-    command = {"event_type": "arm", "args": "now", "sender_key": BOB, "sender_name": "Bob"}
-    freezer.tick(timedelta(seconds=1))
-    await fire(hass, topics.command, command | {"sent_at": iso(time.time())})
-    assert row(render(hass, latest), "Command").startswith("Bob: arm · ")
+    await fire(hass, topics.refused_commands, refused_document([]), retain=True)
+    assert row(render(hass, latest), "Command") == "none yet"
+    kept: list[Refusal] = []
+
+    async def refuse(
+        reason: str,
+        key: str | None = BOB,
+        name: str | None = "Bob",
+        behind_s: float = 0,
+        step_s: float = 1,
+    ) -> str:
+        freezer.tick(timedelta(seconds=step_s))
+        kept.insert(0, Refusal(time.time() - behind_s, reason, BOB[:12], key, name))
+        await fire(hass, topics.refused_commands, refused_document(kept[:REFUSALS_KEPT]))
+        return row(render(hass, latest), "Command")
+
+    async def accept(behind_s: float = 0, step_s: float = 1) -> str:
+        """`behind_s`: the gateway's clock behind Home Assistant's."""
+        freezer.tick(timedelta(seconds=step_s))
+        command = {"event_type": "arm", "args": "now", "sender_key": BOB, "sender_name": "Bob"}
+        at = iso(time.time() - behind_s)
+        await fire(hass, topics.command, command | {"sent_at": at, "received_at": at})
+        return row(render(hass, latest), "Command")
+
+    assert (await refuse("code_locked")).startswith("Bob: command refused: too many wrong codes · ")
+    assert (await accept()).startswith("Bob: arm · ")
     for reason, words in (
         ("code_invalid", "wrong code"),
         ("code_missing", "no code"),
@@ -343,29 +350,98 @@ async def test_latest_of_each_kind_shows_a_refused_command_with_its_reason_in_wo
         ("sender_not_allowed", "sender not allowed"),
         ("code_unheard_of", "<code>code_unheard_of</code>"),
     ):
-        freezer.tick(timedelta(seconds=1))
-        await fire(hass, topics.received, refused("status", reason, bob))
-        assert row(render(hass, latest), "Command").startswith(
-            f"Bob: status, refused: {words} · "
-        ), reason
-    freezer.tick(timedelta(seconds=1))
-    await fire(hass, topics.received, refused("status", "sender_unknown"))  # no contact
-    assert row(render(hass, latest), "Command").startswith(
-        f"{BOB[:8]}: status, refused: sender not a contact · "
+        said = await refuse(reason)
+        assert said.startswith(f"Bob: command refused: {words} · "), reason
+        assert "arm" not in said, reason
+    assert (await refuse("sender_unknown", None, None)).startswith(
+        f"{BOB[:8]}: command refused: sender not a contact · "  # the prefix it came with
     )
     message = InboundMessage(MessageKind.CONTACT, "Hello", 1_760_000_000, time.time())
+    hello = received_payload(message, Contact(BOB, "Bob"), None)
+    # a message that is no command; and one whose refusal is on `received` alone, as 2.1 read it
+    for command in (None, {"word": "status", "accepted": False, "reason": "code_invalid"}):
+        freezer.tick(timedelta(seconds=1))
+        await fire(hass, topics.received, hello | {"command": command})
+        assert row(render(hass, latest), "Command").startswith(
+            f"{BOB[:8]}: command refused: sender not a contact · "
+        ), command
+    assert (await accept()).startswith("Bob: arm · ")
+    await refuse("too_old")
+    assert (await accept()).startswith("Bob: arm · ")
+    # the gateway's clock a minute behind Home Assistant's: both times are the gateway's, so a
+    # refusal after an accepted command shows, though it came before the command's event in
+    # Home Assistant's time
+    freezer.tick(timedelta(minutes=2))
+    assert (await accept(60)).startswith("Bob: arm · ")
+    assert (await refuse("replay", behind_s=60)).startswith(
+        "Bob: command refused: an old command again · "
+    )
+    assert (await accept(60)).startswith("Bob: arm · ")
+    # a refusal and an accepted command within one second, the times both documents carry: the
+    # one Home Assistant got later counts
+    freezer.move_to("2027-01-15T08:30:00+00:00")
+    refused_now = "Bob: command refused: wrong code · "
+    assert (await refuse("code_invalid", step_s=0.1)).startswith(refused_now)  # .1
+    assert (await accept(step_s=0.3)).startswith("Bob: arm · ")  # .4
+    assert (await refuse("code_invalid", step_s=0.3)).startswith(refused_now)  # .7
+    assert (await accept(step_s=0.2)).startswith("Bob: arm · ")  # .9
+    sensor = f"sensor.meshcore_home_gateway_{config.mqtt.node_id}_refused_commands"
+    for forged in (["x", 1], "x", {"at": iso(time.time())}):  # no refusal, and no error
+        hass.states.async_set(sensor, "unknown", {"commands": forged})
+        assert row(render(hass, latest), "Command").startswith("Bob: arm · "), forged
+    assert problems(caplog) == []
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+@pytest.mark.parametrize("name", [*SHOWS_NOTHING, "Carol"])
+async def test_latest_of_each_kind_names_the_key_when_a_name_shows_nothing(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    freezer: FrozenDateTimeFactory,
+    language: str,
+    name: str,
+) -> None:
+    """A name of only invisible characters, such as a zero-width space or a Hangul filler,
+    shows nothing: each row that names a node names it by its key then, as it does a node
+    without a name (a contact's and a telemetry event's prefix, a new node's and a command
+    sender's first 8 digits), never by an empty bold name (heard_nodes "full" sends the name
+    of a new node since 2.2); a name that shows stays."""
+    config = speaking(language, monkeypatch)
+    loaded = await made(hass, hass_ws_client, config, tmp_path)
+    topics = await gateway(hass, config)
+    latest = card(cards(loaded, "gateway"), LATEST)
+    shown = None if name in SHOWS_NOTHING else name
+    added = contact_event("added", ZED, name=name, node_type=COMPANION)
+    await fire(hass, topics.contact_event, added)
+    unanswered = {"event_type": "unanswered", "key": ZED, "prefix": ZED[:12], "name": name}
+    await fire(hass, topics.telemetry_event, unanswered | {"state": "away"})
+    node = {"event_type": "new", "key": ZED, "prefix": ZED[:12], "name": name, "type": "chat"}
+    await fire(hass, topics.node_event, node)
+    refusal = Refusal(time.time(), "code_invalid", ZED[:12], ZED, name)
+    await fire(hass, topics.refused_commands, refused_document([refusal]))
+    said = render(hass, latest)
+    first = f"<b>{shown or ZED[:12]}</b> "
+    assert row(said, text_in(config, "Contact")).startswith(first), said
+    assert row(said, text_in(config, "Position and battery")).startswith(first), said
+    assert row(said, text_in(config, "New node")).startswith(f"<b>{shown or ZED[:8]}</b> "), said
+    refused = text_in(
+        config,
+        "{sender}: command refused: {reason}",
+        sender=shown or ZED[:8],
+        reason=text_in(config, "wrong code"),
+    )
+    assert row(said, text_in(config, "Command")).startswith(f"{refused} · "), said
     freezer.tick(timedelta(seconds=1))
-    await fire(hass, topics.received, received_payload(message, bob, None))
-    assert row(render(hass, latest), "Command").startswith("Bob: arm · ")
-    freezer.tick(timedelta(seconds=1))
-    await fire(hass, topics.received, refused("status", "too_old", bob))
-    freezer.tick(timedelta(seconds=1))
-    await fire(hass, topics.command, command | {"sent_at": iso(time.time())})
-    assert row(render(hass, latest), "Command").startswith("Bob: arm · ")
-    accepted = refused("arm", "", bob)  # `received` of an accepted one: no refusal
-    freezer.tick(timedelta(seconds=1))
-    await fire(hass, topics.received, accepted | {"command": {"word": "arm", "accepted": True}})
-    assert row(render(hass, latest), "Command").startswith("Bob: arm · ")
+    command = {"event_type": "arm", "args": "now", "sender_key": ZED, "sender_name": name}
+    at = iso(time.time())
+    await fire(hass, topics.command, command | {"sent_at": at, "received_at": at})
+    accepted = text_in(config, "{sender}: {word}", sender=shown or ZED[:8], word="arm")
+    assert row(render(hass, latest), text_in(config, "Command")).startswith(f"{accepted} · ")
     assert problems(caplog) == []
 
 

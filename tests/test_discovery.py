@@ -11,6 +11,7 @@ from meshcore_home_gateway import __version__, i18n
 from meshcore_home_gateway.config import DEFAULT_DEVICE_NAME, Config, parse_config
 from meshcore_home_gateway.config_view import shown_settings, target_settings
 from meshcore_home_gateway.core import telemetry
+from meshcore_home_gateway.core.commands import Refusal
 from meshcore_home_gateway.core.lpp import Named
 from meshcore_home_gateway.core.mesh import (
     AirtimeMeter,
@@ -47,6 +48,7 @@ from meshcore_home_gateway.views import (
     history_document,
     nodes_document,
     pending_document,
+    refused_document,
     settings_document,
     stats_document,
 )
@@ -213,6 +215,7 @@ def test_entities_and_their_sources() -> None:
         "message_history",
         "pending_messages",
         "configuration",
+        "refused_commands",
     }
     assert cmps["radio"]["state_topic"] == "meshcore/radio-1/state"
     assert cmps["radio"]["payload_on"] == "connected"
@@ -243,6 +246,7 @@ def test_every_template_reads_a_key_of_its_document() -> None:
         TOPICS.history: history_document([]),
         TOPICS.pending: pending_document([]),
         TOPICS.config: config_document(0.0, target_settings(CONFIG, None), shown_settings(CONFIG)),
+        TOPICS.refused_commands: refused_document([]),
     }
     for topic, document in documents.items():
         assert _template_keys(cmps, topic) <= set(document), topic
@@ -449,7 +453,43 @@ def test_command_entity_only_with_command_words() -> None:
         '[radio]\ntransport = "tcp"\ntcp_unauthenticated = true\n'
         'host = "h"\n[mqtt]\nhost = "h"\nnode_id = "n"\n'
     )
-    assert "command" not in discovery_payload(plain, Topics("meshcore", "n"))["cmps"]
+    cmps = discovery_payload(plain, Topics("meshcore", "n"))["cmps"]
+    assert "command" not in cmps
+    assert "refused_commands" not in cmps
+
+
+REFUSED_STATE = (  # the newest refusal's time; none refused yet: unknown
+    "{{ value_json.commands[0].at if value_json.commands else None }}"
+)
+
+
+def test_the_refused_commands_are_a_timestamp_sensor_that_outlives_the_gateway() -> None:
+    """#141: with command words, the `refused_commands` document as a sensor, as the history:
+    its state the newest refusal's time, the document its attributes, and its own availability
+    on its own topic, so that the refusals stay readable while the gateway is offline."""
+    sensor = discovery_payload(CONFIG, TOPICS)["cmps"]["refused_commands"]
+    assert sensor == {
+        "p": "sensor",
+        "unique_id": "meshcore_home_gateway_radio-1_refused_commands",
+        "default_entity_id": "sensor.meshcore_home_gateway_radio-1_refused_commands",
+        "name": "Refused commands",
+        "device_class": "timestamp",
+        "icon": "mdi:shield-alert",
+        "state_topic": "meshcore/radio-1/refused_commands",
+        "value_template": REFUSED_STATE,
+        "json_attributes_topic": "meshcore/radio-1/refused_commands",
+        "availability": [
+            {"topic": "meshcore/radio-1/refused_commands", "value_template": "{{ 'online' }}"}
+        ],
+    }
+    off = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, controls=False))
+    assert discovery_payload(off, TOPICS)["cmps"]["refused_commands"] == sensor  # no control
+    newest = refused_document([Refusal(1_800_000_000.0, "replay", KEY[:12], KEY, "Alice")])
+    assert newest["commands"][0]["at"] == "2027-01-15T08:00:00+00:00"  # what the template reads
+    german = replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, language="de"))
+    assert discovery_payload(german, TOPICS)["cmps"]["refused_commands"]["name"] == (
+        "Abgelehnte Befehle"
+    )
 
 
 def test_a_taken_tcp_link_is_a_problem_only_over_tcp() -> None:

@@ -489,6 +489,7 @@ def test_a_sent_message_names_its_target_its_id_and_when_it_was_accepted(
                     "queued_at": iso(NOW),
                     "suspect": False,
                     "reason": None,
+                    "nonce": False,  # sent without confirm_nonce's code (#142)
                 }
             ]
 
@@ -511,6 +512,7 @@ def test_failed_and_channel_messages_carry_their_reason_and_no_suspicion(tmp_pat
             )
             assert (failed["target"], failed["queued_at"]) == ("bob", iso(NOW))
             assert (sent["state"], sent["reason"], sent["suspect"]) == ("sent", None, None)
+            assert (failed["nonce"], sent["nonce"]) == (False, False)
             assert (sent["target"], sent["channel_index"], sent["kind"]) == ("alerts", 0, "channel")
             ids = {d["target"]: d["id"] for d in bus.payloads("/delivery")}
             assert (failed["id"], sent["id"]) == (ids["bob"], ids["alerts"])
@@ -535,7 +537,8 @@ def test_a_received_message_names_the_target_it_came_through(tmp_path: Path) -> 
             targets = {m["text"]: m["target"] for m in history["messages"]}
             assert targets == {"on my way": "alerts", "hi there": "alice", "hello": None}
             for entry in history["messages"]:
-                assert [entry[k] for k in ("id", "queued_at", "suspect", "reason")] == [None] * 4
+                keys = ("id", "queued_at", "suspect", "reason", "nonce")
+                assert [entry[k] for k in keys] == [None] * 5
 
     scenario(main)
 

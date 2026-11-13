@@ -308,6 +308,7 @@ views:
           - type: markdown
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro name_or(x, key=none) -%}{{ m(x if (x or '') is search('[^\u0000-\u0020\u007f-\u00a0\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180f\u2000-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]') else key or '?') }}{%- endmacro -%}
               {%- macro mt(x) -%}{%- set brk = '\u200b' -%}{{ m(x) | regex_replace('((?:&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f][\u0300-\u036f\u0483-\u0489]*){20})(?=&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f])', '\\1' ~ brk) }}{%- endmacro -%}
               {%- macro mon(v) -%}
               {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
@@ -342,12 +343,12 @@ views:
               {%- endif -%}
               {%- endif -%}
               {%- endmacro -%}
-              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87): cut while the setting is on now; the history carries no flag, so a message sent before a change of it shows the other way until it leaves the history; a gateway that does not say, being offline, as before (PC 16) -#}
-              {%- set nonce = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set nonce = not (nonce is mapping and nonce.get('confirm_nonce') == false) -%}
+              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87), whose entries say since 2.2 whether it added one (nonce, #142): cut where an entry says true, whatever the setting is now, never where it says false; an entry of 2.1 says nothing (null): cut it while the setting is on now or the gateway, being offline, does not say, as before (PC 16) -#}
+              {%- set coded = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set coded = not (coded is mapping and coded.get('confirm_nonce') == false) -%}
               {%- macro line(e) -%}
               {%- set raw = e.get('text') or '' -%}
-              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if nonce and e.get('direction') == 'out' and e.get('kind') == 'contact' else raw -%}
-              {%- set text = mt(raw[:60] ~ ('…' if raw | length > 60 else '')) -%}{%- set sender = m(e.get('name') or '?') -%}
+              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if e.get('direction') == 'out' and e.get('kind') == 'contact' and (e.get('nonce') == true or (e.get('nonce') is none and coded)) else raw -%}
+              {%- set text = mt(raw[:60] ~ ('…' if raw | length > 60 else '')) -%}{%- set sender = name_or(e.get('name')) -%}
               {%- if e.get('direction') == 'in' and e.get('kind') == 'channel' -%}
               {#- Translators: a channel message in one line: the sender's name, as the sender typed it, then the text -#}
               _("{sender}: {text}")
@@ -482,6 +483,7 @@ views:
           - type: markdown
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro name_or(x, key=none) -%}{{ m(x if (x or '') is search('[^\u0000-\u0020\u007f-\u00a0\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180f\u2000-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]') else key or '?') }}{%- endmacro -%}
               {%- macro mt(x) -%}{%- set brk = '\u200b' -%}{{ m(x) | regex_replace('((?:&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f][\u0300-\u036f\u0483-\u0489]*){20})(?=&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f])', '\\1' ~ brk) }}{%- endmacro -%}
               {%- macro mon(v) -%}
               {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
@@ -524,12 +526,12 @@ views:
               {%- else -%}{{ m(v) }}
               {%- endif -%}
               {%- endmacro -%}
-              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87): cut while the setting is on now; the history carries no flag, so a message sent before a change of it shows the other way until it leaves the history; a gateway that does not say, being offline, as before (PC 16) -#}
-              {%- set nonce = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set nonce = not (nonce is mapping and nonce.get('confirm_nonce') == false) -%}
+              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87), whose entries say since 2.2 whether it added one (nonce, #142): cut where an entry says true, whatever the setting is now, never where it says false; an entry of 2.1 says nothing (null): cut it while the setting is on now or the gateway, being offline, does not say, as before (PC 16) -#}
+              {%- set coded = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set coded = not (coded is mapping and coded.get('confirm_nonce') == false) -%}
               {%- macro line(e) -%}
               {%- set raw = e.get('text') or '' -%}
-              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if nonce and e.get('direction') == 'out' and e.get('kind') == 'contact' else raw -%}
-              {%- set text = mt(raw[:60] ~ ('…' if raw | length > 60 else '')) -%}{%- set sender = m(e.get('name') or '?') -%}
+              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if e.get('direction') == 'out' and e.get('kind') == 'contact' and (e.get('nonce') == true or (e.get('nonce') is none and coded)) else raw -%}
+              {%- set text = mt(raw[:60] ~ ('…' if raw | length > 60 else '')) -%}{%- set sender = name_or(e.get('name')) -%}
               {%- if e.get('direction') == 'in' and e.get('kind') == 'channel' -%}
               {#- Translators: a channel message in one line: the sender's name, as the sender typed it, then the text -#}
               _("{sender}: {text}")
@@ -596,6 +598,7 @@ views:
           - type: markdown
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro name_or(x, key=none) -%}{{ m(x if (x or '') is search('[^\u0000-\u0020\u007f-\u00a0\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180f\u2000-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]') else key or '?') }}{%- endmacro -%}
               {%- macro mt(x) -%}{%- set brk = '\u200b' -%}{{ m(x) | regex_replace('((?:&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f][\u0300-\u036f\u0483-\u0489]*){20})(?=&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f])', '\\1' ~ brk) }}{%- endmacro -%}
               {%- macro mon(v) -%}
               {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
@@ -673,21 +676,21 @@ views:
               {%- elif e.get('kind') == 'channel' -%}
               {#- Translators: a channel of the radio without a chat page; n is its number -#}
               _("channel {n}")
-              {%- else -%}{{ m(e.get('name') or '?') }}
+              {%- else -%}{{ name_or(e.get('name')) }}
               {%- endif -%}
               {%- endmacro -%}
-              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87): cut while the setting is on now; the history carries no flag, so a message sent before a change of it shows the other way until it leaves the history; a gateway that does not say, being offline, as before (PC 16) -#}
-              {%- set nonce = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set nonce = not (nonce is mapping and nonce.get('confirm_nonce') == false) -%}
+              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87), whose entries say since 2.2 whether it added one (nonce, #142): cut where an entry says true, whatever the setting is now, never where it says false; an entry of 2.1 says nothing (null): cut it while the setting is on now or the gateway, being offline, does not say, as before (PC 16) -#}
+              {%- set coded = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set coded = not (coded is mapping and coded.get('confirm_nonce') == false) -%}
               {%- macro entry(e) -%}
               {%- set raw = (e.get('text') or '') | string -%}
-              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if nonce and e.get('direction') == 'out' and e.get('kind') == 'contact' else raw -%}
+              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if e.get('direction') == 'out' and e.get('kind') == 'contact' and (e.get('nonce') == true or (e.get('nonce') is none and coded)) else raw -%}
               {%- set trouble = e.get('direction') != 'in' and (e.get('state') in ['failed', 'expired'] or e.get('suspect') == true) -%}
               {%- set state = 'suspect' if e.get('state') == 'confirmed' and e.get('suspect') == true else (e.get('state') or e.get('step') or '') -%}
               {%- set attempt = e.get('attempt') | int(0) -%}{%- set attempts = e.get('max_attempts') | int(0) -%}{%- set later = when(e.get('at')) -%}
-              {%- set sender = m(e.get('name') or '?') -%}{%- set chat = label(e) -%}
+              {%- set sender = name_or(e.get('name')) -%}{%- set chat = label(e) -%}
               {%- if e.get('direction') == 'in' -%}
               {#- Translators: who wrote a message of Latest messages: sender is the name the sender gave, chat the chat it came in -#}
-              <table role="presentation" width="100%"><tr><td width="85%" align="left"><small><b>{% if e.get('kind') == 'channel' %}_("{sender} in {chat}"){% elif not e.get('contact_key') %}_("{sender} (not a contact)"){% else %}{{ m(e.get('name') or '?') }}{% endif %}</b> · {{ when(e.get('at')) }}</small><br>{{ mt(raw) }}</td><td width="15%"></td></tr></table>
+              <table role="presentation" width="100%"><tr><td width="85%" align="left"><small><b>{% if e.get('kind') == 'channel' %}_("{sender} in {chat}"){% elif not e.get('contact_key') %}_("{sender} (not a contact)"){% else %}{{ name_or(e.get('name')) }}{% endif %}</b> · {{ when(e.get('at')) }}</small><br>{{ mt(raw) }}</td><td width="15%"></td></tr></table>
               {%- else -%}
               {#- Translators: on its way: attempt and attempts are whole numbers; ✓✓ {later}: delivered, later the time the person's radio confirmed it, such as 10:34; to {chat}: to whom it went, chat is a chat's name -#}
               <table role="presentation" width="100%"><tr><td width="15%"></td><td width="85%" align="right">{% if trouble %}<ha-alert alert-type="warning">{% endif %}<small>_("to {chat}") · {{ when(e.get('queued_at') or e.get('at')) }} · {% if state == 'sent' and e.get('step') %}_("… sent, waiting for confirmation (try {attempt} of {attempts})"){% elif state == 'confirmed' and e.get('queued_at') and when(e.get('queued_at')) != later %}_("✓✓ {later}"){% else %}{{ mark(state) }}{% endif %}{% if trouble and e.get('reason') and not (state == 'expired' and e.get('reason') == 'queue_ttl') %} ({{ why(e.get('reason')) }}){% endif %}</small><br>{% if e.get('step') %}<i>{{ mt(raw) }}</i>{% else %}{{ mt(raw) }}{% endif %}{% if trouble %}</ha-alert>{% endif %}</td></tr></table>
@@ -1138,6 +1141,7 @@ views:
             text_only: true
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro name_or(x, key=none) -%}{{ m(x if (x or '') is search('[^\u0000-\u0020\u007f-\u00a0\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180f\u2000-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]') else key or '?') }}{%- endmacro -%}
               {%- macro mon(v) -%}
               {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
               {%- if v == 1 -%}_("Jan")
@@ -1219,7 +1223,7 @@ views:
               {%- set e = 'event.@gw@_contact' -%}
               {%- set kind = state_attr(e, 'event_type') -%}
               {%- set reason = state_attr(e, 'reason') -%}
-              {%- set who = m(state_attr(e, 'name') or state_attr(e, 'prefix') or '?') -%}
+              {%- set who = name_or(state_attr(e, 'name'), state_attr(e, 'prefix')) -%}
               {%- set ns = namespace(page=false) -%}
               {%- for x in ["@chats@"] if x.key and x.key == state_attr(e, 'key') -%}{%- set ns.page = true -%}{%- endfor -%}
               {#- Translators: Return (↵) is the keyboard's key: the word the phone keyboards of your language show, with the sign ↵, and the same word as in the name beside a chat's Send button (Return, then Send) -#}
@@ -1229,9 +1233,9 @@ views:
               {%- elif kind is none %}
               <div>_("No contact event yet.")</div>
               {%- elif kind in ['refused', 'failed'] %}
-              <div><ha-alert alert-type="warning"><b>{{ m(state_attr(e, 'name') or state_attr(e, 'prefix') or '?') }}</b> {{ what(kind) }}{% if reason %} ({{ why(reason) }}){% endif %} · {{ when(states(e)) }}</ha-alert></div>
+              <div><ha-alert alert-type="warning"><b>{{ name_or(state_attr(e, 'name'), state_attr(e, 'prefix')) }}</b> {{ what(kind) }}{% if reason %} ({{ why(reason) }}){% endif %} · {{ when(states(e)) }}</ha-alert></div>
               {%- else %}
-              <div><b>{{ m(state_attr(e, 'name') or state_attr(e, 'prefix') or '?') }}</b> {{ what(kind) }} · {{ when(states(e)) }}</div>
+              <div><b>{{ name_or(state_attr(e, 'name'), state_attr(e, 'prefix')) }}</b> {{ what(kind) }} · {{ when(states(e)) }}</div>
               {%- if kind == 'added' and state_attr(e, 'type') == 'chat' and not ns.page %}
               {#- Translators: who is a contact's name #}
               <div>_("To write to {who} here, your administrator makes the dashboard again.")</div>
@@ -1281,6 +1285,7 @@ views:
             text_only: true
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro name_or(x, key=none) -%}{{ m(x if (x or '') is search('[^\u0000-\u0020\u007f-\u00a0\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180f\u2000-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]') else key or '?') }}{%- endmacro -%}
               {#- the reasons of mqtt-api.md, Advert nearby (views.SELF_ADVERT_REASONS), and the radio's table_full in words; its other refusals, and one added later, stay codes -#}
               {%- macro cause(v) -%}
               {#- Translators: why the gateway sent no advert, after No advert sent -#}
@@ -1320,7 +1325,7 @@ views:
               {%- elif at is not none and clock - at < timedelta(minutes=10) and step in ['sent', 'refused', 'failed'] %}
               {%- set time = m((at | as_local).strftime('%H:%M')) -%}
               {%- if step == 'sent' %}
-              {%- set called = m(state_attr(e, 'name') or '?') -%}
+              {%- set called = name_or(state_attr(e, 'name')) -%}
               {#- Translators: time is a clock time such as 10:31; called is this home's radio's name as the advert carried it #}
               <div><ha-alert alert-type="success">_("Advert sent at {time} with the name {called}.")</ha-alert></div>
               {%- elif code == 'too_soon' and later is not none %}
@@ -1988,9 +1993,11 @@ views:
               {%- else -%}<code>{{ m(v) }}</code>
               {%- endif -%}
               {%- endmacro -%}
+              {#- a node's name from the mesh, else its key: a name shows nothing when it has only the characters that alone show no name to the gateway (core.contacts.shows_a_name: spaces, controls, format and invisible characters, the Hangul fillers, the braille blank), and is none then (rule 23) -#}
+              {%- macro name_or(x, key=none) -%}{{ m(x if (x or '') is search('[^\u0000-\u0020\u007f-\u00a0\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180f\u2000-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]') else key or '?') }}{%- endmacro -%}
               {#- the reasons of mqtt-api.md, Commands (core.commands.Rejection); one added later stays a code -#}
               {%- macro why(v) -%}
-              {#- Translators: why the gateway refused a command, after the command's word -#}
+              {#- Translators: why the gateway refused a command, after the words command refused -#}
               {%- if v == 'sender_unknown' -%}_("sender not a contact")
               {%- elif v == 'sender_ambiguous' -%}_("another contact has the same key prefix")
               {%- elif v == 'sender_not_allowed' -%}_("sender not allowed")
@@ -2007,14 +2014,16 @@ views:
               {%- else -%}<code>{{ m(v) }}</code>
               {%- endif -%}
               {%- endmacro -%}
-              {%- set c = 'event.@gw@_contact' -%}{%- set t = 'event.@gw@_telemetry' -%}{%- set s = 'event.@gw@_setting' -%}{%- set n = 'event.@gw@_node' -%}{%- set k = 'event.@gw@_command' -%}{%- set r = 'event.@gw@_message' -%}
-              {#- a refused command is only on received (command.accepted false), which the next message of any kind replaces: it shows while it came after the newest accepted one, until then -#}
-              {%- set q = state_attr(r, 'command') -%}{%- set at = states(r) | as_datetime(default=none) -%}{%- set last = states(k) | as_datetime(default=none) -%}
-              {%- set refused = q is mapping and q.get('accepted') == false and at is not none and (last is none or not state_attr(k, 'event_type') or at > last) -%}
+              {%- set c = 'event.@gw@_contact' -%}{%- set t = 'event.@gw@_telemetry' -%}{%- set s = 'event.@gw@_setting' -%}{%- set n = 'event.@gw@_node' -%}{%- set k = 'event.@gw@_command' -%}{%- set f = 'sensor.@gw@_refused_commands' -%}
+              {#- the newest refused command, from the gateway's refused_commands without its word (#141): it shows while it came after the newest accepted one, until then; both times on the gateway's clock, in whole seconds: of two in one second, the one Home Assistant got later; Home Assistant sets the sensor's last update anew when it rebuilds its state (its restart) and when it gets the broker back (a broker restart, a reload of the MQTT integration): the sensor was unavailable meanwhile, the command event's time stays; so then a refusal in the second of the newest accepted command shows until a command is accepted again (docs/home-assistant.md) -#}
+              {%- set q = (state_attr(f, 'commands') or []) | first -%}
+              {%- set at = q.get('at') | as_timestamp(default=none) if q is mapping else none -%}{%- set last = (state_attr(k, 'received_at') or states(k)) | as_timestamp(default=none) -%}
+              {%- set later = states[f] is not none and (states[f].last_updated | as_timestamp(default=0)) > (states(k) | as_timestamp(default=0)) -%}
+              {%- set refused = at is not none and (last is none or not state_attr(k, 'event_type') or at > last or (at == last and later)) -%}
               {%- if refused -%}
-              {%- set word = m(q.get('word')) -%}{%- set sender = m(state_attr(r, 'sender_name') or (state_attr(r, 'sender_key') or state_attr(r, 'sender_prefix') or '')[:8] or '?') -%}{%- set reason = why(q.get('reason')) -%}
+              {%- set sender = name_or(q.get('sender_name'), (q.get('sender_key') or q.get('sender_prefix') or '')[:8]) -%}{%- set reason = why(q.get('reason')) -%}
               {%- else -%}
-              {%- set word = m(state_attr(k, 'event_type')) -%}{%- set sender = m(state_attr(k, 'sender_name') or (state_attr(k, 'sender_key') or '')[:8] or '?') -%}
+              {%- set word = m(state_attr(k, 'event_type')) -%}{%- set sender = name_or(state_attr(k, 'sender_name'), (state_attr(k, 'sender_key') or '')[:8]) -%}
               {%- endif -%}
               {%- if states['binary_sensor.@gw@_radio'] is none -%}
               <div>_("The gateway is not found: see the first line of Overview.")</div>
@@ -2023,9 +2032,9 @@ views:
               <div>_("The gateway is offline: this shows again when it is back.")</div>
               {%- else -%}
               {#- Translators: the newest event of each kind; sender is the name of a contact that sent a command, word a command word, reason why the gateway refused the command, such as wrong code #}
-              <table><tr><td>_("Contact")</td><td>{% if state_attr(c, 'event_type') %}<b>{{ m(state_attr(c, 'name') or state_attr(c, 'prefix') or '?') }}</b> {{ what(state_attr(c, 'event_type')) }} · {{ when(states(c)) }}{% else %}_("none yet"){% endif %}</td></tr><tr><td>_("Position and battery")</td><td>{% if state_attr(t, 'event_type') %}<b>{{ m(state_attr(t, 'name') or state_attr(t, 'prefix') or '?') }}</b> {% if state_attr(t, 'event_type') == 'answered' %}_("answers again"){% else %}_("stopped answering"){% endif %} · {{ when(states(t)) }}{% else %}_("none yet"){% endif %}</td></tr><tr><td>_("Radio settings")</td><td>{% if state_attr(s, 'event_type') %}{{ setting(state_attr(s, 'setting')) }}: {{ status(state_attr(s, 'event_type')) }} · {{ when(states(s)) }}{% else %}_("none yet"){% endif %}</td></tr><tr><td>_("New node")</td><td>{% if state_attr(n, 'event_type') %}<b>{{ m(state_attr(n, 'name') or (state_attr(n, 'key') or '')[:8] or '?') }}</b> _("heard for the first time") · {{ when(states(n)) }}{% else %}_("none yet"){% endif %}</td></tr>{% if states[k] is not none %}<tr><td>_("Command")</td><td>{% if refused %}_("{sender}: {word}, refused: {reason}") · {{ when(states(r)) }}{% elif state_attr(k, 'event_type') %}_("{sender}: {word}") · {{ when(states(k)) }}{% else %}_("none yet"){% endif %}</td></tr>{% endif %}</table>
+              <table><tr><td>_("Contact")</td><td>{% if state_attr(c, 'event_type') %}<b>{{ name_or(state_attr(c, 'name'), state_attr(c, 'prefix')) }}</b> {{ what(state_attr(c, 'event_type')) }} · {{ when(states(c)) }}{% else %}_("none yet"){% endif %}</td></tr><tr><td>_("Position and battery")</td><td>{% if state_attr(t, 'event_type') %}<b>{{ name_or(state_attr(t, 'name'), state_attr(t, 'prefix')) }}</b> {% if state_attr(t, 'event_type') == 'answered' %}_("answers again"){% else %}_("stopped answering"){% endif %} · {{ when(states(t)) }}{% else %}_("none yet"){% endif %}</td></tr><tr><td>_("Radio settings")</td><td>{% if state_attr(s, 'event_type') %}{{ setting(state_attr(s, 'setting')) }}: {{ status(state_attr(s, 'event_type')) }} · {{ when(states(s)) }}{% else %}_("none yet"){% endif %}</td></tr><tr><td>_("New node")</td><td>{% if state_attr(n, 'event_type') %}<b>{{ name_or(state_attr(n, 'name'), (state_attr(n, 'key') or '')[:8]) }}</b> _("heard for the first time") · {{ when(states(n)) }}{% else %}_("none yet"){% endif %}</td></tr>{% if states[k] is not none %}<tr><td>_("Command")</td><td>{% if refused %}_("{sender}: command refused: {reason}") · {{ when(q.get('at')) }}{% elif state_attr(k, 'event_type') %}_("{sender}: {word}") · {{ when(states(k)) }}{% else %}_("none yet"){% endif %}</td></tr>{% endif %}</table>
               {%- endif %}
-              <details><summary>_("What this shows")</summary><ul><li>_("The newest event of each kind, in full. Home Assistant keeps only the newest of each here.")</li><li>_("A refused command shows only until the next message arrives, of any kind.")</li><li>_("Help explains each word.") <a href="./help">_("Help")</a></li></ul></details>
+              <details><summary>_("What this shows")</summary><ul><li>_("The newest event of each kind, in full. Home Assistant keeps only the newest of each here.")</li><li>_("A refused command shows until the gateway accepts a command after it.")</li><li>_("Help explains each word.") <a href="./help">_("Help")</a></li></ul></details>
           - type: markdown
             text_only: true
             content: |-
@@ -2247,7 +2256,7 @@ views:
             text_only: true
             content: |-
               {#- Translators: security text (docs/translations.md): a command needs the sender's current code; a sender without a code secret is refused while the gateway ignores a secret of a key that is no sender; wrong codes may be someone guessing them, and after 5 within an hour the sender is refused #}
-              <details><summary>_("Why a command was refused")</summary><ul><li>_("A command the gateway refused shows with its reason after the word refused, but only until the next message arrives. The gateway's log also names a sender refused for too many wrong codes.")</li><li><b>_("sender not a contact")</b>, <b>_("sender not allowed")</b>, <b>_("another contact has the same key prefix")</b>: _("Only the contacts your administrator chose may send commands, and only while no other node's key starts the same.")</li><li><b>_("sender not checked yet")</b>: _("The gateway could not check the sender at that moment, such as while it connected to the radio. The sender can send the command again.")</li><li><b>_("an old command again")</b>, <b>_("too old")</b>, <b>_("dated in the future")</b>: _("A copy of an earlier command, or a clock that is off: the sender's or the computer's. A command sent anew works; if it happens again, your administrator checks the clocks.")</li><li><b>_("no code")</b>: _("A sender with a code secret ends each command with the 6-digit code of its authenticator app; this command had none. A sender without a code secret is refused this way too while the gateway ignores a secret in the codes file: tell your administrator, who gives the sender a secret or removes the ignored one.")</li><li><b>_("wrong code")</b>, <b>_("code used already")</b>: _("A command of this sender ends in the 6-digit code of an authenticator app, new every 30 seconds and good once. Check the clock of the sender's phone.")</li><li><b>_("too many wrong codes")</b>: _("5 wrong codes within an hour: the gateway refuses that sender's commands until the first of them is an hour old. Someone may be guessing the codes; tell your administrator.")</li><li><b>_("cannot be stored")</b>, <b>_("broker unreachable")</b>: _("The gateway could not keep the command safe from copies, or could not pass it on to the automations. The sender can send the command again; tell your administrator if it repeats.")</li></ul></details>
+              <details><summary>_("Why a command was refused")</summary><ul><li>_("A command the gateway refused shows with its reason after the word refused, until the gateway accepts a command; its word is left out. The gateway's log also names a sender refused for too many wrong codes.")</li><li><b>_("sender not a contact")</b>, <b>_("sender not allowed")</b>, <b>_("another contact has the same key prefix")</b>: _("Only the contacts your administrator chose may send commands, and only while no other node's key starts the same.")</li><li><b>_("sender not checked yet")</b>: _("The gateway could not check the sender at that moment, such as while it connected to the radio. The sender can send the command again.")</li><li><b>_("an old command again")</b>, <b>_("too old")</b>, <b>_("dated in the future")</b>: _("A copy of an earlier command, or a clock that is off: the sender's or the computer's. A command sent anew works; if it happens again, your administrator checks the clocks.")</li><li><b>_("no code")</b>: _("A sender with a code secret ends each command with the 6-digit code of its authenticator app; this command had none. A sender without a code secret is refused this way too while the gateway ignores a secret in the codes file: tell your administrator, who gives the sender a secret or removes the ignored one.")</li><li><b>_("wrong code")</b>, <b>_("code used already")</b>: _("A command of this sender ends in the 6-digit code of an authenticator app, new every 30 seconds and good once. Check the clock of the sender's phone.")</li><li><b>_("too many wrong codes")</b>: _("5 wrong codes within an hour: the gateway refuses that sender's commands until the first of them is an hour old. Someone may be guessing the codes; tell your administrator.")</li><li><b>_("cannot be stored")</b>, <b>_("broker unreachable")</b>: _("The gateway could not keep the command safe from copies, or could not pass it on to the automations. The sender can send the command again; tell your administrator if it repeats.")</li></ul></details>
           - type: markdown
             text_only: true
             content: |-
@@ -2448,6 +2457,7 @@ views:
           - type: markdown
             content: |-
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro name_or(x, key=none) -%}{{ m(x if (x or '') is search('[^\u0000-\u0020\u007f-\u00a0\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u1680\u17b4\u17b5\u180b-\u180f\u2000-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]') else key or '?') }}{%- endmacro -%}
               {%- macro mt(x) -%}{%- set brk = '\u200b' -%}{{ m(x) | regex_replace('((?:&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f][\u0300-\u036f\u0483-\u0489]*){20})(?=&[#0-9a-zA-Z]+;|[!-%(-~\u00a0-\u024f\u0370-\u03ff\u0400-\u0482\u048a-\u04ff\u2007\u2011\u202f])', '\\1' ~ brk) }}{%- endmacro -%}
               {%- macro mon(v) -%}
               {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
@@ -2517,15 +2527,15 @@ views:
               {%- else -%}<code>{{ m(v) }}</code>
               {%- endif -%}
               {%- endmacro -%}
-              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87): cut while the setting is on now; the history carries no flag, so a message sent before a change of it shows the other way until it leaves the history; a gateway that does not say, being offline, as before (PC 16) -#}
-              {%- set nonce = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set nonce = not (nonce is mapping and nonce.get('confirm_nonce') == false) -%}
+              {#- the gateway publishes confirm_nonce's code of a direct message sent from this home only in the final delivery event and the history (#87), whose entries say since 2.2 whether it added one (nonce, #142): cut where an entry says true, whatever the setting is now, never where it says false; an entry of 2.1 says nothing (null): cut it while the setting is on now or the gateway, being offline, does not say, as before (PC 16) -#}
+              {%- set coded = state_attr('sensor.@gw@_configuration', 'messages') -%}{%- set coded = not (coded is mapping and coded.get('confirm_nonce') == false) -%}
               {%- macro row(e) -%}
               {%- set raw = (e.get('text') or '') | string -%}
-              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if nonce and e.get('direction') == 'out' and e.get('kind') == 'contact' else raw -%}
+              {%- set raw = raw | regex_replace(' #[0-9a-f]{8}$', '') if e.get('direction') == 'out' and e.get('kind') == 'contact' and (e.get('nonce') == true or (e.get('nonce') is none and coded)) else raw -%}
               {%- set trouble = e.get('direction') != 'in' and (e.get('state') in ['failed', 'expired'] or e.get('suspect') == true) -%}
               {%- set state = 'suspect' if e.get('state') == 'confirmed' and e.get('suspect') == true else (e.get('state') or e.get('step') or '') -%}
               {%- set attempt = e.get('attempt') | int(0) -%}{%- set attempts = e.get('max_attempts') | int(0) -%}{%- set later = when(e.get('at')) -%}
-              {%- if e.get('direction') == 'in' -%}<table role="presentation" width="100%"><tr><td width="85%" align="left"><small>{% if e.get('kind') == 'channel' %}<b>{{ m(e.get('name') or '?') }}</b> · {% endif %}{{ when(e.get('at')) }}</small><br>{{ mt(raw) }}</td><td width="15%"></td></tr></table>
+              {%- if e.get('direction') == 'in' -%}<table role="presentation" width="100%"><tr><td width="85%" align="left"><small>{% if e.get('kind') == 'channel' %}<b>{{ name_or(e.get('name')) }}</b> · {% endif %}{{ when(e.get('at')) }}</small><br>{{ mt(raw) }}</td><td width="15%"></td></tr></table>
               {%- else -%}
               {#- Translators: on its way: attempt and attempts are whole numbers; ✓✓ {later}: delivered, later the time the person's radio confirmed it, such as 10:34 -#}
               <table role="presentation" width="100%"><tr><td width="15%"></td><td width="85%" align="right">{% if trouble %}<ha-alert alert-type="warning">{% endif %}<small>{{ when(e.get('queued_at') or e.get('at')) }} · {% if state == 'sent' and e.get('step') %}_("… sent, waiting for confirmation (try {attempt} of {attempts})"){% elif state == 'confirmed' and e.get('queued_at') and when(e.get('queued_at')) != later %}_("✓✓ {later}"){% else %}{{ mark(state) }}{% endif %}{% if trouble and e.get('reason') and not (state == 'expired' and e.get('reason') == 'queue_ttl') %} ({{ why(e.get('reason')) }}){% endif %}</small><br>{% if e.get('step') %}<i>{{ mt(raw) }}</i>{% else %}{{ mt(raw) }}{% endif %}{% if trouble %}</ha-alert>{% endif %}</td></tr></table>

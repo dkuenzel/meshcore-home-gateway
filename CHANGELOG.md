@@ -53,8 +53,32 @@ Assistant's user needs `topic write <base_topic>/<node_id>/advert/send` for *Sen
   minutes what became of the last advert (sent with its time and name; within the 10 minutes,
   when the last went and when the next one may go; or why not, in words, and whether it may
   have gone out); its help names the first digits of the radio's key to compare with, and that
-  everyone here can send it only while they can. *Settings* shows *Advert button in Home Assistant*; *Help* names the row and explains
-  each reason in *Why no advert was sent*. German texts.
+  everyone here can send it only while they can. *Settings* shows *Advert button in Home
+  Assistant*; *Help* names the row and explains each reason in *Why no advert was sent*. German
+  texts.
+- The retained document `refused_commands` and, with `[commands] words`, the sensor *Refused
+  commands* in Home Assistant: the latest five commands the gateway refused, the newest first,
+  each with its time, its reason and the sender's prefix, key and name, never the command's word,
+  arguments or code, which only the household's automations need (#141). With `[messages]
+  clean_received` the names are cleaned, on one line, where the gateway takes them from the
+  radio, as in `received`, and at the start in the refusals a run with it off kept. It goes out
+  at the start, at every connect to the broker and after each refusal published on `received`;
+  the gateway keeps the refusals in its state file, so a restart keeps them, and leaves out a
+  refusal that the rate of received messages leaves out.
+  The sensor stays available while the gateway is offline; the recorder stores who sent a
+  refused command unless it excludes the sensor
+  ([home-assistant.md](docs/home-assistant.md#privacy)). After a downgrade to 2.1 the broker keeps
+  the last document; an empty retained message clears it, such as
+  `mosquitto_pub -r -n -t meshcore/radio1/refused_commands`
+  ([mqtt-api.md](docs/mqtt-api.md#refused-commands-refused_commands)).
+- The key `nonce` in each entry of the `history` document and the column `nonce` at the end of
+  `history export --table messages`: `true` when the gateway ended a sent message with the
+  random suffix of `[messages] confirm_nonce`, `false` when it did not, by how the message was
+  sent, also across a stop that changed the setting (#142). It is `null` (empty in CSV) for a
+  received message, for a message 2.1 sent and for one 2.0 left in its queue at the stop: the
+  gateway does not guess it afterwards. The history database gets the column at the first
+  start; after a downgrade, 2.1 leaves it empty in the rows it adds
+  ([mqtt-api.md](docs/mqtt-api.md#history-history)).
 
 ### Changed
 
@@ -95,6 +119,23 @@ Assistant's user needs `topic write <base_topic>/<node_id>/advert/send` for *Sen
 
 ### Fixed
 
+- The dashboard's *Latest of each kind* on the page *Gateway* shows a refused command until the
+  gateway accepts a command after it. It read the refusal from the newest message's `received`
+  event, so the next message of any kind, a channel message too, hid it. It now reads *Refused
+  commands*, and the line names the sender and the reason, no longer the command's word, such as
+  "Bob: command refused: wrong code" (#141). A node or sender whose name shows nothing, made only
+  of invisible characters such as a zero-width space or drawn as nothing such as a Hangul filler,
+  is named there and in the result of a request on the page *Contacts* by the first digits of its
+  key, as one without a name, and is *?* in the chats, no longer an empty bold name: the row *New
+  node* showed one for such a stranger now that `heard_nodes = "full"` sends its name, and so did
+  the line under *Add by key or contact link* after it was added. Make the dashboard again after
+  the update.
+- The dashboard's chats cut the delivery code of `[messages] confirm_nonce` from a sent direct
+  message only where the history says the gateway added one (#142). They went by the setting of
+  now: after it was switched on, a household's own text sent before that ends in ` #` and 8 hex
+  digits showed without them, and after it was switched off, the messages sent before showed
+  their code, until they left the history. A message 2.1 sent still goes by the setting of now.
+  Make the dashboard again after the update.
 - The dashboard's *Remove a contact* stood as a heading alone when no contact could be removed,
   as when every contact is a chat's target or a command sender, which the gateway keeps on
   purpose. It now says that no contact can be removed here, above the fold that says why. Make
