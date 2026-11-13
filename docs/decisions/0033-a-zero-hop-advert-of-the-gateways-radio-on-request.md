@@ -74,12 +74,13 @@ household's companions, while it never floods and never carries a position.
   `too_soon`, an advert was written less than 10 minutes ago; `messages_waiting`, a message is
   queued or being delivered (the radio is half-duplex, and messages have the first claim on the
   budget); `airtime_budget`, the message budget cannot pay the advert's estimated time on air at
-  once and still hold one long message beside it, so that an alert after it goes out at once;
-  `rate_limited`, the requests that passed asked the radio too often (each reads its clock, also
-  when it is then refused), as the contact requests' radio work. Then the radio's clock is read
-  afresh (`GET_DEVICE_TIME`): `clock_unknown` when the radio answers with an error, so that no
-  advert goes with a clock the gateway did not check, and `clock_ahead` when it is more than
-  60 s ahead of the host's.
+  once and still hold one long message beside it, so that an alert after it goes out at once
+  (where the two do not fit into `burst_s` together, at slow presets, no advert goes until it is
+  raised); `rate_limited`, the requests that passed asked the radio too often (each reads its
+  clock, also when it is then refused), as the contact requests' radio work. Then the radio's
+  clock is read afresh (`GET_DEVICE_TIME`): `clock_unknown` when the radio answers with an error,
+  so that no advert goes with a clock the gateway did not check, and `clock_ahead` when it is
+  more than 60 s ahead of the host's.
 * **The claim.** Once the advert holds the radio's command lock, the gateway checks the
   firmware, the position policy, the name, the 10 minutes, the messages and the budget again; a message that came while
   the clock was read goes first. Only then is the estimated airtime taken from the budget (its
@@ -123,10 +124,13 @@ household's companions, while it never floods and never carries a position.
   as a heard node or a contact, and may pass the stored advert on with *Share* or an export
   (`BaseChatMesh.cpp:143-150, 570-586`; `MyMesh.cpp:1359-1370`), as anyone can the QR code.
 * Bad, because up to about 8 s an hour of the message budget go to adverts (22 % of the default
-  36 s at six adverts of 1.3 s), more at slow presets (8 s for one advert at 125 kHz, SF 12).
-* Bad, because a restart forgets the 10 minutes. At EU/UK Narrow the level a restart grants (one
-  long message) does not pay an advert beside the reserve; at slow presets it can, so a restart
-  loop is bounded there only by the restarts and the radio's own duty cycle.
+  36 s at six adverts of 1.3 s).
+* Bad, because at slow presets an advert and a long message do not fit into the default burst
+  of 10 s together (at 125 kHz, SF 12, CR 4/5 up to 5.4 s and 9.1 s): there no advert goes until
+  `burst_s` is raised, and then each takes more of the hour.
+* Bad, because a restart forgets the 10 minutes. The budget's level is kept across a restart,
+  and the least a start grants (one long message, at most the burst) never pays an advert beside
+  the reserve: a restart loop gets no advert from that floor.
 * Bad, because while the radio transmits it hears nothing: messages are guarded, a telemetry
   answer in flight is not (the poller's retry covers it).
 * Bad, because the advert carries the radio's clock, which the gateway sets from the host's: a

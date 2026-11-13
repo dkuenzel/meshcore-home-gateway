@@ -23,7 +23,8 @@ Assistant's user needs `topic write <base_topic>/<node_id>/advert/send` for *Sen
   `reason`, `name`, `airtime_ms` and `next_at`), and the new command
   `meshcore-home-gateway advert [--wait SECONDS]` and `listen --topic advert` (`all` includes
   it). At most one advert every 10 minutes (kept in memory), charged to the airtime budget,
-  which must hold a long message beside it. A request is refused (`reason`) in a wrong form
+  which must hold a long message beside it (at slow presets, where the two do not fit into
+  `burst_s`, none goes until it is raised). A request is refused (`reason`) in a wrong form
   (`too_large`, `invalid_utf8`, `invalid_request`), retained (`retained`) or empty (`empty`),
   without a connected radio (`no_radio`), on firmware the gateway is not tested with, also with
   `radio.profile.manage = "always"` (`untested_firmware`), while the radio would put its

@@ -424,14 +424,20 @@ def test_the_advert_is_charged_to_the_airtime_budget_at_the_claim(tmp_path: Path
     scenario(main)
 
 
-def test_the_budget_must_hold_the_advert_and_one_long_message_beside_it(tmp_path: Path) -> None:
+ALERT = "Alarm: smoke in the kitchen. " * 5  # 145 bytes: a long text to a contact
+
+
+def test_the_budget_must_hold_the_advert_and_one_long_message_beside_it(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """An alert after the advert goes out at once: refused with the reserve short by a little,
-    sent with it."""
-    radio = EmulatedRadio()
+    sent with it, and a long alert after it waits for no airtime."""
+    radio = EmulatedRadio(contacts=[ALICE])
     slow = "budget_s_per_hour = 0.001"  # no refill to speak of within the test
+    alerts = make_config(messages='alert_targets = ["alice"]', airtime=slow)
 
     async def main() -> None:
-        async with running(config(airtime=slow), radio, tmp_path) as (bridge, bus, _n):
+        async with running(alerts, radio, tmp_path) as (bridge, bus, _n):
             budget = bridge.outbox.budget
             budget.consume(10.0 - (BRIDGE_S + LONGEST_S) + 0.01, time.monotonic())
             ask(bus)
@@ -441,28 +447,36 @@ def test_the_budget_must_hold_the_advert_and_one_long_message_beside_it(tmp_path
             ask(bus)
             assert (await outcome(bus, 2))["event_type"] == "sent"
             assert radio.adverts == [b"\x07"]
+            bus.send("alice", ALERT)
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
 
-    scenario(main)
+    with caplog.at_level(logging.INFO):
+        scenario(main)
+    assert "for airtime" not in caplog.text
 
 
-def test_at_a_slow_preset_the_advert_needs_the_full_burst(tmp_path: Path) -> None:
-    """At SF 10 the advert (4.1 s) and a long message (8 s) do not fit into the burst of 10 s
-    together: only a full budget pays the advert, which leaves the rest of the burst."""
-    radio = EmulatedRadio(spreading_factor=10)
-    slow = "budget_s_per_hour = 0.001"
+def test_at_a_slow_preset_where_both_do_not_fit_the_advert_is_refused(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """At SF 10 the advert (4.1 s) and a long message (8 s) do not fit into the default burst of
+    10 s together: also a full budget does not pay the advert, so a long alert after the request
+    waits for no airtime."""
+    radio = EmulatedRadio(contacts=[ALICE], spreading_factor=10)
+    alerts = make_config(messages='alert_targets = ["alice"]')
 
     async def main() -> None:
-        async with running(config(airtime=slow), radio, tmp_path) as (bridge, bus, _n):
-            budget = bridge.outbox.budget
-            budget.consume(0.01, time.monotonic())
+        async with running(alerts, radio, tmp_path) as (bridge, bus, _n):
+            assert bridge.outbox.budget.available_s(time.monotonic()) == 10.0
             ask(bus)
             event = await outcome(bus)
+            bus.send("alice", ALERT)
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
             assert (event["event_type"], event["reason"]) == ("refused", "airtime_budget")
-            budget.charge(-0.01, time.monotonic())  # given back: the burst is full
-            ask(bus)
-            assert (await outcome(bus, 2))["event_type"] == "sent"
+            assert radio.adverts == []
 
-    scenario(main)
+    with caplog.at_level(logging.INFO):
+        scenario(main)
+    assert "for airtime" not in caplog.text
 
 
 def test_an_advert_longer_than_the_burst_is_refused(tmp_path: Path) -> None:
@@ -479,11 +493,18 @@ def test_an_advert_longer_than_the_burst_is_refused(tmp_path: Path) -> None:
     scenario(main)
 
 
-def test_after_a_restart_with_an_empty_budget_the_reserve_is_not_spent(tmp_path: Path) -> None:
-    """A start grants the level of one long message (ARC-005): not enough for an advert beside
-    it, so a restart funds no advert at EU/UK Narrow."""
-    radio = EmulatedRadio()
+@pytest.mark.parametrize("spreading_factor", [8, 11])
+def test_after_a_restart_with_an_empty_budget_the_reserve_is_not_spent(
+    tmp_path: Path, spreading_factor: int
+) -> None:
+    """A start grants the level of one long message, at most the burst (ARC-005): never enough
+    for an advert beside it, so a restart funds no advert, also at a slow preset (SF 11), where
+    that level is the full burst."""
+    radio = EmulatedRadio(spreading_factor=spreading_factor)
     slow = "budget_s_per_hour = 0.001"
+    longest = direct_attempt_airtime_s(
+        MAX_TEXT_BYTES, 0, True, meshcore_lora(62_500, spreading_factor, 8)
+    )
 
     async def main() -> None:
         async with running(config(airtime=slow), radio, tmp_path) as (bridge, _b, _n):
@@ -491,7 +512,7 @@ def test_after_a_restart_with_an_empty_budget_the_reserve_is_not_spent(tmp_path:
             budget.consume(budget.available_s(time.monotonic()), time.monotonic())
         async with running(config(airtime=slow), radio, tmp_path) as (bridge, bus, _n):
             assert bridge.outbox.budget.available_s(time.monotonic()) == pytest.approx(
-                LONGEST_S, abs=0.01
+                min(longest, 10.0), abs=0.01
             )
             ask(bus)
             event = await outcome(bus)

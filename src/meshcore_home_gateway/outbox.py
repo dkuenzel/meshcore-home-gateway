@@ -315,11 +315,9 @@ class Delivery:
         """Whether the budget pays `airtime_s` now, without waiting, and still holds one long
         message beside it, so that an alert after it goes out at once: an advert on request
         (ADR 0033) never waits and never takes an alert's airtime. Where both do not fit into
-        the burst, it needs a full budget; one longer than the burst never fits."""
-        capacity = self.budget.capacity_s
+        the burst together, it is never paid."""
         longest = direct_attempt_airtime_s(MAX_TEXT_BYTES, 0, True, lora)
-        reserve = max(0.0, min(longest, capacity - airtime_s))
-        return self.budget.available_s(self._mono()) - airtime_s >= reserve
+        return self.budget.available_s(self._mono()) - airtime_s >= longest
 
     def spend_airtime(self, airtime_s: float) -> None:
         """Take it from the budget and store the level at once (ARC-005): a crash before the

@@ -1015,7 +1015,7 @@ event, and nothing reaches the radio:
 | `busy` | another request is between its checks and its outcome |
 | `too_soon` | an advert was written to the radio less than 10 minutes ago; `next_at` says when the next may go. The gateway keeps that time in memory only, so a restart allows the next advert at once |
 | `messages_waiting` | a message is queued or being delivered: the radio is half-duplex, and messages have the first claim on the airtime budget |
-| `airtime_budget` | the message budget cannot pay the advert's estimated time on air at once and still hold one long message beside it, so that an alert after it goes out at once; where both do not fit into the burst, the advert needs a full budget |
+| `airtime_budget` | the message budget cannot pay the advert's estimated time on air at once and still hold one long message beside it, so that an alert after it goes out at once. Where the advert and a long message do not fit into `burst_s` together (slow presets), no advert goes until `burst_s` is raised |
 | `rate_limited` | the requests that passed these checks asked the radio too often: each reads its clock, also when it is then refused; 10 in a row, then one a minute, as the contact requests' radio work |
 | `clock_unknown` | the radio answered the read of its clock with an error: the gateway sends no advert with a clock it did not check |
 | `clock_ahead` | the radio's clock, read just then, is more than 60 s ahead of the host's: nodes keep the newest advert time of a contact and would ignore the radio's later adverts; a clock behind the host's is no reason |
