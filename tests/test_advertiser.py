@@ -839,6 +839,36 @@ def test_a_bug_fails_internal_error_and_the_requests_go_on(
     assert len(traced) == 2
 
 
+def test_a_bug_in_the_checks_still_says_when_the_next_advert_may_go(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`next_at` is null only when no advert was written in the last 10 minutes: also the event
+    of a bug in a check before `too_soon` says when the next one may go."""
+    radio = EmulatedRadio()
+    real = advertiser_module.Advertiser._radio_refusal
+    bugs = {"left": 0}
+
+    def refusal(advertiser: advertiser_module.Advertiser, info: Any) -> str | None:
+        if bugs["left"]:
+            bugs["left"] -= 1
+            raise RuntimeError("a bug in the checks")
+        return real(advertiser, info)
+
+    monkeypatch.setattr(advertiser_module.Advertiser, "_radio_refusal", refusal)
+
+    async def main() -> None:
+        async with running(config(), radio, tmp_path) as (_, bus, _n):
+            ask(bus, {"id": "r1"})
+            assert (await outcome(bus))["event_type"] == "sent"
+            bugs["left"] = 1
+            ask(bus, {"id": "r2"})
+            event = await outcome(bus, 2)
+            assert (event["event_type"], event["reason"]) == ("failed", "internal_error")
+            assert event["next_at"] == iso(NOW + 600)
+
+    scenario(main)
+
+
 # --- every request one event ----------------------------------------------------------------------
 
 

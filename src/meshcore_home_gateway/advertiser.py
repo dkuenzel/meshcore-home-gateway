@@ -115,7 +115,10 @@ class Advertiser:
             return
         except Exception:  # a bug: the request still ends, the next one is checked
             log.exception("advert request %s: checks failed", request_id)
-            self._publish(self_advert_event("failed", request_id, reason="internal_error"))
+            event = self_advert_event(
+                "failed", request_id, reason="internal_error", next_at=self._next_at()
+            )
+            self._publish(event)
             return
         self._active = request_id
         self._jobs.put_nowait((request_id, session))

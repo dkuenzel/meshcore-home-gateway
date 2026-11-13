@@ -71,10 +71,14 @@ class AirtimeBudget:
 
     def refund(self, airtime_s: float, now: float) -> None:
         """Give back airtime taken for a transmission that did not happen: to the level, at most
-        a full burst, and out of `used_s`."""
+        a full burst, and out of `used_s`: the newest entry of that airtime goes, so the hour
+        never counts it below what was spent beside it."""
         self._refill(now)
         self._tokens = min(self._capacity, self._tokens + airtime_s)
-        self._log.append((now, -airtime_s))
+        for index in range(len(self._log) - 1, -1, -1):
+            if self._log[index][1] == airtime_s:
+                del self._log[index]
+                break
 
     def owe(self, airtime_s: float, now: float) -> None:
         """Start from a debt spent before this bucket existed (not counted in `used_s`)."""
