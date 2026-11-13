@@ -39,3 +39,4 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0029](0029-what-a-contact-is-trusted-with.md) | What a contact of the radio is trusted with | accepted; amended 2026-11-05 (the defaults of 2.0.0) |
 | [0030](0030-release-checked-by-ci-self-test-and-use.md) | A release checked by CI, the installer's self-test and the maintainer's use, not by a manual checklist | accepted; amended 2026-11-06 with 0022 (a candidate tagged once CI passed) |
 | [0031](0031-household-chat-problems-and-settings-on-the-generated-dashboard.md) | Household chat, problems and settings on the generated dashboard | accepted; amended 2026-11-11 (the refused line above the thread) |
+| [0033](0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md) | A zero-hop advert of the gateway's radio on request | accepted |
