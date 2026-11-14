@@ -54,6 +54,7 @@ class PahoLike(Protocol):
     on_disconnect: Any
     on_message: Any
     on_subscribe: Any
+    on_publish: Any
 
     def username_pw_set(self, username: str | None, password: str | None = None) -> None: ...
     def tls_set_context(self, context: ssl.SSLContext | None = None) -> None: ...
@@ -185,6 +186,9 @@ class MqttBus(Bus):
         # paho thread: the message id of the connect's subscription, and its topics
         self._subscribing: tuple[int | None, list[str]] = (None, [])
         self._heard_back = False  # a message on the retained topics came since the connect
+        # the gateway's retained payloads by message id, until the broker acknowledges them:
+        # paho sends them again after a reconnect, also when their copy came back already
+        self._unacked: dict[int, tuple[str, bytes]] = {}
         self._echo_check: asyncio.TimerHandle | None = None
         self.on_connected: list[Callable[[], None]] = []
         self.on_ha_online: list[Callable[[], None]] = []
@@ -212,6 +216,7 @@ class MqttBus(Bus):
         client.on_disconnect = self._paho_disconnected
         client.on_message = self._paho_message
         client.on_subscribe = self._paho_subscribed
+        client.on_publish = self._paho_published
         client.connect_async(config.host, config.port, config.keepalive_s)
         client.loop_start()
         log.info("MQTT: connecting to %s:%d", config.host, config.port)
@@ -232,7 +237,8 @@ class MqttBus(Bus):
     ) -> None:
         """QoS 1 events are queued while the broker is unreachable; QoS 0 events (commands) are
         not, so they can never arrive late."""
-        if retain and self._retained.covers(topic):
+        own = retain and self._retained.covers(topic)
+        if own:
             self._retained.sent(topic, payload, published=self.connected)
         if not self.connected:
             if retain or qos == 0:  # retained: the reconnect publishes the current documents
@@ -253,6 +259,15 @@ class MqttBus(Bus):
         # NO_CONN: paho noticed the loss first and keeps a QoS 1 message for the reconnect
         if getattr(info, "rc", 0) not in (paho.MQTT_ERR_SUCCESS, paho.MQTT_ERR_NO_CONN):
             log.warning("MQTT: publish to %s refused (paho error %s)", topic, info.rc)
+        if own:
+            self._track(info, topic, payload)
+
+    def _track(self, info: Any, topic: str, payload: bytes) -> None:
+        """A retained payload paho keeps until the broker acknowledges it (`on_publish`)."""
+        mid = getattr(info, "mid", None)
+        kept = getattr(info, "rc", 0) in (paho.MQTT_ERR_SUCCESS, paho.MQTT_ERR_NO_CONN)
+        if kept and isinstance(mid, int):
+            self._unacked[mid] = (topic, payload)
 
     def _properties(self, topic: str, correlation: bytes | None = None) -> Properties | None:
         """MQTT 5: who published it, and when; how long an event may wait for a subscriber that
@@ -367,6 +382,9 @@ class MqttBus(Bus):
                 ", ".join(refused),
             )
 
+    def _paho_published(self, _c: Any, _u: Any, mid: int, _reason: Any, _p: Any) -> None:
+        self._call(self._handle_published, mid)
+
     def _paho_connect_failed(self, _c: Any, _u: Any) -> None:
         # no answer from a broker (name, address, port, TLS): paho calls this while it handles
         # the attempt's OSError and retries with the reconnect delay
@@ -403,12 +421,14 @@ class MqttBus(Bus):
         """A restore of a retained topic (`mqtt.retained`); the next connect publishes all."""
         if self.connected:
             properties = self._properties(topic)
-            self._client.publish(topic, payload, qos=1, retain=True, properties=properties)
+            info = self._client.publish(topic, payload, qos=1, retain=True, properties=properties)
+            self._track(info, topic, payload)
 
     def _handle_connected(self) -> None:
         self.connected = True
         log.info("MQTT: connected")
-        self._retained.connected()
+        # paho sends these again now, as it does all it had no acknowledgement for
+        self._retained.connected(self._unacked.values())
         # published by the paho thread before this ran, so before its copy can come back
         self._retained.sent(self._topics.availability, ONLINE, published=True)
         self._heard_back = False
@@ -422,6 +442,10 @@ class MqttBus(Bus):
         self._queued = self._dropped = 0
         for callback in self.on_connected:
             callback()
+
+    def _handle_published(self, mid: int) -> None:
+        """The broker acknowledged a message (QoS 1): paho does not send it again."""
+        self._unacked.pop(mid, None)
 
     def _handle_disconnected(self, reason: str, answered: bool = True) -> None:
         if self.connected and not self._stopping:

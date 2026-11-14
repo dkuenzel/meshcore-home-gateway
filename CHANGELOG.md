@@ -8,6 +8,17 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Fixed
+
+- A restart of the broker could still draw the warning that another client wrote the gateway's
+  `state` or another of its documents. When the broker stopped right after it sent the gateway
+  the copy of a document, paho had read the copy but not the broker's acknowledgement, and sent
+  the document again after the reconnect; the gateway took that copy for another client's write,
+  as its own copy had come back already. The gateway now notes which of its documents the broker
+  has acknowledged, and takes a copy of any other one as its own. An older document that another
+  client writes is still restored, with the warning. The system test of a broker restart failed
+  now and then on this ([platform-notes.md](docs/platform-notes.md#paho-mqtt)).
+
 ## [2.2.0rc1] - 2026-11-14
 
 The release candidate of 2.2.0. The radio sends its advert to the radios nearby on request, also

@@ -8,8 +8,9 @@ client is undone: the topic gets the gateway's last payload again, or is cleared
 gateway has none, at most once per topic every HEAL_INTERVAL_S, with a warning. The copies the
 broker sends for a new subscription (with the retain flag) are not compared: the gateway
 publishes all its documents at every connect, after the subscription. After a reconnect paho
-sends again what the broker had not acknowledged (docs/platform-notes.md): those copies are the
-gateway's too, and one that comes after the current payload's is followed by it again (#101).
+sends again what the broker had not acknowledged (docs/platform-notes.md), also a payload whose
+copy came back already: those copies are the gateway's too, and one that comes after the current
+payload's is followed by it again (#101).
 
 This keeps a forged or stale document short-lived; it does not prevent one. That only the gateway
 writes its topics is the broker's ACL's job (docs/mqtt-api.md, Securing the broker).
@@ -18,8 +19,8 @@ writes its topics is the broker's ACL's job (docs/mqtt-api.md, Securing the brok
 from __future__ import annotations
 
 import logging
-from collections import deque
-from collections.abc import Callable
+from collections import Counter, deque
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -44,7 +45,7 @@ class Cancellable(Protocol):
 class _Topic:
     payload: bytes  # what the gateway wrote last
     echoes: deque[bytes] = field(default_factory=lambda: deque(maxlen=ECHOES))
-    # out before the last reconnect and not back: paho sends them again (QoS 1)
+    # out before the last reconnect and not back, or not acknowledged: paho sends them again
     resent: deque[bytes] = field(default_factory=lambda: deque(maxlen=ECHOES))
     restored_at: float | None = None
     restore: Cancellable | None = None  # a restore that waits for the interval
@@ -116,13 +117,18 @@ class RetainedTopics:
         if published:
             entry.echoes.append(payload)
 
-    def connected(self) -> None:
+    def connected(self, unacked: Iterable[tuple[str, bytes]] = ()) -> None:
         """A new connection: the connect publishes every payload again. The payloads in flight
-        arrive as copies for the new subscription or once more, as paho sends them again."""
+        arrive as copies for the new subscription or once more, as paho sends them again.
+        `unacked`: the topics and payloads the broker has not acknowledged; paho sends each
+        again, also one whose copy came back already."""
         for entry in self._topics.values():
             entry.resent.extend(entry.echoes)
             entry.echoes.clear()
             self._cancel(entry)
+        for (topic, payload), count in Counter(unacked).items():
+            if (own := self._topics.get(topic)) is not None:
+                own.resent.extend([payload] * (count - own.resent.count(payload)))
 
     def close(self) -> None:
         """The gateway stops: no restore after its last payloads."""

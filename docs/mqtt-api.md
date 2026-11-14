@@ -1341,13 +1341,17 @@ Assistant and every other consumer trust them because only the gateway may write
 gateway subscribes to its retained topics (`availability`, `state`, the documents and the drafts) and undoes
 what another client writes there: it publishes its own payload again, or an empty one where it
 has published nothing in this run, at once and then at most every 10 seconds per topic, and the
-log names the topic (once a minute). Its own messages come back too and are dropped. A forged
-document, a forged position for a presence automation for example, so stands only until its copy
-reaches the gateway, at most 10 seconds against a client that keeps writing, but as long as the
-forger likes while the gateway is offline. The gateway's user needs read access to its topics
-for this, as the ACL above gives it. Mosquitto's `acl_file` grants every subscription and leaves
-out what the user may not read: the log says so when the gateway's `online` does not come back
-within 10 seconds, and when a broker refuses one of its subscriptions.
+log names the topic (once a minute). Its own messages come back too and are dropped, also the
+copies paho sends again after a reconnect of what the broker had not acknowledged, even when the
+first copy came back before the connection broke. So a restart of the broker draws no warning
+about the documents, while another client that writes an older payload of the gateway still
+does. A forged document, a forged position for a presence automation for example, so stands only
+until its copy reaches the gateway, at most 10 seconds against a client that keeps writing, but
+as long as the forger likes while the gateway is offline. The gateway's user needs read access
+to its topics for this, as the ACL above gives it. Mosquitto's `acl_file` grants every
+subscription and leaves out what the user may not read: the log says so when the gateway's
+`online` does not come back within 10 seconds, and when a broker refuses one of its
+subscriptions.
 
 What the gateway can see, it says: at start and in `check-config` it warns when it logs in
 without a user name, or without TLS to a broker that is not on its host or the link (then the
