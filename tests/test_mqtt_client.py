@@ -658,6 +658,95 @@ def test_what_another_client_writes_on_a_retained_topic_is_undone(
     asyncio.run(scenario())
 
 
+class Numbering(FakePaho):
+    """Gives every publish a message id, as paho does."""
+
+    def publish(
+        self,
+        topic: str,
+        payload: bytes,
+        qos: int = 0,
+        retain: bool = False,
+        properties: Properties | None = None,
+    ) -> Any:
+        super().publish(topic, payload, qos, retain, properties)
+        return SimpleNamespace(rc=paho.MQTT_ERR_SUCCESS, mid=len(self.published))
+
+
+@pytest.mark.parametrize("acknowledged", [False, True])
+def test_a_document_paho_sends_again_after_its_copy_came_back_is_the_gateways_own(
+    caplog: pytest.LogCaptureFixture, acknowledged: bool
+) -> None:
+    """The broker sent the copy of the gateway's state and stopped before paho read the
+    acknowledgement: paho sends the state again after the reconnect, and that copy is the
+    gateway's own, not another client's write. Once the broker has acknowledged it, the same
+    payload written again is another client's, and the current state is restored."""
+
+    async def scenario() -> None:
+        fake = Numbering()
+        config = MqttConfig(host="h", node_id="radio1")
+        bus = MqttBus(config, TOPICS, None, client_factory=lambda _: fake)
+        await bus.start()
+        await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
+        await asyncio.sleep(0)
+        deliver = deliver_to(fake)
+        bus.publish(TOPICS.state, b"old", retain=True)
+        mid = len(fake.published)
+        await asyncio.to_thread(deliver, TOPICS.state, b"old")  # its copy
+        if acknowledged:
+            puback = ReasonCode(PacketTypes.PUBACK)
+            await asyncio.to_thread(fake.on_publish, fake, None, mid, puback, None)
+        fake.on_disconnect(fake, None, None, "Unspecified error", None)
+        await asyncio.sleep(0)
+        bus.on_connected.append(lambda: bus.publish(TOPICS.state, b"current", retain=True))
+        await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
+        await asyncio.sleep(0)
+        await asyncio.to_thread(deliver, TOPICS.state, b"old")  # paho's, or another client's
+        await asyncio.to_thread(deliver, TOPICS.state, b"current")
+        await asyncio.sleep(0.05)
+        warned = f"another client wrote {TOPICS.state}" in caplog.text
+        assert warned is acknowledged
+        current = [p for p in fake.published if p[:2] == (TOPICS.state, b"current")]
+        assert len(current) == (2 if acknowledged else 1)  # the connect's, and a restore
+
+    asyncio.run(scenario())
+
+
+def test_a_restore_paho_sends_again_after_its_copy_came_back_is_the_gateways_own(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A restore waits for the broker's acknowledgement like any other document."""
+    monkeypatch.setattr(retained_module, "WARNING_INTERVAL_S", 0)  # every write is logged
+
+    async def scenario() -> None:
+        fake = Numbering()
+        config = MqttConfig(host="h", node_id="radio1")
+        bus = MqttBus(config, TOPICS, None, client_factory=lambda _: fake)
+        await bus.start()
+        await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
+        await asyncio.sleep(0)
+        deliver = deliver_to(fake)
+        bus.publish(TOPICS.state, b"own", retain=True)
+        puback = ReasonCode(PacketTypes.PUBACK)
+        await asyncio.to_thread(fake.on_publish, fake, None, len(fake.published), puback, None)
+        await asyncio.to_thread(deliver, TOPICS.state, b"own")
+        await asyncio.to_thread(deliver, TOPICS.state, b"forged")  # another client's
+        await asyncio.sleep(0.05)
+        assert fake.published[-1] == (TOPICS.state, b"own", 1, True)  # the restore
+        await asyncio.to_thread(deliver, TOPICS.state, b"own")  # its copy, not acknowledged
+        fake.on_disconnect(fake, None, None, "Unspecified error", None)
+        await asyncio.sleep(0)
+        bus.on_connected.append(lambda: bus.publish(TOPICS.state, b"current", retain=True))
+        await asyncio.to_thread(fake.on_connect, fake, None, None, SimpleNamespace(), None)
+        await asyncio.sleep(0)
+        await asyncio.to_thread(deliver, TOPICS.state, b"own")  # paho's
+        await asyncio.to_thread(deliver, TOPICS.state, b"current")
+        await asyncio.sleep(0.05)
+        assert caplog.text.count(f"another client wrote {TOPICS.state}") == 1
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("comes_back", [True, False])
 def test_own_messages_that_never_come_back_are_reported(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, comes_back: bool
@@ -1073,6 +1162,94 @@ def test_with_broker_what_paho_sends_again_after_a_restart_is_the_gateways_own(
     assert copies.count(old) == 1, copies  # paho's, from before the restart
     # (Mosquitto also sends the gateway its own last will as it stops: a warning about
     # `availability`, docs/platform-notes.md)
+    assert f"another client wrote {TOPICS.state}" not in caplog.text
+
+
+@pytest.mark.broker
+def test_with_broker_a_document_whose_copy_came_back_is_the_gateways_when_paho_sends_it_again(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The broker sends the gateway the copy of its document, then the acknowledgement, and
+    stops; paho read the copy but not the acknowledgement (docs/platform-notes.md). paho sends the
+    document again after the restart: its copy is the gateway's own, no warning, and the broker
+    keeps the document the connect published. paho's handling of that one acknowledgement is
+    left out here, which is the state the stop leaves."""
+    if SKIP_BROKER:
+        pytest.skip("MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1")
+    port = free_port()
+    conf = tmp_path / "mosquitto.conf"
+    conf.write_text(f"listener {port} 127.0.0.1\nallow_anonymous true\npersistence false\n")
+    broker = Broker("127.0.0.1", port)
+    old = b'{"radio": "connected", "disk_free_mb": 1}'
+    current = b'{"radio": "connected", "disk_free_mb": 2}'
+    copies: list[bytes] = []  # of the state, as they come back to the gateway
+    arrived = asyncio.Event()
+    received = retained_module.RetainedTopics.received
+
+    def record(self: Any, topic: str, payload: bytes, retained: bool) -> None:
+        if topic == TOPICS.state and not retained:
+            copies.append(payload)
+            arrived.set()
+        received(self, topic, payload, retained)
+
+    async def back(payloads: set[bytes], since: int = 0) -> None:
+        while not payloads <= set(copies[since:]):
+            arrived.clear()
+            await asyncio.wait_for(arrived.wait(), 5)
+
+    monkeypatch.setattr(retained_module.RetainedTopics, "received", record)
+    mosquitto = start_mosquitto(conf, port)
+
+    async def scenario() -> None:
+        nonlocal mosquitto
+        config = MqttConfig(host=broker.host, port=broker.port, node_id="radio1", keepalive_s=10)
+        bus = MqttBus(config, TOPICS, None)
+        connects: asyncio.Queue[None] = asyncio.Queue()
+        bus.on_connected.append(lambda: connects.put_nowait(None))
+        await bus.start()
+        try:
+            await asyncio.wait_for(connects.get(), 5)
+            client: Any = bus._client
+            handle = client._handle_pubackcomp
+            withheld: list[int] = []
+
+            def lose_its_acknowledgement(command: Any) -> Any:  # paho's thread
+                mid = int.from_bytes(client._in_packet["packet"][:2], "big")
+                message = client._out_messages.get(mid)
+                if not withheld and message is not None and message.payload == old:
+                    withheld.append(mid)
+                    return paho.MQTT_ERR_SUCCESS
+                return handle(command)
+
+            monkeypatch.setattr(client, "_handle_pubackcomp", lose_its_acknowledgement)
+            bus.publish(TOPICS.state, old, retain=True)
+            await back({old})
+            for _ in range(100):  # the acknowledgement follows the copy
+                if withheld:
+                    break
+                await asyncio.sleep(0.01)
+            assert withheld
+            stop_mosquitto(mosquitto)
+            bus.on_connected.append(lambda: bus.publish(TOPICS.state, current, retain=True))
+            restarted = len(copies)
+            mosquitto = start_mosquitto(conf, port)
+            await asyncio.wait_for(connects.get(), 15)
+            await back({old, current}, restarted)
+            await asyncio.sleep(0.2)  # a restore would come back by now
+        finally:
+            await bus.stop()
+        late = Observer(broker)  # subscribes after the fact: sees what the broker keeps
+        try:
+            await asyncio.to_thread(late.wait_for, TOPICS.state, current)
+            assert (TOPICS.state, old, True) not in late.messages
+        finally:
+            late.close()
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        stop_mosquitto(mosquitto)
+    assert copies.count(old) == 2, copies  # its copy before the stop, paho's after the restart
     assert f"another client wrote {TOPICS.state}" not in caplog.text
 
 

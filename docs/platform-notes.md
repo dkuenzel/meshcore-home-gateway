@@ -120,6 +120,7 @@ One line per fact, by section.
 * A host name with an empty label or a label longer than 63 characters ends paho's network thread without any callback.
 * An exception in a callback such as `on_message` ends paho's network thread; the client then receives nothing more while the program goes on.
 * `publish()` of a QoS 1 message without a connection returns `MQTT_ERR_NO_CONN` (4), but keeps the message and sends it after the connection is made.
+* A QoS 1 message whose copy came back can still be sent again after a reconnect: paho closes a connection whose write fails without reading what the broker sent before it closed, the acknowledgement included.
 * `max_queued_messages_set()` counts the unacknowledged backlog, and at a reconnect `on_connect` runs before the backlog is sent again.
 * paho notices a broker that stops answering only through keepalive, after up to two keepalive intervals; then it sends unacknowledged QoS 1 messages again with the DUP flag, also with a clean session.
 * paho reads a whole packet into memory before any callback sees it
@@ -1130,6 +1131,25 @@ and of the pin in [`requirements/dev.in`](../requirements/dev.in), with Python 3
   [`tests/test_mqtt_client.py`](../tests/test_mqtt_client.py)). *Check:* `python3 -c 'import
   paho.mqtt.client as m; c =
   m.Client(m.CallbackAPIVersion.VERSION2); print(c.publish("t", b"x", qos=1).rc)'` prints `4`.
+* **A QoS 1 message whose copy came back can still be sent again after a reconnect: paho closes
+  a connection whose write fails without reading what the broker sent before it closed, the
+  acknowledgement included.** Mosquitto sends a publisher that subscribes to the topic the copy
+  first and the PUBACK after it. One pass of paho's loop reads only as many packets as it has
+  messages in flight (`loop_read()`, line 2093) and then writes; when the broker has gone, the
+  write of the copy's own PUBACK fails, and paho closes the socket with the broker's PUBACK
+  unread (`_packet_write()`, lines 3176-3180, which logs the error as `failed to receive on
+  socket`; `_loop_rc_handle()`, line 3036). *Verified:* Mosquitto stopped with `SIGTERM` about a
+  millisecond after a subscriber saw the gateway's state: in 9 of 10 runs paho's log showed the
+  copy of the state, then `failed to receive on socket: [Errno 104] Connection reset by peer`
+  and no PUBACK for it, and after the reconnect `Sending PUBLISH (d1, q1, r1, m20)` of the same
+  state. *Here:* `MqttBus` keeps the message ids of its retained payloads until `on_publish`
+  reports the acknowledgement, and at the connect hands those still unacknowledged to
+  [`mqtt/retained.py`](../src/meshcore_home_gateway/mqtt/retained.py), which takes their copies
+  as the gateway's own
+  (`test_with_broker_a_document_whose_copy_came_back_is_the_gateways_when_paho_sends_it_again`
+  in [`tests/test_mqtt_client.py`](../tests/test_mqtt_client.py)). *Check:* with paho's logger
+  on, stop the broker right after another client sees the gateway's state and start it again:
+  the state goes out once more with `d1`.
 * **`max_queued_messages_set()` counts the unacknowledged backlog, and at a reconnect `on_connect`
   runs before the backlog is sent again.** With a full queue, what `on_connect` publishes
   (`online`, discovery, state) fails with `MQTT_ERR_QUEUE_SIZE` (15) and is lost. *Verified:* with

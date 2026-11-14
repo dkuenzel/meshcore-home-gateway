@@ -293,6 +293,83 @@ def test_what_was_in_flight_stays_the_gateways_over_two_reconnects() -> None:
     assert bus.published == []
 
 
+def test_what_paho_sends_again_after_its_copy_came_back_is_the_gateways_own(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The broker sent the copy and then stopped, before paho read its acknowledgement: paho
+    sends the payload again after the reconnect (docs/platform-notes.md). That copy is the
+    gateway's too; it came after the current one, so the current one goes out again."""
+    retained, bus = make()
+    retained.sent(TOPICS.state, b"old", published=True)
+    retained.received(TOPICS.state, b"old", retained=False)  # its copy, before the stop
+    retained.connected(unacked=[(TOPICS.state, b"old")])  # no acknowledgement came
+    retained.sent(TOPICS.state, b"current", published=True)
+    retained.received(TOPICS.state, b"current", retained=False)
+    retained.received(TOPICS.state, b"old", retained=False)  # paho's
+    assert bus.published == [(TOPICS.state, b"current")]
+    assert caplog.text == ""
+
+
+def test_an_acknowledged_payload_written_after_a_reconnect_is_another_clients(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """paho sends again only what the broker had not acknowledged: an older payload whose copy
+    and acknowledgement both came, written after the reconnect, is another client's write (a
+    replay), with the warning."""
+    retained, bus = make()
+    retained.sent(TOPICS.state, b"acknowledged", published=True)
+    retained.received(TOPICS.state, b"acknowledged", retained=False)
+    retained.sent(TOPICS.state, b"unacknowledged", published=True)
+    retained.received(TOPICS.state, b"unacknowledged", retained=False)
+    retained.connected(unacked=[(TOPICS.state, b"unacknowledged")])
+    retained.sent(TOPICS.state, b"current", published=True)
+    retained.received(TOPICS.state, b"unacknowledged", retained=False)  # paho's
+    retained.received(TOPICS.state, b"current", retained=False)
+    assert caplog.text == ""
+    retained.received(TOPICS.state, b"acknowledged", retained=False)  # another client's
+    assert f"another client wrote {TOPICS.state}; restoring" in caplog.text
+    assert bus.published == [(TOPICS.state, b"current")]
+
+
+def test_a_payload_paho_sends_again_twice_is_the_gateways_both_times(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The same payload published twice, both unacknowledged, one copy back already: paho sends
+    both again."""
+    retained, bus = make()
+    retained.sent(CONTACT, b"same", published=True)
+    retained.sent(CONTACT, b"same", published=True)
+    retained.received(CONTACT, b"same", retained=False)
+    retained.connected(unacked=[(CONTACT, b"same"), (CONTACT, b"same")])
+    retained.sent(CONTACT, b"current", published=True)
+    for payload in (b"same", b"same", b"current"):
+        retained.received(CONTACT, payload, retained=False)
+    assert bus.published == []
+    assert caplog.text == ""
+
+
+def test_a_payload_neither_back_nor_acknowledged_is_taken_for_pahos_once(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """#101's case, now also told by the missing acknowledgement: paho sends it once."""
+    retained, _ = make()
+    retained.sent(TOPICS.state, b"old", published=True)
+    retained.connected(unacked=[(TOPICS.state, b"old")])
+    retained.sent(TOPICS.state, b"current", published=True)
+    for payload in (b"old", b"current"):
+        retained.received(TOPICS.state, payload, retained=False)
+    assert caplog.text == ""
+    retained.received(TOPICS.state, b"old", retained=False)  # paho's was taken: a forgery now
+    assert f"another client wrote {TOPICS.state}; restoring" in caplog.text
+
+
+def test_an_unacknowledged_payload_of_a_topic_never_written_is_not_expected() -> None:
+    retained, bus = make()
+    retained.connected(unacked=[(CONTACT, b"{}")])
+    retained.received(CONTACT, b"{}", retained=False)
+    assert bus.published == [(CONTACT, b"")]  # cleared, as any write there
+
+
 def test_nothing_is_restored_after_the_close() -> None:
     retained, bus = make()
     retained.sent(CONTACT, b"own", published=True)

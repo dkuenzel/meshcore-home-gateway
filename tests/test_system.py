@@ -171,9 +171,12 @@ def test_the_service_comes_back_after_the_broker_restarts(tmp_path: Path) -> Non
     `online` and its documents again. The broker is stopped only once the radio is connected,
     and the state is read from what the broker keeps: this test once stopped it while the first
     state, from before the radio was connected, was on its way, and took the copy paho sent again
-    after the restart for the current state (#101). That such copies draw no warning is
-    test_with_broker_what_paho_sends_again_after_a_restart_is_the_gateways_own in
-    test_mqtt_client.py; this test has nothing in flight when the broker stops."""
+    after the restart for the current state (#101). The stop can still come right after the
+    broker sent the gateway the copy of the connected state, before paho read the broker's
+    acknowledgement: paho sends that state again too. That such copies draw no warning is
+    test_with_broker_what_paho_sends_again_after_a_restart_is_the_gateways_own and
+    test_with_broker_a_document_whose_copy_came_back_is_the_gateways_when_paho_sends_it_again in
+    test_mqtt_client.py."""
     if SKIP_BROKER:
         pytest.skip("MESHCORE_HOME_GATEWAY_SKIP_BROKER_TESTS=1")
     port = free_port()
