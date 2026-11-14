@@ -31,7 +31,7 @@ flowchart LR
 The layers ([design §5.1](design.md#51-ports-and-adapters),
 [ADR 0007](decisions/0007-hexagonal-architecture-with-an-asyncio-core.md)): `core` and `protocol`
 are pure (no I/O, an injected clock); the application (`bridge`, `outbox`, `inbox`, `announcer`,
-`status`, `observer`, `telemetry_poller`, `contact_manager`) asks the radio and the bus through
+`status`, `observer`, `telemetry_poller`, `contact_manager`, `advertiser`) asks the radio and the bus through
 `ports`; the adapters (`radio`, `mqtt.client`, `state`, `history`, `systemd`) do the I/O; `wiring`
 puts them together.
 
@@ -52,7 +52,8 @@ documents ([design-observer.md](design-observer.md)).
 **Around them:** the radio's table reads, adverts and statistics reach the `observer`, which
 publishes the documents (`contacts`, `nodes`, `stats`, `history`); `telemetry_poller` asks one
 companion at a time when no message is due ([design-telemetry.md](design-telemetry.md));
-`contact_manager` adds and removes contacts on request; `announcer` keeps Home Assistant's
+`contact_manager` adds and removes contacts on request; `advertiser` makes the radio send its
+advert nearby on request, zero hop; `announcer` keeps Home Assistant's
 devices current ([design-home-assistant.md](design-home-assistant.md)); `status` publishes the
 `state` document with its health section.
 
@@ -104,6 +105,7 @@ What each holds and for how long: [privacy.md](privacy.md); backing them up:
 | telemetry | `core/telemetry.py`, `telemetry_poller.py`, `core/lpp.py` | [design-telemetry.md](design-telemetry.md) |
 | the documents and the history | `observer.py`, `core/mesh.py`, `history.py` | [design-observer.md](design-observer.md) |
 | adding and removing contacts | `contact_manager.py`, `protocol/links.py` | [mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove) |
+| advert nearby | `advertiser.py`, `request_form.py` | [mqtt-api.md](mqtt-api.md#advert-nearby-advertsend-and-advert) |
 | the radio's settings | `core/profile.py`, `radio/profile.py` | [ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md) |
 | who hears of what | `wiring.py` (its docstring) | [design §5.1](design.md#51-ports-and-adapters) |
 | the configuration | `config.py`, `config_checks.py`, `config_view.py` (what `config` shows) | [configuration.md](configuration.md) |

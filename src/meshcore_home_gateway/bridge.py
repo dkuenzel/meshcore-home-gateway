@@ -13,6 +13,7 @@ loop until the stop; wiring.py builds it with its parts and connects them.
   an exclusion from telemetry that could not be stored is written again; the `config` document
   at the start and at each radio connect (config_view.py);
 * announcements to Home Assistant (announcer.py), contact requests (contact_manager.py);
+* advert requests (advertiser.py, ADR 0033): one zero-hop advert of the radio at a time;
 * telemetry, if enabled: asks the radio's companions one at a time, after the messages
   (telemetry_poller.py, ADR 0018); it gives the observer each companion's state and hears of
   every exclusion;
@@ -28,6 +29,7 @@ import logging
 import random
 from collections.abc import Callable
 
+from meshcore_home_gateway.advertiser import Advertiser
 from meshcore_home_gateway.announcer import Announcer
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.config_checks import start_warnings
@@ -93,6 +95,7 @@ class Bridge:
         announcer: Announcer,
         status: Status,
         contacts: ContactManager,
+        advertiser: Advertiser,
         telemetry: TelemetryPoller | None,
         profile: RadioProfileHook | None,
         notifier: Callable[[str], bool],
@@ -105,6 +108,7 @@ class Bridge:
         self.radio, self._events, self.observer = radio, events, observer
         self.outbox, self.inbox, self.announcer, self.status = outbox, inbox, announcer, status
         self._contacts, self._telemetry, self._profile = contacts, telemetry, profile
+        self.advertiser = advertiser
         self._notify, self._mono = notifier, monotonic
         self._clock_restarted_at: float | None = None  # the monotonic clock's
 
@@ -138,6 +142,8 @@ class Bridge:
                     ("requests", self.outbox.take_requests()),
                     ("contact requests", self._contact_request_loop()),
                     ("contacts", self._contacts.run()),
+                    ("advert requests", self._advert_request_loop()),
+                    ("adverts", self.advertiser.run()),
                     ("outbox", self.outbox.run()),
                     ("events", self._event_loop()),
                     ("messages", self.inbox.run()),
@@ -295,6 +301,10 @@ class Bridge:
         while True:
             self._contacts.accept(await self._bus.contact_requests.get())
 
+    async def _advert_request_loop(self) -> None:
+        while True:
+            self.advertiser.accept(await self._bus.advert_requests.get())
+
     # --- radio events ---------------------------------------------------------------------------
 
     async def _event_loop(self) -> None:
@@ -341,6 +351,7 @@ class Bridge:
             self.outbox.report_unpublished()  # the end of a flood of refused requests
             self.inbox.report()  # the end of a flood of received messages
             self._contacts.report_unpublished()
+            self.advertiser.report_unpublished()
             observe(self.observer.exclusions.flush)  # an exclusion not stored yet
             observe(self.observer.tick)
             self._ledger.store.flush()  # what the sections changed since the last tick (ARC-004)

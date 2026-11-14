@@ -29,6 +29,7 @@ from typing import Any, TypeVar
 
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core.airtime import (
+    LoRaParams,
     channel_message_bytes,
     direct_attempt_airtime_s,
     shortest_acknowledgement_s,
@@ -309,6 +310,26 @@ class Delivery:
     def save_level(self) -> None:
         """The budget's level, for the next start (ARC-005)."""
         self._airtime.save(self.budget.available_s(self._mono()), self._wall())
+
+    def airtime_free(self, airtime_s: float, lora: LoRaParams) -> bool:
+        """Whether the budget pays `airtime_s` now, without waiting, and still holds one long
+        message beside it, so that an alert after it goes out at once: an advert on request
+        (ADR 0033) never waits and never takes an alert's airtime. Where both do not fit into
+        the burst together, it is never paid."""
+        longest = direct_attempt_airtime_s(MAX_TEXT_BYTES, 0, True, lora)
+        return self.budget.available_s(self._mono()) - airtime_s >= longest
+
+    def spend_airtime(self, airtime_s: float) -> None:
+        """Take it from the budget and store the level at once (ARC-005): a crash before the
+        next start must not give it back."""
+        self.budget.consume(airtime_s, self._mono())
+        self.save_level()
+
+    def refund_airtime(self, airtime_s: float) -> None:
+        """Give back what `spend_airtime` took for a transmission the radio did not make, and
+        store the level at once."""
+        self.budget.refund(airtime_s, self._mono())
+        self.save_level()
 
     def _message_budget(self) -> tuple[AirtimeBudget, AirtimeLevel]:
         """The budget at the level the last run left (ARC-005), refilled since; at least what a

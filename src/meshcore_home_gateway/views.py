@@ -372,6 +372,53 @@ def telemetry_event(
     }
 
 
+# `advert` events (ADR 0033): what became of a request to send the radio's advert nearby
+SELF_ADVERT_EVENTS = ("sent", "refused", "failed")
+# the gateway's reasons of `refused`, in the order it checks them, and of `failed`; the radio's
+# refusals of the advert are its error names (codec.Err.name, "disabled") beside these
+SELF_ADVERT_REASONS = (
+    "too_large",
+    "invalid_utf8",
+    "invalid_request",
+    "retained",
+    "empty",
+    "no_radio",
+    "untested_firmware",
+    "advert_location",
+    "no_name",
+    "busy",
+    "too_soon",
+    "messages_waiting",
+    "airtime_budget",
+    "rate_limited",
+    "clock_unknown",
+    "clock_ahead",
+    "outcome_unknown",
+    "internal_error",
+)
+
+
+def self_advert_event(
+    kind: str,
+    request_id: str,
+    *,
+    reason: str | None = None,
+    name: str | None = None,
+    airtime_s: float | None = None,
+    next_at: float | None = None,
+) -> dict[str, Any]:
+    """An `advert` event: what became of a request to send the radio's advert nearby. `name`
+    and `airtime_s` of an advert that was written; `next_at`, when the next one may go."""
+    return {
+        "event_type": kind,
+        "id": request_id,
+        "reason": reason,
+        "name": name,
+        "airtime_ms": round(airtime_s * 1000) if airtime_s is not None else None,
+        "next_at": iso(next_at),
+    }
+
+
 # --- radio --------------------------------------------------------------------------------------
 
 

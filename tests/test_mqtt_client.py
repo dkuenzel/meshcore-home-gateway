@@ -27,7 +27,7 @@ from meshcore_home_gateway.mqtt import client as client_module
 from meshcore_home_gateway.mqtt import retained as retained_module
 from meshcore_home_gateway.mqtt.client import MqttBus, make_paho_client
 from meshcore_home_gateway.mqtt.topics import Topics
-from meshcore_home_gateway.ports import ContactRequest, SendRequest
+from meshcore_home_gateway.ports import AdvertRequest, ContactRequest, SendRequest
 from meshcore_home_gateway.wiring import event_expiries
 from tests.conftest import SKIP_BROKER, Broker, free_port, start_mosquitto, stop_mosquitto
 
@@ -134,6 +134,7 @@ def test_connection_subscribes_and_announces_availability() -> None:
                 ("meshcore/radio1/add_contact", 1),
                 ("meshcore/radio1/contacts/+/remove", 1),
                 ("meshcore/radio1/contacts/+/telemetry", 1),
+                ("meshcore/radio1/advert/send", 1),
                 *[
                     (f"meshcore/radio1/{name}", 1)
                     for name in (
@@ -463,6 +464,38 @@ def test_contact_requests_reach_their_own_queue() -> None:
     asyncio.run(scenario())
 
 
+def test_advert_requests_reach_their_own_queue() -> None:
+    """`advert/send` is one of the requests subscribed to with discovery on or off (ADR 0033);
+    a request carries whether the broker replayed it as retained, for the advertiser to refuse."""
+
+    async def scenario() -> None:
+        bus, fake = make_bus()
+        await bus.start()
+
+        def deliver(topic: str, payload: bytes, retain: bool = False) -> None:
+            fake.on_message(
+                fake, None, SimpleNamespace(topic=topic, payload=payload, retain=retain)
+            )
+
+        await asyncio.to_thread(deliver, "meshcore/radio1/advert/send", b"send")
+        await asyncio.to_thread(deliver, "meshcore/radio1/advert/send", b'{"id": "x1"}', True)
+        await asyncio.to_thread(deliver, "meshcore/radio1/advert/send/x", b"send")
+        await asyncio.to_thread(deliver, "meshcore/radio1/advert", b"send")
+        requests = [await asyncio.wait_for(bus.advert_requests.get(), 1) for _ in range(2)]
+        assert requests == [
+            AdvertRequest(b"send", False),
+            AdvertRequest(b'{"id": "x1"}', True),
+        ]
+        await asyncio.sleep(0.05)
+        assert bus.advert_requests.empty()  # neither another level nor the event topic
+        assert bus.requests.empty()
+        assert bus.contact_requests.empty()
+        assert TOPICS.advert_request == "meshcore/radio1/advert/send"
+        assert TOPICS.advert_event == "meshcore/radio1/advert"
+
+    asyncio.run(scenario())
+
+
 def test_discovery_topics_and_the_show_request_reach_the_loop() -> None:
     """The gateway watches its discovery topics, to notice what Home Assistant clears there (a
     contact device the user deleted, the gateway's own device), its offline status, and the
@@ -577,7 +610,8 @@ def test_a_refused_subscription_is_named(caplog: pytest.LogCaptureFixture) -> No
         granted, refused = (ReasonCode(PacketTypes.SUBACK, identifier=c) for c in (1, 0x80))
         fake.on_subscribe(fake, None, 6, [refused] * 15, None)  # another subscription's answer
         assert "refused the subscription" not in caplog.text
-        fake.on_subscribe(fake, None, 7, [granted] * 5 + [refused] * 11 + [granted], None)
+        requests = 6  # send, contacts' send, add, remove, telemetry, advert
+        fake.on_subscribe(fake, None, 7, [granted] * requests + [refused] * 11 + [granted], None)
         assert (
             "refused the subscription to meshcore/radio1/availability, meshcore/radio1/config, "
             "meshcore/radio1/contacts,"

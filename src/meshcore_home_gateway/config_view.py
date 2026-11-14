@@ -66,6 +66,7 @@ def shown_settings(config: Config) -> dict[str, dict[str, Any]]:
         },
         "homeassistant": {
             "controls": ha.controls,
+            "radio_controls": ha.radio_controls,
             "hidden_targets": len(ha.hidden_targets),
             "contact_entity_prefix": ha.contact_entity_prefix,
             "language": ha.language,

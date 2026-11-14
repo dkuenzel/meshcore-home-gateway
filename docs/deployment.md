@@ -362,6 +362,12 @@ pct stop 105 && pct destroy 105
   and 2.1 kept, add `heard_nodes = "keys"` to `[contacts]` in
   `/etc/meshcore-home-gateway/config.toml` before the update: both know the setting
   ([privacy.md](privacy.md#other-people)).
+* **The advert button after an update to 2.2:** Home Assistant gets *Send advert nearby*, which
+  anyone who uses it can press ([home-assistant.md](home-assistant.md#advert-nearby)). With a
+  broker ACL, Home Assistant's user needs `topic write <base_topic>/<node_id>/advert/send` for it
+  ([mqtt-api.md](mqtt-api.md#securing-the-broker)): the example ACL of earlier versions lacks it,
+  and without it the button does nothing. To keep it from Home Assistant's users, set
+  `[homeassistant] radio_controls = false` before the update.
 * **Telemetry after an update** from 1.0.0, or from 1.1.0a1 with telemetry off, with
   `[telemetry] ask = "all"`: telemetry is on from 1.1.0a2 on, and the first time it runs on the
   state directory it asks nobody for an hour
@@ -698,6 +704,7 @@ updates wait for.
 | `delivery: failed`, reason `channel_not_configured` | The channel index has no name on the radio |
 | `delivery: expired`, reason `airtime_budget` | More messages than the budget allows; see the airtime entity, raise `budget_s_per_hour` only within the legal limit |
 | `delivery: failed`, reason `exceeds_airtime_burst` | One long message needs more airtime than `burst_s` at the radio's settings (slow presets); shorten messages or raise `burst_s` |
+| `advert: refused`, reason `airtime_budget`, also with a full budget | The budget keeps one long message for an alert beside the advert, and at slow presets the two do not fit into `burst_s` together; raise `burst_s` (at 125 kHz, SF 12, CR 4/5 to 15 s) |
 | Commands rejected with `too_old` / `from_the_future` | The sender's clock or the gateway host's clock is wrong: the check compares the time the sender's device stamped on the message (the phone app sets a companion's clock) with the host's clock; the clock of the gateway's own radio does not enter it. Set the wrong clock right, or set `max_age_s = 0` |
 | Log: `radio clock left ... behind the host's` | The host's time was not written to the radio: it is before this release, more than ten years after it, or more than `set_clock_max_days` (30) ahead of the radio's clock. A time written cannot be taken back without a restart of the radio, so check the host's clock first (`timedatectl`; in a container the Proxmox host's, `chronyc tracking` there). If it is right (the radio lay unused for a long time), raise `set_clock_max_days` or set it to 0 for one start |
 | Log: `radio clock is ... ahead of the host's: restarting the radio to set it back` | Expected now and then: the firmware sets its clock back only at a start, to its newest contact time, after the gateway wrote back the contact times the clock stamped ahead (`radio: ... contact times the clock stamped ahead set back`). The gateway connects again a few seconds later and moves the clock forward (`radio clock moved forward`). Over USB the radio is gone for a moment and comes back under the same device. A clock that runs fast is set back at most once a day. After `... times the jump MeshCore's clock makes on nRF52 boards without a clock chip every 48.5 days of uptime` (MeshCore #3565), it is set back at once: nodes that took the radio's adverts in between ignore its adverts until real time passes them |

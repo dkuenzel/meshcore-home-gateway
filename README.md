@@ -45,6 +45,10 @@ flowchart LR
   read. A contact is included or excluded with one switch or one command, an exclusion also
   before it is added; the first time telemetry runs with `ask = "all"`, it waits an hour for that
   ([`docs/companions.md`](docs/companions.md)).
+- **Advert nearby:** a button, a command or a request makes the radio introduce itself once to
+  the radios in direct range, zero hop and never with a position, so a neighbour can add this
+  home without its QR code, and the household's companions learn a new name of the radio
+  ([ADR 0033](docs/decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)).
 - **Home Assistant:** nothing to install there; MQTT discovery creates one device with radio
   link, battery, airtime and queue sensors, event entities for messages, deliveries and commands,
   and a notify entity per target.

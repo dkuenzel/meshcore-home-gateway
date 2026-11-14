@@ -207,6 +207,42 @@ def test_a_budget_can_start_empty_and_charge_beyond_its_level() -> None:
     assert AirtimeBudget(36.0, 2.0, now=0.0, tokens=9.0).available_s(0.0) == 2.0
 
 
+def test_airtime_given_back_returns_to_the_level_and_leaves_the_hours_count() -> None:
+    """An advert the radio did not build (ADR 0033): what was taken comes back, never above a
+    full burst, and the last hour no longer counts it."""
+    budget = AirtimeBudget(36.0, 10.0, now=0.0)
+    budget.consume(4.0, 0.0)
+    budget.consume(1.0, 0.0)
+    budget.refund(1.0, 0.0)
+    assert budget.available_s(0.0) == pytest.approx(6.0)
+    assert budget.used_s(0.0) == pytest.approx(4.0)
+    budget.refund(4.0, 100.0)  # refilled by 1 s meanwhile: back to the burst, not above
+    assert budget.available_s(100.0) == pytest.approx(10.0)
+    assert budget.used_s(100.0) == pytest.approx(0.0)
+
+
+def test_airtime_given_back_leaves_the_hour_with_what_was_taken() -> None:
+    """The radio answers a moment after the claim: the hour's count never reads below what was
+    spent beside it, also while the hour ends between the claim and the answer."""
+    budget = AirtimeBudget(36.0, 10.0, now=0.0)
+    budget.consume(2.0, -10.0)  # a message before the advert
+    budget.consume(1.0, 0.0)
+    budget.refund(1.0, 0.05)
+    assert budget.used_s(3589.99) == pytest.approx(2.0)
+    assert budget.used_s(3590.0) == pytest.approx(0.0)
+    assert budget.used_s(3600.02) == pytest.approx(0.0)
+    alone = AirtimeBudget(36.0, 10.0, now=0.0)
+    alone.consume(1.0, 0.0)
+    alone.refund(1.0, 0.05)
+    assert alone.used_s(3600.02) == pytest.approx(0.0)
+    twice = AirtimeBudget(36.0, 10.0, now=0.0)  # the same airtime spent before: it stays
+    twice.consume(1.0, -5.0)
+    twice.consume(1.0, 0.0)
+    twice.refund(1.0, 0.05)
+    assert twice.used_s(3594.99) == pytest.approx(1.0)
+    assert twice.used_s(3595.0) == pytest.approx(0.0)
+
+
 def test_each_key_has_its_own_bucket() -> None:
     """A flooding sender spends only its own tokens (SEC-012, SEC-013)."""
     limit = KeyedRateLimit(per_s=0.5, burst=3.0)

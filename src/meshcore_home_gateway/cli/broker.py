@@ -1,6 +1,6 @@
-"""The commands' MQTT client (`send`, `listen`, `contacts`, `check-config --broker`): a client
-id of its own, QoS 1 (0 for a sweep of retained messages) and bounded waits for the broker's
-answers. The commands call it through the module (`broker.mqtt_client`), so that a test
+"""The commands' MQTT client (`send`, `listen`, `contacts`, `advert`, `check-config --broker`): a
+client id of its own, QoS 1 (0 for a sweep of retained messages) and bounded waits for the
+broker's answers. The commands call it through the module (`broker.mqtt_client`), so that a test
 replaces it in one place."""
 
 from __future__ import annotations
@@ -120,6 +120,27 @@ def publish(client: Any, topic: str, payload: bytes, *, retain: bool = False) ->
     except (RuntimeError, ValueError) as exc:
         return tr("request not sent: {detail}", detail=exc)
     return None if info.is_published() else tr("broker did not confirm the request")
+
+
+class EventWatch:
+    """The result of one request: the first event with its id and one of the `final` event
+    types (paho thread)."""
+
+    def __init__(self, request_id: str, final: set[str]) -> None:
+        self._id, self._final = request_id, final
+        self.result: dict[str, Any] | None = None
+        self.done = threading.Event()
+
+    def on_message(self, message: Any) -> None:
+        try:
+            event = json.loads(message.payload)
+        except (ValueError, RecursionError):  # also nested too deeply; it would end paho's thread
+            return
+        if not isinstance(event, dict) or event.get("id") != self._id:
+            return
+        if event.get("event_type") in self._final:
+            self.result = event
+            self.done.set()
 
 
 class Retained:

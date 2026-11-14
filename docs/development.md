@@ -196,8 +196,9 @@ its rule; the shipped template breaks none of them.
 1. A value goes onto one `<div>`, `<table>`, `<details>` or `<ha-qr-code` element per line, or
    onto a line of `<table role="presentation" width="100%">` elements.
 2. A mapping macro (`said`, `mark`, `why`, `what`, `telemetry`, `status`, `profile`, `part`,
-   `place`, `problem`, `mon`, `kind`, `audience`, `node`) gives each branch a text, an unknown
-   value through `m()`, and has a branch for each value of the gateway's list where there is one.
+   `place`, `problem`, `mon`, `kind`, `audience`, `node`, `cause`) gives each branch a text, an
+   unknown value through `m()`, and has a branch for each value of the gateway's list where there
+   is one.
 3. A condition holds no marker and no `m()`, and never `has_value()`. The entity ID of a contact
    appears only inside a card or row whose template condition tests, for that entity, that it
    exists, that it is not `unavailable`, its device's `via_device_id` and `serial_number`; for a

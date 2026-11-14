@@ -120,7 +120,13 @@ from meshcore_home_gateway.ports import (
     StatsRead,
 )
 from meshcore_home_gateway.protocol import codec
-from meshcore_home_gateway.protocol.codes import AutoAdd, ContactFlag, NodeType, TelemetryMode
+from meshcore_home_gateway.protocol.codes import (
+    AutoAdd,
+    ContactFlag,
+    ErrorCode,
+    NodeType,
+    TelemetryMode,
+)
 from meshcore_home_gateway.radio.session import CompanionSession, default_session_factory
 from meshcore_home_gateway.state import (
     CommandLedger,
@@ -208,6 +214,7 @@ insecure = true
 [homeassistant]
 prefix = "{PREFIX}"
 status_topic = "{STATUS}"
+radio_controls = true
 [targets.{ALIAS}]
 contact = "{KEY}"
 [targets.{CHANNEL_ALIAS}]
@@ -260,6 +267,7 @@ status_topic = "{STATUS}"
 contact_devices = 10
 language = "en"
 controls = false
+radio_controls = false
 hidden_targets = ["{CHANNEL_ALIAS}"]
 contact_entity_prefix = "mesh_2"
 [messages]
@@ -731,6 +739,18 @@ async def _published(tmp: Path) -> tuple[_Paho, _Paho]:
     for state in (b"off", b"on"):  # excluded, included
         bridge._contacts.accept(ContactRequest("telemetry", state, retained=False, key=KEY))
     bridge._contacts.accept(ContactRequest("telemetry", b"off", retained=True, key=KEY))  # refused
+    # an advert request as any client publishes it, refused without a radio; an advert sent and
+    # one the radio refused, as the worker reports them (ADR 0033)
+    client.on_message(
+        client, None, SimpleNamespace(topic=topics.advert_request, payload=b"send", retain=False)
+    )
+    await asyncio.sleep(0)  # the request reaches the event loop
+    bridge.advertiser.accept(bus.advert_requests.get_nowait())
+    for kind, reason in (("sent", None), ("failed", "table_full")):
+        advert = views.self_advert_event(
+            kind, "id", reason=reason, name="Gateway", airtime_s=1.2, next_at=T + 600
+        )
+        bridge.advertiser._publish(advert)
     events = asyncio.create_task(bridge._event_loop())
     added = Job("add", KEY_N, "id", "key", "Relay", NodeType.REPEATER)
     await _until(events, bridge._contacts._write(session, added, _refused_write()))  # failed
@@ -805,6 +825,11 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
                 _emitted(published, "telemetry", "event_type"),
                 gateway["telemetry"]["event_types"],
             ),
+            (
+                "advert:event_type",
+                _emitted(published, "advert", "event_type"),
+                gateway["advert"]["event_types"],
+            ),
             ("settings:status", _statuses(), gateway["profile"]["options"]),
         )
     }
@@ -821,6 +846,13 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
     _within(reasons, _emitted(published, "state", "telemetry_reason"), PAUSE_REASONS)
     _within(event_states, {*EVENT_STATES}, STATES)  # an event carries a contact's state
     _within(event_states, _emitted(published, "telemetry", "state"), EVENT_STATES)
+    advert_reasons = "advert:reason"
+    radio_refusals = [*(code.name.lower() for code in ErrorCode), "disabled"]  # codec.Err.name
+    _within(
+        advert_reasons,
+        _emitted(published, "advert", "reason"),
+        [*views.SELF_ADVERT_REASONS, *radio_refusals],
+    )
     return emitted | {
         "delivery:event_type": [state.value for state in DeliveryState],
         "received:event_type": [kind.value for kind in MessageKind],
@@ -849,6 +881,7 @@ def _vocabularies(published: Sequence[tuple[str, bytes, bool, int]]) -> dict[str
         statuses: _options(statuses, gateway["telemetry_status"]["options"], STATUSES),
         reasons: list(PAUSE_REASONS),
         event_states: list(EVENT_STATES),
+        advert_reasons: list(views.SELF_ADVERT_REASONS),
     }
 
 

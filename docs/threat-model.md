@@ -31,13 +31,13 @@ weakens a control updates the boundary's section here in the same pull request.
 
 | | Actor | What they can do | What stands in the way |
 | --- | --- | --- | --- |
-| T1 | A stranger in radio range | Send any packet: adverts under any name and any key of their own, channel messages, acknowledgements and paths in the clear; read what is in the clear; jam | The firmware decrypts direct messages only from contacts; floods are bounded (B1); acknowledgements prove little ([what `confirmed` proves](mqtt-api.md#what-confirmed-proves)) |
+| T1 | A stranger in radio range | Send any packet: adverts under any name and any key of their own, channel messages, acknowledgements and paths in the clear; read what is in the clear, the radio's name and full key from an advert it sends on request too, and add the gateway as a contact; jam | The firmware decrypts direct messages only from contacts, so a stranger's direct messages are still dropped and their telemetry requests denied; floods are bounded (B1); acknowledgements prove little ([what `confirmed` proves](mqtt-api.md#what-confirmed-proves)); the radio's advert on request goes zero hop and never carries a position (B1) |
 | T2 | A stranger with a 6-byte key prefix collision | Pose as an allowed sender's prefix, after about 2⁴⁸ key generations ([residual risks](#residual-risks)) | The look-alike memory ([design §7.3](design.md#73-command-authorisation-in-detail)); codes ([configuration](configuration.md#commands)) |
 | T3 | A contact of the radio outside the household | Direct messages the radio decrypts, telemetry answers, adverts | Commands need the allowlist; telemetry asks only the household (`ask = "household"`, the default) ([ADR 0029](decisions/0029-what-a-contact-is-trusted-with.md)); rate limits per sender |
 | T4 | Whoever holds an allowed sender's handheld or key | Send accepted commands | Codes, a second factor on a phone, at most 5 wrong ones per sender an hour; a small word list; automations that confirm |
 | T5 | A host on the radio's network (TCP) | Be the radio, or a second client of it: read and write everything, export the private key | USB is the default; TCP needs `tcp_unauthenticated = true`; a contested link is reported; codes, at most 5 wrong ones per sender an hour ([design §7.4](design.md#74-residual-risks)) |
 | T6 | A broker client other than the gateway | Publish and read what the broker's ACL allows: forge events and documents, send messages, manage contacts, read the household's unsent drafts and send them | The ACL ([securing the broker](mqtt-api.md#securing-the-broker)); warnings and refusals for a broker without login or TLS; forged documents restored |
-| T7 | A Home Assistant user who is not an administrator | Every entity of the gateway: send, also the draft another user left in a chat, add and remove contacts, switch telemetry, see positions and messages, and the settings in effect, the hidden targets' names and prefixes included (never a secret, host or key) | `[homeassistant] controls = false`, `hidden_targets` ([Home Assistant](home-assistant.md)) |
+| T7 | A Home Assistant user who is not an administrator | Every entity of the gateway: send, also the draft another user left in a chat, add and remove contacts, switch telemetry, make the radio advertise its name and key nearby (at most every 10 minutes), see positions and messages, and the settings in effect, the hidden targets' names and prefixes included (never a secret, host or key) | `[homeassistant] controls = false`, `radio_controls = false`, `hidden_targets` ([Home Assistant](home-assistant.md)) |
 | T8 | Home Assistant's administrator or host | All of T7, automations, the recorder | Not an attacker of the gateway; a victim of what reaches Home Assistant |
 | T9 | A process in the container as the service user | The state directory, the radio's device, the login in memory | The systemd sandbox. The broker password and the code secrets are files the service's group reads (0640), which such a process reads too; a systemd credential that root alone reads only with a drop-in ([deployment](deployment.md#4-operations)) |
 | T10 | Root in the container, the Proxmox host | Everything | Not an attacker of the gateway |
@@ -72,7 +72,10 @@ messages and malformed frames are bounded per sender and channel; a forged ackno
 unguessable by `confirm_nonce` and caught by `suspect` where the path allows; positions in adverts
 are checked from the packet log only under the radio's own rules
 ([ADR 0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md)); the gateway's own
-adverts never carry a position.
+adverts never carry a position, and one it is asked for goes zero hop, at most every 10 minutes,
+and not while the radio's clock is ahead
+([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)). The advert
+carries the radio's clock, set from the host's: the host's clock must be right (NTP).
 
 **Remains:** jamming; a contact that keeps the radio busy (the radio acknowledges before the
 gateway sees the message); acknowledgements the firmware does not authenticate.
@@ -112,7 +115,9 @@ what another client writes on the device's topics is not restored, so only the A
 values true. The drafts of Home Assistant's chats are retained until they are sent, emptied after
 15 minutes or cleared at a clean stop: a client that may read `<base>/<node>/#` reads them, and
 one that may write a draft's request topic sends it
-([drafts](mqtt-api.md#drafts-of-home-assistants-chats-homeassistantdraftkindchat)).
+([drafts](mqtt-api.md#drafts-of-home-assistants-chats-homeassistantdraftkindchat)). A client that
+may write `advert/send` makes the radio advertise its name and key to the radios in direct range,
+at most every 10 minutes ([advert nearby](mqtt-api.md#advert-nearby-advertsend-and-advert)).
 
 ### B4: the broker and Home Assistant
 
@@ -128,8 +133,10 @@ key digits.
 **What crosses:** every entity to every user. **Trusted:** Home Assistant's users are the
 household. **Not trusted:** that every user should act on the radio.
 
-**Controls:** controls that can be switched off, targets that can be hidden; the guide explains
-Home Assistant's user model ([shared households](home-assistant.md#shared-households)).
+**Controls:** controls that can be switched off (`controls`, and `radio_controls` for *Send
+advert nearby*, which every user may press while it is on), targets that can be hidden; the
+guide explains Home Assistant's user model
+([shared households](home-assistant.md#shared-households)).
 
 ### B6: the service, the container and the host
 
@@ -191,6 +198,7 @@ Deny alerts or presence (A2, A3, A11)
 ├─ keep the radio busy with direct messages (T3) ...... remove the contact; see below
 ├─ spend airtime on answers to replays (T1) ........... reply off by default; repeat memory; rate limits; budget
 ├─ take the client id, clear documents (T6) ........... random id; the ACL; restored documents
+├─ request adverts over and over (T6, T7) ............. one in 10 minutes; messages first; budget; radio work limited
 └─ push the radio's clock ahead (T12) ................. clock bounds; the offset in `state`
 ```
 

@@ -29,7 +29,7 @@ from meshcore_home_gateway.core.mesh import NODE_TYPES
 from meshcore_home_gateway.core.model import DeliveryState
 from meshcore_home_gateway.mqtt.discovery import DOCUMENTATION_URL, PROFILE_STATES
 from meshcore_home_gateway.protocol.links import _INVISIBLE
-from meshcore_home_gateway.views import _TELEMETRY_MODES
+from meshcore_home_gateway.views import _TELEMETRY_MODES, SELF_ADVERT_REASONS
 
 ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / "docs" / "home-assistant.md"
@@ -50,6 +50,9 @@ TAB_LETTERS = 22  # the three titles together, or the tab bar scrolls at 360 px
 # the name of the tile beside a chat's Send button: 122 px at 360 px, which 17 letters of
 # "Return, then Send" fill to 111 px; a longer name is cut (docs/testing.md, the browser check)
 SEND_NAME_LETTERS = 17
+# the label of the advert nearby's row on Contacts: at 360 px it has room beside its button for
+# the English label, 23 letters; German's "Advert an Funkgeräte in der Nähe" was cut
+ADVERT_ROW = "Advert to radios nearby"
 # rule 2: the mapping macros, each over a closed list; the gateway's list where one exists
 MAPPINGS = (
     "said",
@@ -66,6 +69,7 @@ MAPPINGS = (
     "kind",
     "audience",
     "node",
+    "cause",
 )
 # rule 8: mappings whose words need no explanation: the names of the months
 SELF_EVIDENT = frozenset({"mon"})
@@ -190,6 +194,16 @@ QUOTES: dict[str, tuple[str, ...]] = {
         "Entities."
     ): ("Send",),
     "Change on Contacts": ("Contacts",),
+    # the advert nearby (ADR 0033): its control on Contacts, its setting, why none was sent
+    (
+        "On Contacts, under Let someone add this home: the radio tells the radios in direct range "
+        "its name and key, once."
+    ): ("Contacts",),
+    (
+        "On: everyone who uses Home Assistant here can make the radio send its advert to the "
+        "radios nearby (Contacts)."
+    ): ("Contacts",),
+    "The gateway cannot use its radio for this now; Gateway shows why.": ("Gateway",),
     (
         "Ask for position and battery: on means the gateway asks this device for both now and "
         "then. Change it on Contacts. The words after on or off say how the device answers:"
@@ -212,6 +226,7 @@ NAMED: tuple[str, ...] = (
     "Hidden contacts",
     "Show again",
     "Where everyone is",
+    "Advert to radios nearby",
 )
 # rule 16: the texts that say a word of NAMED in its plain sense: text -> those words
 PLAIN: dict[str, tuple[str, ...]] = {
@@ -654,6 +669,7 @@ def rule_2(template: str, source: Any, loaded: Any, household: Household) -> lis
         "profile": list(PROFILE_STATES),
         "mon": [str(n) for n in range(1, 13)],
         "node": list(NODE_TYPES.values()),
+        "cause": [*SELF_ADVERT_REASONS, "table_full"],  # the radio's one refusal of an advert
     }
     found = []
     for card in cards(template):

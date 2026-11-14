@@ -31,6 +31,7 @@ PURE = sorted(
         *PACKAGE.glob("core/*.py"),
         *PACKAGE.glob("protocol/*.py"),
         PACKAGE / "views.py",
+        PACKAGE / "request_form.py",
         PACKAGE / "texts.py",
         PACKAGE / "catalog.py",
     ]
@@ -121,6 +122,7 @@ def test_the_application_names_no_adapter(path: Path) -> None:
 def test_the_application_is_checked() -> None:
     names = {path.relative_to(PACKAGE).as_posix() for path in APPLICATION}
     assert {"bridge.py", "observer.py", "contact_manager.py", "telemetry_poller.py"} <= names
+    assert {"advertiser.py", "request_form.py"} <= names
     assert {"mqtt/discovery.py", "ports.py"} <= names
 
 

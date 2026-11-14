@@ -8,7 +8,6 @@ import json
 import os
 import re
 import sys
-import threading
 from collections.abc import Sequence
 from typing import Any
 
@@ -33,32 +32,12 @@ _FULL_KEY = re.compile(r"[0-9a-fA-F]{64}")
 _LABEL = re.compile(r"([0-9a-fA-F]{12})(?:…|\.\.\.)([0-9a-fA-F]{8})(?: .*)?")
 
 
-class _ContactWatch:
-    """The result of one contact request: the `contact` event with its id (paho thread)."""
-
-    def __init__(self, request_id: str, final: set[str]) -> None:
-        self._id, self._final = request_id, final
-        self.result: dict[str, Any] | None = None
-        self.done = threading.Event()
-
-    def on_message(self, message: Any) -> None:
-        try:
-            event = json.loads(message.payload)
-        except (ValueError, RecursionError):  # also nested too deeply; it would end paho's thread
-            return
-        if not isinstance(event, dict) or event.get("id") != self._id:
-            return
-        if event.get("event_type") in self._final:
-            self.result = event
-            self.done.set()
-
-
 class _ContactSession(broker.GatewaySession):
     """A broker connection for the `contacts` commands: the gateway's availability and some of
     its retained documents (`documents`: "contacts", "nodes", "state"), then perhaps a request."""
 
     def __init__(self, config: Config, documents: Sequence[str] = ()) -> None:
-        self.watch: _ContactWatch | None = None
+        self.watch: broker.EventWatch | None = None
         super().__init__(config, documents, "contacts")
 
     def _on_message(self, client: Any, userdata: Any, message: Any) -> None:
@@ -78,7 +57,7 @@ class _ContactSession(broker.GatewaySession):
         """Publish the request and print its result: success is an event of `ok` without a
         reason."""
         request_id = f"cli-{os.urandom(4).hex()}"
-        self.watch = _ContactWatch(request_id, final)
+        self.watch = broker.EventWatch(request_id, final)
         error = broker.subscribe(self.client, self.topics.contact_event) if wait_s > 0 else None
         body = json.dumps({**payload, "id": request_id}).encode("utf-8")
         error = error or broker.publish(self.client, topic, body)

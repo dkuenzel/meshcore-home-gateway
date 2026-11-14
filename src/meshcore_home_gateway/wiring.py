@@ -37,6 +37,9 @@ are connected here (`gateway`). Who tells, when, and the listeners in the order 
 * a radio session's `profile`, the connect reads the radio's settings: the radio profile
   (ADR 0020).
 
+The bridge hands `bus.contact_requests` to `contacts.accept` and `bus.advert_requests` to
+`advertiser.accept` (ADR 0033).
+
 The radio's events go through one queue, which the bridge hands out (bridge.py).
 """
 
@@ -47,6 +50,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from meshcore_home_gateway.advertiser import Advertiser
 from meshcore_home_gateway.announcer import Announcer, ha_device_topics
 from meshcore_home_gateway.bridge import Bridge
 from meshcore_home_gateway.config import Config
@@ -322,6 +326,9 @@ def gateway(
     contacts = ContactManager(
         config, observer, events, radio.live, protected=protected, monotonic=monotonic
     )
+    advertiser = Advertiser(
+        bus, topics, radio=radio, outbox=outbox, monotonic=monotonic, wall_clock=wall_clock
+    )
     inbox = Inbox(
         config,
         bus,
@@ -420,6 +427,7 @@ def gateway(
         announcer=announcer,
         status=status,
         contacts=contacts,
+        advertiser=advertiser,
         telemetry=poller,
         profile=profile,
         notifier=notifier,

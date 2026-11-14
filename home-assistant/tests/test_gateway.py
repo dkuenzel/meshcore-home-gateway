@@ -481,6 +481,8 @@ async def test_settings_read_the_configuration_the_gateway_announces(
     assert row(said, "Delivery code") == "on"
     assert row(said, "Position and battery asked from") == "only people turned on<br>persons"
     assert row(said, "Contact controls in Home Assistant") == "on"
+    assert row(said, "Advert button in Home Assistant") == "on"
+    assert "<code>[homeassistant]</code> <code>radio_controls</code>" in said
     assert row(said, "Connected by") == "network"
     open_link = (
         '<div><ha-alert alert-type="warning">The radio\'s network link has no password: anyone '
@@ -502,6 +504,42 @@ async def test_settings_read_the_configuration_the_gateway_announces(
     assert row(said, "Radio settings managed") == (
         "managed on tested firmware, only watched on other firmware"
     )
+    assert problems(caplog) == []
+
+
+@pytest.mark.parametrize(
+    ("homeassistant", "shown"),
+    [
+        ({"controls": True, "radio_controls": True}, "on"),
+        ({"controls": True, "radio_controls": False}, "off"),
+        ({"controls": False, "radio_controls": True}, "off"),
+        ({"controls": True}, NONE),  # a gateway before 2.2 has no such key
+    ],
+)
+async def test_settings_say_whether_the_advert_button_can_be_pressed(
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    homeassistant: dict[str, bool],
+    shown: str,
+) -> None:
+    """ADR 0033: off with `radio_controls` or `controls` off, as the button is unavailable
+    then; on with both; a dash for a gateway whose document has no `radio_controls`."""
+    config = make_config()
+    loaded = await made(hass, hass_ws_client, config, tmp_path)
+    topics = await gateway(hass, config)
+    document = config_document(time.time(), target_settings(config, RADIO), shown_settings(config))
+    document["homeassistant"] = {
+        k: v
+        for k, v in document["homeassistant"].items()
+        if k not in ("controls", "radio_controls")
+    } | homeassistant
+    await fire(hass, topics.config, document, retain=True)
+    said = "\n".join(render(hass, c) for c in cards(loaded, "settings") if c["type"] == "markdown")
+    assert row(said, "Advert button in Home Assistant") == shown
     assert problems(caplog) == []
 
 

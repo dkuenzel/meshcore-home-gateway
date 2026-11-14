@@ -78,6 +78,7 @@ Golden frames built from these layouts are in [`tests/test_codec.py`](../tests/t
 | 22 | `DEVICE_QUERY` | protocol version; ≥ 3 selects the V3 message frames (`MyMesh.cpp:1056-1057`) | `DEVICE_INFO` |
 | 5 | `GET_DEVICE_TIME` | – | `CURR_TIME`: uint32 Unix seconds |
 | 6 | `SET_DEVICE_TIME` | uint32 seconds; **forward only**, else `ERR 6` (`MyMesh.cpp:1287-1296`) | `OK` / `ERR` |
+| 7 | `SEND_SELF_ADVERT` | nothing: the code alone sends the radio's advert zero hop; a second byte 1 would flood it (`MyMesh.cpp:1297-1316`), which the gateway never writes | `OK` / `ERR 3` (no free packet buffer) |
 | 19 | `REBOOT` | the text `reboot`; the radio saves changed contacts and restarts (`MyMesh.cpp:1512-1516`) | none |
 | 4 | `GET_CONTACTS` | optional uint32 `since` (`MyMesh.cpp:1238-1247`) | `CONTACTS_START`, `CONTACT` × n, `END_OF_CONTACTS` |
 | 31 | `GET_CHANNEL` | channel index (`MyMesh.cpp:1752-1766`) | `CHANNEL_INFO` |
@@ -126,6 +127,22 @@ Details that matter:
   ([mqtt-api.md](mqtt-api.md#managing-contacts-add_contact-and-contactskeyremove)).
 * `REMOVE_CONTACT` reads the key without checking the frame's length (`MyMesh.cpp:1349-1358`); the
   gateway always sends 33 bytes. Both commands mark the contacts file for a write 5 s later.
+* `SEND_SELF_ADVERT` builds the advert from the radio's name and, unless the advert location
+  policy is 0, its position: with policy 1 the advert carries a position also when it is 0, 0
+  (`MyMesh.cpp:1297-1303`, `AdvertDataHelpers.h:27-30`, `AdvertDataHelpers.cpp:4-11`), so the
+  gateway refuses on the policy that `SELF_INFO` reports, not on its position. The advert's type
+  is chat (`BaseChatMesh.cpp:21-30`). Zero hop is route direct with an empty path
+  (`src/Mesh.cpp:717-726`): a node that hears it handles it (`src/Mesh.cpp:252-290`) and passes
+  on only floods (`src/Mesh.cpp:344-357`), and a repeater keeps only repeaters as neighbours
+  (`simple_repeater/MyMesh.cpp:650-661`). `OK` means queued; the command writes nothing to the
+  flash. The advert's time is the radio's clock (`src/Mesh.cpp:418`); a node takes a contact's
+  advert only when it is newer than the stored one (`BaseChatMesh.cpp:133-136`), and then its
+  name (`BaseChatMesh.cpp:191`); an advert without a name is dropped
+  (`BaseChatMesh.cpp:122-127`). The companion firmware sends an advert only on this command or
+  its board's button (`MyMesh.cpp:2436-2447`); it has no advert interval
+  (`NodePrefs.h:195-196`). The gateway sends it on request only
+  ([mqtt-api.md](mqtt-api.md#advert-nearby-advertsend-and-advert),
+  [ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)).
 * `SEND_TXT_MSG` looks up the first contact whose key starts with the 6-byte prefix
   (`BaseChatMesh.cpp:874-880`); no match gives `ERR 2`. The text limit is 160 bytes, 158 if
   `attempt > 3` (`BaseChatMesh.cpp:451-454`). An all-zero prefix matches an unused anonymous slot
@@ -510,6 +527,7 @@ Encryption: AES-128-ECB in 16-byte blocks, zero-padded, with a 2-byte MAC in fro
 | path packet returned after a flooded acknowledgement | `4 + 16 · ⌈(6 + P) / 16⌉` for a way back of `P` path bytes (hashes 2, MAC 2, path length 1, path, type 1, random 4); sent direct along the way there (`src/Mesh.cpp:173-178, 448-486`) |
 | telemetry request | `4 + 16 · ⌈13 / 16⌉ = 20` (tag 4, type 1, reserved 4, random 4; `BaseChatMesh.cpp:693-698`): 22 bytes on air plus the path direct, 26 flooded |
 | telemetry answer, `L` LPP bytes | direct `4 + 16 · ⌈(4 + L) / 16⌉` (tag and LPP); as a flooded path return `4 + 16 · ⌈(6 + P + L) / 16⌉` with the path of `P` bytes (`src/Mesh.cpp:452-480`) |
+| advert of this radio, zero hop, no position, name `N` bytes (at most 31) | `101 + N` (key 32, timestamp 4, signature 64, flags 1, name; `src/Mesh.cpp:404-438`, `AdvertDataHelpers.cpp:4-28`): `103 + N` on air, which the gateway charges to the airtime budget (`core/airtime.py`) |
 
 A flood leaves the originating radio with an empty path; each repeater adds its hash
 (`src/Mesh.cpp:344-357, 647-678`). The gateway counts the transport codes on every flood and,

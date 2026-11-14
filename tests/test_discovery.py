@@ -26,9 +26,12 @@ from meshcore_home_gateway.core.model import Position
 from meshcore_home_gateway.core.profile import ProfileReport
 from meshcore_home_gateway.mqtt.contact_devices import contact_payload, removal_payload
 from meshcore_home_gateway.mqtt.discovery import (
+    RADIO_CONNECTED,
+    controls_off,
     device_name,
     discovery_payload,
     discovery_topic,
+    never_available,
     placeholder,
 )
 from meshcore_home_gateway.mqtt.manage_entities import manage_payload
@@ -38,6 +41,7 @@ from meshcore_home_gateway.ports import RadioInfo
 from meshcore_home_gateway.protocol.codec import DeviceInfo, SelfInfo
 from meshcore_home_gateway.protocol.codes import NodeType
 from meshcore_home_gateway.views import (
+    SELF_ADVERT_EVENTS,
     HistoryEntry,
     config_document,
     contacts_document,
@@ -197,6 +201,8 @@ def test_entities_and_their_sources() -> None:
         "contact",
         "node",
         "show_hidden",
+        "send_advert",
+        "advert",
         "profile",
         "setting",
         "telemetry_status",
@@ -342,6 +348,93 @@ def test_with_controls_off_the_show_hidden_button_is_unavailable() -> None:
         {"topic": TOPICS.availability},
         {"topic": f"{TOPICS.root}/homeassistant/off", "value_template": "{{ 'offline' }}"},
     ]  # a topic nobody publishes: Home Assistant keys availability by topic (HA-02)
+
+
+# --- advert nearby (ADR 0033) -------------------------------------------------------------------
+
+
+def _homeassistant(**settings: Any) -> Config:
+    return replace(CONFIG, homeassistant=replace(CONFIG.homeassistant, **settings))
+
+
+def test_the_advert_button_publishes_send_on_the_request_topic() -> None:
+    """*Send advert nearby* on the gateway's device: `send` on `advert/send` at QoS 0, as a
+    draft's Send button (a press while Home Assistant's link to the broker is down is not sent
+    after the reconnect); never retained; available while the gateway is online and its radio
+    connected. A control, not a configuration: no entity category."""
+    button = discovery_payload(CONFIG, TOPICS)["cmps"]["send_advert"]
+    assert button == {
+        "p": "button",
+        "unique_id": "meshcore_home_gateway_radio-1_send_advert",
+        "default_entity_id": "button.meshcore_home_gateway_radio-1_send_advert",
+        "name": "Send advert nearby",
+        "command_topic": "meshcore/radio-1/advert/send",
+        "payload_press": "send",
+        "qos": 0,
+        "icon": "mdi:broadcast",
+        "availability": [
+            {"topic": TOPICS.availability},
+            {"topic": TOPICS.state, "value_template": RADIO_CONNECTED},
+        ],
+        "availability_mode": "all",
+    }
+    assert TOPICS.advert_request == "meshcore/radio-1/advert/send"
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"radio_controls": False},
+        {"controls": False},
+        {"radio_controls": False, "controls": False},
+    ],
+)
+def test_without_radio_controls_or_controls_the_advert_button_is_unavailable(
+    settings: dict[str, bool],
+) -> None:
+    """ADR 0033: `radio_controls = false`, and `controls = false` as for every control (SEC-008),
+    keep the button announced and always unavailable: a component of the gateway's device that
+    goes can take the whole device away. One entry that is always offline, also with both."""
+    on = discovery_payload(CONFIG, TOPICS)["cmps"]["send_advert"]
+    off = discovery_payload(_homeassistant(**settings), TOPICS)["cmps"]["send_advert"]
+    assert off == on | {"availability": [*on["availability"], never_available(TOPICS)]}
+
+
+def test_radio_controls_off_leaves_every_other_control_as_it_is() -> None:
+    """`radio_controls = false` takes only the button that makes the radio transmit away from
+    Home Assistant: the contact controls stay as they are, which only `controls` turns off."""
+    config = _homeassistant(radio_controls=False)
+    assert controls_off(config, TOPICS) == []
+    on = discovery_payload(CONFIG, TOPICS)["cmps"]
+    off = discovery_payload(config, TOPICS)["cmps"]
+    assert {k: v for k, v in off.items() if k != "send_advert"} == {
+        k: v for k, v in on.items() if k != "send_advert"
+    }
+
+
+def test_the_advert_event_is_always_announced() -> None:
+    """*Advert nearby* reports every request's outcome, from MQTT and the command line too, so
+    it is there whatever the two settings say; never retained, as every event."""
+    for config in (CONFIG, _homeassistant(radio_controls=False, controls=False)):
+        event = discovery_payload(config, TOPICS)["cmps"]["advert"]
+        assert event == {
+            "p": "event",
+            "unique_id": "meshcore_home_gateway_radio-1_advert",
+            "default_entity_id": "event.meshcore_home_gateway_radio-1_advert",
+            "name": "Advert nearby",
+            "state_topic": "meshcore/radio-1/advert",
+            "event_types": ["sent", "refused", "failed"],
+        }
+    assert list(SELF_ADVERT_EVENTS) == ["sent", "refused", "failed"]
+
+
+def test_the_advert_entities_have_german_names() -> None:
+    """The catalog's words (docs/translations.md): Advert stays Advert."""
+    german = discovery_payload(_maximal("de"), TOPICS)["cmps"]
+    assert (german["send_advert"]["name"], german["advert"]["name"]) == (
+        "Advert in der Nähe senden",
+        "Advert in der Nähe",
+    )
 
 
 def test_a_hidden_target_has_no_notify_entity() -> None:

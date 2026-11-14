@@ -10,6 +10,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -1146,6 +1147,106 @@ def test_a_refused_telemetry_request_names_its_reason(error: int, reason: str) -
             await session.request_telemetry(BOB.public_key)
         assert failure.value.reason == reason
         assert not session.closed
+
+    run(radio, scenario)
+
+
+def test_the_self_advert_is_the_code_alone_and_ok_is_true() -> None:
+    """SEND_SELF_ADVERT without its flood byte (ADR 0033): the radio gets 7 and nothing else."""
+    radio = EmulatedRadio()
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        written = len(radio.received)
+        assert await session.send_self_advert() is True
+        assert radio.received[written:] == [bytes([Command.SEND_SELF_ADVERT])]
+        assert radio.adverts == [b"\x07"]
+
+    run(radio, scenario)
+
+
+@pytest.mark.parametrize(
+    ("refusal", "reason"),
+    [({"errors": {Command.SEND_SELF_ADVERT: 3}}, "table_full"), ({"disabled": {7}}, "disabled")],
+)
+def test_the_radios_refusal_of_the_advert_raises_its_name(
+    refusal: dict[str, Any], reason: str
+) -> None:
+    """ERR 3: no packet buffer free (Mesh.cpp:407-410); the session stays up."""
+    radio = EmulatedRadio(**refusal)
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        with pytest.raises(CommandFailedError) as failure:
+            await session.send_self_advert()
+        assert failure.value.reason == reason
+        assert not session.closed
+
+    run(radio, scenario)
+
+
+def test_unless_withdraws_the_advert_before_the_write() -> None:
+    radio = EmulatedRadio()
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        written = len(radio.received)
+        assert await session.send_self_advert(unless=lambda: True) is False
+        assert radio.received[written:] == []
+        assert await session.send_self_advert(unless=lambda: False) is True
+        assert radio.commands()[written:] == [Command.SEND_SELF_ADVERT]
+
+    run(radio, scenario)
+
+
+def test_an_advert_after_the_session_closed_is_not_sent() -> None:
+    radio = EmulatedRadio()
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        await session.close()
+        with pytest.raises(NotSentError):
+            await session.send_self_advert()
+        assert Command.SEND_SELF_ADVERT not in radio.commands()
+
+    run(radio, scenario)
+
+
+def test_the_clock_offset_is_read_afresh() -> None:
+    """One GET_DEVICE_TIME now, not the offset of the last heartbeat (ADR 0033); the offset kept
+    for the state follows it as at the heartbeat."""
+    radio = EmulatedRadio()
+    now = START_TIME + 100
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        assert session.clock_offset_s == 0  # written forward at connect
+        radio.clock = now + 120  # it jumped, or another client wrote it
+        written = len(radio.received)
+        assert await session.read_clock_offset() == 120
+        assert radio.commands()[written:] == [Command.GET_DEVICE_TIME]
+        assert session.clock_offset_s == 120
+        radio.clock = now - 5  # behind: read, never set here
+        assert await session.read_clock_offset() == -5
+        assert radio.commands()[written:] == [Command.GET_DEVICE_TIME] * 2
+
+    run(radio, scenario, now=now)
+
+
+def test_the_emulated_radio_answers_the_advert_and_keeps_each_frame() -> None:
+    """Every command 7 is kept, the flood byte too, so that a test sees what the gateway wrote;
+    a held answer comes when the test releases it."""
+    radio = EmulatedRadio(held={Command.SEND_SELF_ADVERT})
+
+    async def scenario(session: CompanionSession, _: asyncio.Queue[RadioEvent]) -> None:
+        await session.start()
+        sending = asyncio.create_task(session.send_self_advert())
+        await asyncio.sleep(0.05)
+        assert not sending.done()
+        radio.release(Command.SEND_SELF_ADVERT)
+        assert await sending is True
+        await radio.write(encode_frame(bytes([Command.SEND_SELF_ADVERT, 1])))  # as an app floods
+        assert radio.adverts == [b"\x07", b"\x07\x01"]
 
     run(radio, scenario)
 

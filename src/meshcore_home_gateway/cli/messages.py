@@ -150,6 +150,7 @@ def _listen(args: argparse.Namespace) -> int:
         "contact": [topics.contact_event],
         "node": [topics.node_event],
         "telemetry": [topics.telemetry_event],
+        "advert": [topics.advert_event],
         "all": [
             topics.received,
             topics.command,
@@ -158,6 +159,7 @@ def _listen(args: argparse.Namespace) -> int:
             topics.contact_event,
             topics.node_event,
             topics.telemetry_event,
+            topics.advert_event,
         ],
     }[args.topic]
     client = broker.mqtt_client(config.mqtt, "listen")

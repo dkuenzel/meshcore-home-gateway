@@ -136,6 +136,20 @@ def shortest_acknowledgement_s(text_bytes: int, hops: int, path_bytes: int, p: L
     return message + time_on_air_s(ACKNOWLEDGEMENT_MIN_BYTES, bare)
 
 
+# --- this radio's own advert (ADR 0033) ---------------------------------------------------------
+
+ADVERT_FIXED_BYTES = 32 + 4 + 64 + 1  # key, timestamp, signature, flags (Mesh.cpp:404-438)
+MAX_ADVERT_NAME_BYTES = 31  # MAX_ADVERT_DATA_SIZE 32 less the flags (AdvertDataHelpers.cpp:20-27)
+
+
+def self_advert_bytes(name_bytes: int) -> int:
+    """This radio's advert as it sends it zero hop, without a position (an advert that would
+    carry one is never sent): header, path length 0, key, timestamp, signature, flags, the name
+    cut at 31 bytes (AdvertDataHelpers.cpp:4-28)."""
+    name = min(max(name_bytes, 0), MAX_ADVERT_NAME_BYTES)
+    return HEADER_BYTES + PATH_LEN_BYTES + ADVERT_FIXED_BYTES + name
+
+
 # --- telemetry requests (ADR 0018) --------------------------------------------------------------
 
 REQUEST_PLAINTEXT_BYTES = 13  # tag 4, type 1, reserved 4, random 4 (BaseChatMesh.cpp:693-698)

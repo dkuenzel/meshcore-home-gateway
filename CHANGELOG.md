@@ -8,8 +8,55 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+For the administrator: make the dashboard again after the update. With a broker ACL, Home
+Assistant's user needs `topic write <base_topic>/<node_id>/advert/send` for *Send advert nearby*
+([deployment.md](docs/deployment.md#update-reconfigure-remove)).
+
 ### Added
 
+- Advert nearby: the gateway makes its radio send its advert once to the radios in direct range,
+  zero hop, never a flood, never a position, nothing written to the radio
+  ([ADR 0033](docs/decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)). A
+  person nearby can then add this home without its QR code, and the household's companions
+  learn a new name of the radio. The new MQTT request topic `advert/send` (any payload, or JSON
+  `{"id": "…"}`) and event topic `advert` (`event_type` `sent`, `refused` or `failed`, with `id`,
+  `reason`, `name`, `airtime_ms` and `next_at`), and the new command
+  `meshcore-home-gateway advert [--wait SECONDS]` and `listen --topic advert` (`all` includes
+  it). At most one advert every 10 minutes (kept in memory), charged to the airtime budget,
+  which must hold a long message beside it (at slow presets, where the two do not fit into
+  `burst_s`, none goes until it is raised). A request is refused (`reason`) in a wrong form
+  (`too_large`, `invalid_utf8`, `invalid_request`), retained (`retained`) or empty (`empty`),
+  without a connected radio (`no_radio`), on firmware the gateway is not tested with, also with
+  `radio.profile.manage = "always"` (`untested_firmware`), while the radio would put its
+  position into the advert (`advert_location`, its policy as the radio reports it), when the
+  radio has no name (`no_name`), while another advert is being sent (`busy`), within the 10
+  minutes (`too_soon`), while messages are on their way (`messages_waiting`), when the budget
+  cannot pay it (`airtime_budget`), when the requests that passed these checks asked the radio
+  too often (`rate_limited`, 10 in a row, then one a minute), when the radio answers the read of
+  its clock with an error (`clock_unknown`) and while the radio's clock is more than 60 s ahead
+  of the host's (`clock_ahead`). A radio that refuses the advert (`failed` with its error name,
+  such as `table_full`) built none: its airtime is given back, and the next request may go at
+  once. A copy of the request in progress, or of the one whose advert went out in the last 10
+  minutes, with the same `id` gets no event; a request that ended with nothing sent leaves its
+  `id` free.
+- Home Assistant: the button *Send advert nearby*
+  (`button.meshcore_home_gateway_<node>_send_advert`), which publishes `send` on `advert/send`
+  at QoS 0, and the event entity *Advert nearby* (`event.meshcore_home_gateway_<node>_advert`,
+  `sent`, `refused`, `failed`, every key of the event as an attribute) on the gateway's device.
+  The button is unavailable while the gateway is offline or its radio not connected. Anyone who
+  can use the Home Assistant instance can press it; with a broker ACL, Home Assistant's user needs
+  `topic write <base_topic>/<node_id>/advert/send` for it.
+- `[homeassistant] radio_controls` (default `true`), also in the `config` document: with `false`
+  Home Assistant shows *Send advert nearby* unavailable (announced, not removed), as
+  `controls = false` does too; `advert/send` on MQTT and the command line keep working.
+- Dashboard: on *Contacts*, under the QR code of *Let someone add this home*, the row *Advert to
+  radios nearby* with *Send* while the button can be pressed, and a line that says for 10
+  minutes what became of the last advert (sent with its time and name; within the 10 minutes,
+  when the last went and when the next one may go; or why not, in words, and whether it may
+  have gone out); its help names the first digits of the radio's key to compare with, and that
+  everyone here can send it only while they can. *Settings* shows *Advert button in Home
+  Assistant*; *Help* names the row and explains each reason in *Why no advert was sent*. German
+  texts.
 - The retained document `refused_commands` and, with `[commands] words`, the sensor *Refused
   commands* in Home Assistant: the latest five commands the gateway refused, the newest first,
   each with its time, its reason and the sender's prefix, key and name, never the command's word,

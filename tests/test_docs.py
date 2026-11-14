@@ -296,6 +296,7 @@ def test_the_privacy_page_names_the_event_topics_the_gateway_has() -> None:
             topics.node_event,
             topics.setting_event,
             topics.telemetry_event,
+            topics.advert_event,
             topics.contact_received("<key>"),
         )
     }
@@ -545,3 +546,48 @@ def test_the_triage_log_counts_its_rows_and_lists_what_waits() -> None:
     upstream = (ROOT / "docs" / "upstream" / "README.md").read_text(encoding="utf-8")
     for draft in re.findall(r"^\| \[[^\]]+\]\(([\w-]+\.md)\)", upstream, flags=re.MULTILINE):
         assert f"(../../upstream/{draft})" in waiting, draft
+
+
+# --- the pages that list what the code holds ----------------------------------------------------
+
+
+def _config_section() -> str:
+    text = (ROOT / "docs" / "mqtt-api.md").read_text(encoding="utf-8")
+    return text.partition("\n## Configuration: `config`\n")[2].partition("\n## ")[0]
+
+
+def test_the_config_document_section_names_every_setting_it_shows() -> None:
+    """The example and the table of the `config` document hold each key the gateway publishes:
+    `[homeassistant] radio_controls` was in neither, while the page says that the settings it
+    does not list are left out on purpose."""
+    import json
+
+    from meshcore_home_gateway.config_view import shown_settings
+    from tests.bridge_harness import make_config
+
+    shown = shown_settings(make_config())
+    section = _config_section()
+    example = json.loads(section.partition("```json\n")[2].partition("```")[0])
+    for name, settings in shown.items():
+        assert set(example[name]) == set(settings), name
+    rows = dict(re.findall(r"^\| (`[^|]+`) \| (.*) \|$", section, flags=re.MULTILINE))
+    grouped = next(key for key in rows if "`messages`" in key)
+    named = {name: rows.get(f"`{name}`", "") for name in shown}
+    for name, settings in shown.items():
+        if not named[name]:
+            assert f"`{name}`" in grouped, name
+            continue
+        for key, value in settings.items():
+            keys = [f"{key}.{inner}" for inner in value] if isinstance(value, dict) else [key]
+            for shown_key in keys:
+                assert f"`{shown_key}`" in named[name], (name, shown_key)
+
+
+def test_rule_2_names_every_mapping_macro_the_rules_check() -> None:
+    """docs/development.md lists the mapping macros of rule 2 as tests/dashboard_rules.py checks
+    them: `cause`, the advert's, was missing."""
+    from tests.dashboard_rules import MAPPINGS
+
+    development = _words((ROOT / "docs" / "development.md").read_text(encoding="utf-8"))
+    rule = development.partition("2. A mapping macro (")[2].partition(")")[0]
+    assert set(re.findall(r"`(\w+)`", rule)) == set(MAPPINGS)

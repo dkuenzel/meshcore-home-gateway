@@ -107,3 +107,6 @@ key export and import, factory reset, raw packets, the radio's command line).
 * The data the radio delivers is documented in [protocol.md](../protocol.md), sections 3 and 4.
 * Revisit when the household's own repeaters or sensors should be administered, or when MeshCore
   adds a push-based telemetry subscription that makes polling unnecessary.
+* Amended on 2026-11-13 by [ADR 0033](0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md): the observer also transmits its radio's advert on
+  request, zero hop, without a position, at most one every 10 minutes and within the airtime
+  budget.

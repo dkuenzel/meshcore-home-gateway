@@ -588,6 +588,7 @@ VALUES = (
     "systemctl reload mosquitto",
     "docs/deployment.md, troubleshooting",
     "meshcore-home-gateway listen --topic contact",
+    "meshcore-home-gateway listen --topic advert",
     "meshcore-home-gateway",
     "command",
     "commands",
@@ -600,6 +601,7 @@ VALUES = (
     "probe",
     "send",
     "listen",
+    "advert",
     "contacts",
     "doctor",
     "backup",
@@ -1296,7 +1298,7 @@ def test_every_command_builds_and_helps_in_every_language(language: str) -> None
     with cli_common._speaking(translator):
         parser = cli._parser()
         helps = [command.format_help() for command in _parsers(parser)]
-    assert len(helps) == 25  # the program, its commands and theirs
+    assert len(helps) == 26  # the program, its commands and theirs
     if language == "xx":
         assert all(text.startswith("‹usage: ›") for text in helps)
     if language in {"hostile", "percents"}:  # argparse formats them: English

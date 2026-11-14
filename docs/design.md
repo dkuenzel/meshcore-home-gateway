@@ -155,7 +155,7 @@ flowchart TB
 | Package / module | Responsibility |
 | --- | --- |
 | `core.text` | Clean, transliterate and limit outgoing text. |
-| `core.airtime` | LoRa time on air; on-air size of MeshCore text and telemetry packets, the airtime a telemetry request causes. |
+| `core.airtime` | LoRa time on air; on-air size of MeshCore text and telemetry packets, the airtime a telemetry request causes, and of this radio's own advert. |
 | `core.budget` | Airtime token bucket (with a debt for airtime already spent); event rate limit; duplicate suppression. |
 | `core.lpp` | CayenneLPP decoder for telemetry answers; the position in them and the names of their readings. |
 | `core.telemetry` | The telemetry schedule: whom to ask next, by which route and when, within two airtime lanes; each companion's state (§6.11). |
@@ -175,6 +175,7 @@ flowchart TB
 | `inbox` | Received messages: in order, without copies, commands judged (§6.4, §7.3), each published and handed on; a bounded rate per sender and per channel. |
 | `announcer` | Announcements to Home Assistant: the discovery document, the controls that add contacts, the contacts' devices; again after a birth message or a cleared device (§6.7). |
 | `drafts` | The drafts of Home Assistant's chats: one per chat in memory, published retained; a text or a press from Home Assistant, the press handed to the outbox at once (§6.7). |
+| `advertiser` | Advert requests: checks each at once, sends one zero-hop advert of the radio at a time, at most one every 10 minutes, charged to the airtime budget, and publishes an `advert` event for each ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)). |
 | `status` | The state document with its health section, and systemd's status line. |
 | `radio_link` | The radio as the parts see it: the session while connected, what the radio said it is, whether another client took the TCP link. |
 | `config_checks` | What a configuration implies: the contacts it protects, the warnings that the start logs and `check-config` shows. |
@@ -211,6 +212,9 @@ Long-running tasks on the loop, supervised by a task group:
   the state file (below);
 * **telemetry poller** (only with `[telemetry] enabled`, the default): one request to a companion
   at a time (§6.11). Its saved schedule is restored before any task starts;
+* **advert requests** and the **advertiser's worker**: each request on `advert/send` checked at
+  once, the one that passes sent by the worker, one at a time
+  ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md));
 * **lag probe**: sleeps a second at a time and measures how late it wakes. A host that gives the
   gateway no CPU, or a disk that holds it up, shows there (`health.loop_lag_max_s`, a warning from
   1 s) before it shows as a radio that does not answer. A command whose timeout falls in such a
@@ -506,8 +510,11 @@ back, refilled for the time stopped, but at least what a direct message of 160 b
 radio's settings when it was last connected, so that the first alert after a restart goes out at
 once (ARC-005). The count is exact except for a flooded attempt to a recipient more than 4 path
 bytes away, whose returned path packet is longer than estimated (protocol.md §6).
-Each attempt of a direct message counts. The radio's other transmissions (acknowledgements it
-sends, adverts, path returns) are not counted; the default leaves 9 percentage points of the 10 %
+Each attempt of a direct message counts. An advert the gateway asks the radio for
+([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)) is counted like
+a message, and sent only when the budget holds it and one long message beside it at once, and no
+message is on its way. The radio's other transmissions (acknowledgements it sends, adverts from
+its board's button, path returns) are not counted; the default leaves 9 percentage points of the 10 %
 EU duty cycle for them. Telemetry has two budgets of its own, which never take from this one
 (§6.11).
 
@@ -553,6 +560,8 @@ there).
 | `contact`, `node` | out | no | JSON: a contact added or removed, the result of a contact request (also excluded from telemetry or included again); a node heard for the first time |
 | `contacts/<key>/telemetry` | in | must not be | `on`, `off` or JSON: include a companion in telemetry, or exclude it (§6.11) |
 | `telemetry` | out | no | JSON: a companion answers again, or stopped answering (§6.11) |
+| `advert/send` | in | must not be | any payload or JSON `{"id": …}`: make the radio send its advert zero hop ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)) |
+| `advert` | out | no | JSON: `sent`, `refused` or `failed`, the outcome of an advert request |
 | `homeassistant/draft/<kind>/<chat>` | out | yes | JSON `{"text": …}`: the draft of a chat in Home Assistant (§6.7) |
 | `homeassistant/draft/<kind>/<chat>/request` | in | must not be | JSON: a text for the draft, or `{"send": true}` (§6.7) |
 
@@ -626,7 +635,8 @@ the file.
 | `meshcore-home-gateway check-config` | Validate the configuration (and load the TLS files) and print a summary. |
 | `meshcore-home-gateway probe --serial DEV` / `--tcp HOST[:PORT]` | Connect to a radio directly (service stopped) and print device info, contacts and channels; `--list` gives tab-separated lists for the installer, `--json` everything. IPv6 addresses go in brackets: `[ADDRESS]:PORT`. |
 | `meshcore-home-gateway send [--wait S] ALIAS TEXT` | Publish a send request through the broker (only to a configured alias); with `--wait`, wait for the delivery result and exit 0 only on `sent` (channels) or a `confirmed` that is not `suspect`. |
-| `meshcore-home-gateway listen [--topic T] [--count N]` | Print events from the broker as JSON lines (`received`, `command`, `delivery`, `state`, `contact`, `node`, `telemetry`). |
+| `meshcore-home-gateway listen [--topic T] [--count N]` | Print events from the broker as JSON lines (`received`, `command`, `delivery`, `state`, `contact`, `node`, `telemetry`, `advert`). |
+| `meshcore-home-gateway advert [--wait S]` | Ask the running gateway to make its radio send its advert once to the radios in direct range (`advert/send`, zero hop) and print the `advert` event as a JSON line. Exit 0 on `sent` (with `--wait 0`: once the broker took the request), 1 on `refused`, `failed`, no result in `--wait` (default 30 s) or the gateway offline. |
 | `meshcore-home-gateway contacts list [--json]` | The radio's contacts and the heard nodes, from the retained documents (tab-separated: kind, key, type, `protected`/`removable`/`look_alike`, heard, name). |
 | `meshcore-home-gateway contacts add [--wait S] CONTACT` | Add a contact: a full key, a heard node as `KEY12…KEY8` (a name may follow, as Home Assistant's select lists it), a contact link or card; prints the full key to compare. Exit 0 on `added` (with `--wait 0`: once the broker took the request), 1 on `refused`, `failed`, no result in `--wait` (default 30 s) or the gateway offline, 2 when the text is no key, link or card, or a label names no single node. |
 | `meshcore-home-gateway contacts remove [--wait S] KEY` | Remove a contact (full key or `KEY12…KEY8`); exit codes as for `add`, 0 on `removed`. |
@@ -755,6 +765,8 @@ beside ([home-assistant.md](home-assistant.md#dashboard)), with only the cards H
 ([ADR 0021](decisions/0021-generated-dashboards-for-desktop-and-mobile.md)). Since 2.1 the
 gateway announces entities for it: the message history, the messages on their way, a draft and its
 *Send* for each chat, and the configuration ([ADR 0031](decisions/0031-household-chat-problems-and-settings-on-the-generated-dashboard.md)).
+Since 2.2 *Contacts* has *Advert to radios nearby* under the QR code
+([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)).
 
 The detail is in [design-home-assistant.md](design-home-assistant.md#613-dashboard).
 
@@ -1031,6 +1043,8 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
 | Bridge hangs | systemd watchdog | process restarted | journal entry; availability `offline` then `online` |
 | Bridge crashes or restarts | systemd | restart after 5 s, each further automatic restart later, up to 5 min (never given up); a stop keeps the queued outgoing messages for the next start, which queues them again (§6.2), a crash loses them; on a stop, received messages the radio has handed over are still published (for up to 2 s, §5.2) | availability; `queued` again for a kept message, no delivery state for a lost one |
 | Airtime budget exhausted | token bucket | messages wait, then expire | `delivery: expired`; airtime entity |
+| An advert request the gateway cannot serve: no radio, a radio clock more than 60 s ahead or not told, the budget without room for it and a long message, a message on its way, the 10 minutes, requests that ask the radio too often | the checks of the advertiser, the clock read afresh | refused, nothing sent, nothing counted | `advert`: `refused` with the reason; log info |
+| The radio refuses the advert (`ERR`, no packet buffer free) | the radio's answer | nothing sent: the airtime given back, the 10 minutes not started | `advert`: `failed` with the error name; log warning |
 | Recipient out of range | no acknowledgement | retries, flood, then give up | `delivery: failed` |
 | Automation loop floods requests | duplicates, queue | duplicates suppressed, queue full rejects; the events of refused requests are limited to 20 per second (bursts of 100), so they cannot push other events out of a subscriber's queue on the broker | `delivery: duplicate` / `rejected`; a log warning counts the events left out |
 | A flood of adverts from strangers (invented keys, or a busy mesh) | none: each advert is valid | bounded (§7.2): heard nodes heard once make room first; the `nodes` document at most every 30 s; `node` events rate-limited; no table read per advert on firmware 1.12 and newer; the history keeps only the nodes the gateway keeps | *Nodes heard* at 50 with unknown names; the *Add heard node* select offers them |

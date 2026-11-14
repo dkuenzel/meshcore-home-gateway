@@ -23,6 +23,7 @@ from meshcore_home_gateway.core.model import DeliveryState, MessageKind, Target
 from meshcore_home_gateway.core.text import TextPolicy, room_bytes, text_limit
 from meshcore_home_gateway.mqtt.topics import Topics
 from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES
+from meshcore_home_gateway.views import SELF_ADVERT_EVENTS
 
 if TYPE_CHECKING:
     from meshcore_home_gateway.ports import RadioInfo
@@ -48,6 +49,11 @@ TELEMETRY_STATUS = (  # state.telemetry and state.telemetry_reason are newer tha
     "and value_json.telemetry is string else None }}"
 )
 TELEMETRY_REASON = "{{ {'reason': value_json.get('telemetry_reason')} | tojson }}"
+# `is defined`: a state document retained by an earlier version reads as offline and logs no
+# warning in Home Assistant (docs/platform-notes.md)
+RADIO_CONNECTED = (
+    "{{ 'online' if value_json is defined and value_json.radio == 'connected' else 'offline' }}"
+)
 STATS_ATTRIBUTES = (
     "{{ {'window_s': value_json.tx_airtime_window_s, 'airtime_factor': value_json.airtime_factor, "
     "'duty_cycle_percent': value_json.duty_cycle_percent} | tojson }}"
@@ -87,13 +93,15 @@ def never_available(topics: Topics) -> dict[str, str]:
     return {"topic": f"{topics.root}/homeassistant/off", "value_template": "{{ 'offline' }}"}
 
 
-def controls_off(config: Config, topics: Topics) -> list[dict[str, str]]:
+def controls_off(config: Config, topics: Topics, *, radio: bool = False) -> list[dict[str, str]]:
     """With `[homeassistant] controls = false`, an availability that is always offline, for the
-    controls that change the radio's contacts or the telemetry: Home Assistant shows them
-    unavailable and leaves them out of service calls, while MQTT and the command line keep
-    working (SEC-008). Unavailable rather than removed: a disabled entity that goes takes its
-    whole device away (`never_available`)."""
-    if config.homeassistant.controls:
+    controls that change the radio's contacts or the telemetry, and *Send advert nearby*: Home
+    Assistant shows them unavailable and leaves them out of service calls, while MQTT and the
+    command line keep working (SEC-008). Unavailable rather than removed: a disabled entity that
+    goes takes its whole device away (`never_available`). `radio`: a control that makes the radio
+    transmit, also off with `[homeassistant] radio_controls = false` (ADR 0033)."""
+    ha = config.homeassistant
+    if ha.controls and (ha.radio_controls or not radio):
         return []
     return [never_available(topics)]
 
@@ -378,6 +386,38 @@ def discovery_payload(
             ha_name("Telemetry"),
             state_topic=topics.telemetry_event,
             event_types=list(telemetry.EVENTS),
+        ),
+        # every request's outcome, from MQTT and the command line too: whatever the settings say
+        "advert": component(
+            "advert",
+            "event",
+            # Translators: event entity of the gateway: what became of a request to make its
+            # radio send its advert once to the radios in direct range (sent, refused, failed);
+            # an advert is the packet a node announces itself with, its name and key
+            ha_name("Advert nearby"),
+            state_topic=topics.advert_event,
+            event_types=list(SELF_ADVERT_EVENTS),
+        ),
+        # ADR 0033: anyone who uses Home Assistant may press it, unless `radio_controls` or
+        # `controls` is off; QoS 0 as a draft's Send button: a press made while Home Assistant's
+        # link to the broker is down is not sent after the reconnect
+        "send_advert": component(
+            "send_advert",
+            "button",
+            # Translators: button of the gateway: makes its radio send its advert once, which
+            # only the radios in direct range hear (no repeater passes it on): its name and key,
+            # never a position
+            ha_name("Send advert nearby"),
+            command_topic=topics.advert_request,
+            payload_press="send",
+            qos=0,
+            icon="mdi:broadcast",
+            availability=[
+                {"topic": topics.availability},
+                {"topic": topics.state, "value_template": RADIO_CONNECTED},
+                *controls_off(config, topics, radio=True),
+            ],
+            availability_mode="all",
         ),
     }
     if config.commands.words:
