@@ -3,8 +3,8 @@
 ## Supported versions
 
 Fixes go into the next version of the current line. While a minor version is in pre-release (for
-example 2.2.0a4), a fix comes with its next pre-release; the latest release (for example 2.1.0)
-gets a patch release (2.1.1) unless a newer release already has the fix. Older versions get no
+example 2.3.0a4), a fix comes with its next pre-release; the latest release (for example 2.2.0)
+gets a patch release (2.2.1) unless a newer release already has the fix. Older versions get no
 fixes: update to the latest release. The changelog names the versions in scope with each release.
 
 We aim to acknowledge a report within seven days, to agree on a date for the disclosure with the

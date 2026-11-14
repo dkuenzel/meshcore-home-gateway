@@ -87,7 +87,7 @@ CLOCK_JUMPS_MAX = 8
 # No release of the gateway is older than this: a clock before it was never set. A radio without
 # a clock chip starts at 2024-05-15, or at the newest time it wrote to a contact
 # (ArduinoHelpers.h:11, BaseChatMesh.cpp:60-70). Raised at every release (docs/development.md).
-RELEASED_AFTER = 1_794_182_400  # 2026-11-09T00:00:00Z, the release of 2.1.0
+RELEASED_AFTER = 1_794_528_000  # 2026-11-13T00:00:00Z, the release of 2.1.1
 HOST_CLOCK_PLAUSIBLE_S = 10 * 365 * 86_400  # a host clock beyond the release by more is wrong
 DAY_S = 86_400
 SYNC_INTERVAL_S = 300.0  # safety net in case a MSG_WAITING push was lost

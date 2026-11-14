@@ -8,9 +8,44 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
-For the administrator: make the dashboard again after the update. With a broker ACL, Home
-Assistant's user needs `topic write <base_topic>/<node_id>/advert/send` for *Send advert nearby*
-([deployment.md](docs/deployment.md#update-reconfigure-remove)).
+## [2.2.0rc1] - 2026-11-14
+
+The release candidate of 2.2.0. The radio sends its advert to the radios nearby on request, also
+from a button in Home Assistant. Heard nodes are kept with their name, signal and time by
+default. The history forgets the received messages of channels that are not published, and
+`clean_received` cleans names too. Refused commands are kept and published, and the history says
+which sent message got the delivery code. The dashboard says when no contact can be removed. It
+has had no release check yet: 2.2.0 ships this program after the maintainer has used this
+candidate.
+
+For the administrator, before the update
+([deployment.md](docs/deployment.md#update-reconfigure-remove)): to keep what 2.0 and 2.1 kept
+of heard nodes, set `[contacts] heard_nodes = "keys"`; the default is now `"full"`. With
+`[messages] publish_channels = "targets"`, the default, the first start deletes for good the
+received messages of channels that are not published: check the targets' `channel_index`, and
+export a copy first to keep one. To keep *Send advert nearby* from Home Assistant's users, add
+`radio_controls = false` to `[homeassistant]` right before the update and update at once: the
+installed version refuses the setting at its next start. After the update: make the dashboard again.
+With a broker ACL, Home Assistant's user needs `topic write <base_topic>/<node_id>/advert/send` for
+*Send advert nearby*. Switching on `[messages] clean_received` is recommended, now that heard nodes'
+names are published by default ([configuration.md](docs/configuration.md#messages)).
+
+Known limits: on a 360x800 phone, the newest message of a full chat stands behind the field
+until the page is scrolled (#149). After an update or a restart, the card of a position
+broadcast to everyone can show until the companion's next advert while the home radio still
+remembers an old position ([companions.md](docs/companions.md#positions-in-adverts)). Of a
+refusal and an accepted command within one second, the dashboard's *Latest of each kind* can
+show the refusal again after a restart of Home Assistant or its reconnect to the broker, until a
+command is accepted (#160, [home-assistant.md](docs/home-assistant.md#dashboard)). The advert
+reaches only the radios in direct range; at slow presets, where it and a long message do not fit
+into the default `burst_s` together, none goes until `burst_s` is raised
+([ADR 0033](docs/decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)). After a
+downgrade to 2.1, the broker keeps the retained `refused_commands` until an empty retained
+message clears it ([deployment.md](docs/deployment.md#update-reconfigure-remove)).
+
+CI, the Home Assistant contract tests on 2026.10.2 and 2026.11.0 and the tests against the real
+firmware checked it. The browser check of the dashboard on both ran in the pull requests of the
+heard nodes, the refused commands and the advert.
 
 ### Added
 
