@@ -10,12 +10,12 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [2.2.0rc1] - 2026-11-14
 
-The release candidate of 2.2.0: the radio sends its advert to the radios nearby on request, also
-from a button in Home Assistant; heard nodes are kept with their name, signal and time by
-default; the history forgets the messages of channels that are not published, and
-`clean_received` cleans names too; refused commands are kept and published, the history says
-which sent message got the delivery code, and the dashboard says when no contact can be removed.
-It has had no release check yet: 2.2.0 ships this program after the maintainer has used this
+The release candidate of 2.2.0. The radio sends its advert to the radios nearby on request, also
+from a button in Home Assistant. Heard nodes are kept with their name, signal and time by
+default. The history forgets the received messages of channels that are not published, and
+`clean_received` cleans names too. Refused commands are kept and published, and the history says
+which sent message got the delivery code. The dashboard says when no contact can be removed. It
+has had no release check yet: 2.2.0 ships this program after the maintainer has used this
 candidate.
 
 For the administrator, before the update
@@ -23,11 +23,12 @@ For the administrator, before the update
 of heard nodes, set `[contacts] heard_nodes = "keys"`; the default is now `"full"`. With
 `[messages] publish_channels = "targets"`, the default, the first start deletes for good the
 received messages of channels that are not published: check the targets' `channel_index`, and
-export a copy first to keep one. To keep *Send advert nearby* from Home Assistant's users, set
-`[homeassistant] radio_controls = false`. After the update: make the dashboard again. With a
-broker ACL, Home Assistant's user needs `topic write <base_topic>/<node_id>/advert/send` for
-*Send advert nearby*. Switching on `[messages] clean_received` is recommended, now that heard
-nodes' names are published by default ([configuration.md](docs/configuration.md#messages)).
+export a copy first to keep one. To keep *Send advert nearby* from Home Assistant's users, add
+`radio_controls = false` to `[homeassistant]` right before the update and update at once: the
+installed version refuses the setting at its next start. After the update: make the dashboard again.
+With a broker ACL, Home Assistant's user needs `topic write <base_topic>/<node_id>/advert/send` for
+*Send advert nearby*. Switching on `[messages] clean_received` is recommended, now that heard nodes'
+names are published by default ([configuration.md](docs/configuration.md#messages)).
 
 Known limits: on a 360x800 phone, the newest message of a full chat stands behind the field
 until the page is scrolled (#149). After an update or a restart, the card of a position

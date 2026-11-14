@@ -366,8 +366,10 @@ pct stop 105 && pct destroy 105
   anyone who uses it can press ([home-assistant.md](home-assistant.md#advert-nearby)). With a
   broker ACL, Home Assistant's user needs `topic write <base_topic>/<node_id>/advert/send` for it
   ([mqtt-api.md](mqtt-api.md#securing-the-broker)): the example ACL of earlier versions lacks it,
-  and without it the button does nothing. To keep it from Home Assistant's users, set
-  `[homeassistant] radio_controls = false` before the update.
+  and without it the button does nothing. To keep it from Home Assistant's users, add
+  `radio_controls = false` to `[homeassistant]` in `/etc/meshcore-home-gateway/config.toml` right
+  before the update and update at once: the installed 2.0 or 2.1 does not know the setting and
+  refuses it at its next start.
 * **Telemetry after an update** from 1.0.0, or from 1.1.0a1 with telemetry off, with
   `[telemetry] ask = "all"`: telemetry is on from 1.1.0a2 on, and the first time it runs on the
   state directory it asks nobody for an hour
