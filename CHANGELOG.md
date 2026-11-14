@@ -8,6 +8,19 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [2.2.0rc2] - 2026-11-14
+
+The release candidate of 2.2.0: the program of 2.2.0rc1, and a restart of the broker no longer
+draws a false warning that another client wrote one of the gateway's documents. It has had no
+release check yet: 2.2.0 ships this program after the maintainer has used this candidate.
+
+For the administrator: from 2.2.0rc1, nothing changes; from 2.1, what the section of 2.2.0rc1
+says.
+
+CI, with the Home Assistant contract tests on 2026.10.2 and 2026.11.0 and the tests against the
+real firmware, checked it. The browser check of 2.2.0rc1 was not run again: neither the dashboard
+nor what the gateway announces to Home Assistant changed.
+
 ### Fixed
 
 - A restart of the broker could still draw the warning that another client wrote the gateway's
