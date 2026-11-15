@@ -8,6 +8,39 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-16
+
+The radio sends its advert to the radios nearby on request, also from a button in Home
+Assistant. Heard nodes are kept with their name, signal and time by default. The history forgets
+the received messages of channels that are not published, and `clean_received` cleans names too.
+Refused commands are kept and published, and the history says which sent message got the
+delivery code. It ships the program of 2.2.0rc2, which the maintainer used before this release:
+the update, *Send advert nearby*, messages in both directions and positions on the map. CI, the
+Home Assistant contract tests on 2026.10.2 and 2026.11.0, the tests against the real firmware and
+the browser checks in the pull requests of 2.2.0rc1 checked it.
+
+For the administrator, before the update from 2.1
+([deployment.md](docs/deployment.md#update-reconfigure-remove)): to keep what 2.0 and 2.1 kept
+of heard nodes, set `[contacts] heard_nodes = "keys"`; the default is now `"full"`. With
+`[messages] publish_channels = "targets"`, the default, the first start deletes for good the
+received messages of channels that are not published: check the targets' `channel_index`, and
+export a copy first to keep one. To keep *Send advert nearby* from Home Assistant's users, add
+`radio_controls = false` to `[homeassistant]` right before the update and update at once. After
+the update: make the dashboard again. With a broker ACL, Home Assistant's user needs
+`topic write <base_topic>/<node_id>/advert/send` for *Send advert nearby*. Switching on
+`[messages] clean_received` is recommended, now that heard nodes' names are published by default.
+From 2.2.0rc2 nothing changes.
+
+Known limits: on a 360x800 phone, the newest message of a full chat stands behind the field
+until the page is scrolled (#149). Of a refusal and an accepted command within one second, the
+dashboard's *Latest of each kind* can show the refusal again after a restart of Home Assistant or
+its reconnect to the broker (#160). The card of a position broadcast to everyone stays for a
+companion that is no longer heard (#168). Removing a contact keeps its chats (#166), and a
+chat's target or a command sender cannot be removed from Home Assistant, which the dashboard does
+not explain (#167). The advert reaches only the radios in direct range; at slow presets none
+goes until `burst_s` is raised (#181). The sections of 2.2.0rc2 and 2.2.0rc1 in
+[CHANGELOG.md](CHANGELOG.md) list every change since 2.1.1.
+
 ## [2.2.0rc2] - 2026-11-14
 
 The release candidate of 2.2.0: the program of 2.2.0rc1, and a restart of the broker no longer
