@@ -62,11 +62,12 @@ format, the command line and Home Assistant discovery are public interfaces
   settings left alone, with the values the radio reports already with four contacts; its box has
   24 rows, lists as many contacts as it holds and counts the others, which the installer's
   output lists, and does not scroll, since a scrolling box closed only with Tab, then Enter and
-  showed no mark of the text below. In German, the final message could lose the end
-  of its warning about a radio over TCP, when the login and the self-test took two lines each or
-  the radio's IPv6 address was written out in full; three of its results are shorter, and the
-  address stands at the end of the warning's first clause, where an address of up to 75
-  characters with its port cuts nothing. A new test wraps every text of every dialog in every
+  showed no mark of the text below. The final message could lose the end of its
+  warning about a radio over TCP: in German when the login and the self-test took two lines each
+  or the radio's IPv6 address was written out in full, and in both languages with a broker user
+  name longer than the suggested one; three of its results are shorter, and the line about the
+  radio now follows the message's first line, before the rows that a long user name, address or
+  command makes longer. A new test wraps every text of every dialog in every
   language as whiptail does, with the longest realistic values and the program's messages in
   that language, lays out the rows of every menu, and fails when a text needs more lines than
   its box shows or a menu cuts a row (#190).

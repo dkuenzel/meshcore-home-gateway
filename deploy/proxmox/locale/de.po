@@ -42,6 +42,25 @@ msgstr "Beim nächsten Verbinden setzt der Dienst am Funkgerät:"
 msgid "Base topic"
 msgstr "Basis-Topic"
 
+#. the values start in one column; they are commands to copy, but {login} and
+#. {posture} (how the broker connection is secured) and {selftest} (the result of the
+#. gateway's own check after the start).
+#, python-brace-format
+msgid ""
+"Broker:       {login} ({posture})\n"
+"Self-test:    {selftest}\n"
+"Logs:         {logs}\n"
+"Check:        {check}\n"
+"Reconfigure:  {reconfigure}\n"
+"Update:       {update}"
+msgstr ""
+"Broker:          {login} ({posture})\n"
+"Selbsttest:      {selftest}\n"
+"Protokoll:       {logs}\n"
+"Prüfen:          {check}\n"
+"Neu einrichten:  {reconfigure}\n"
+"Aktualisieren:   {update}"
+
 msgid "Channels to send to"
 msgstr "Kanäle, an die gesendet wird"
 
@@ -429,28 +448,9 @@ msgstr "Anmeldung nicht geprüft"
 msgid "meshcore-home-gateway from {ref} was not installed in container {ctid} (see above)"
 msgstr "meshcore-home-gateway aus {ref} wurde nicht in Container {ctid} installiert (siehe oben)"
 
-#. the values start in one column; they are commands to copy, but {login} and
-#. {posture} (how the broker connection is secured) and {selftest} (the result of the
-#. gateway's own check after the start).
 #, python-brace-format
-msgid ""
-"meshcore-home-gateway {version} runs in container {ctid}.\n"
-"\n"
-"Broker:       {login} ({posture})\n"
-"Self-test:    {selftest}\n"
-"Logs:         {logs}\n"
-"Check:        {check}\n"
-"Reconfigure:  {reconfigure}\n"
-"Update:       {update}"
-msgstr ""
-"meshcore-home-gateway {version} läuft in Container {ctid}.\n"
-"\n"
-"Broker:          {login} ({posture})\n"
-"Selbsttest:      {selftest}\n"
-"Protokoll:       {logs}\n"
-"Prüfen:          {check}\n"
-"Neu einrichten:  {reconfigure}\n"
-"Aktualisieren:   {update}"
+msgid "meshcore-home-gateway {version} runs in container {ctid}."
+msgstr "meshcore-home-gateway {version} läuft in Container {ctid}."
 
 #, python-brace-format
 msgid "meshcore-home-gateway {version} was not installed in container {ctid} (see above)"

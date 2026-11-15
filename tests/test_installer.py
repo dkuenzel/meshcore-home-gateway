@@ -872,6 +872,36 @@ def test_an_accepted_tcp_radio_is_written_with_the_acknowledgement(host: Host) -
     assert (config.radio.transport, config.radio.tcp_unauthenticated) == ("tcp", True)
 
 
+@pytest.mark.parametrize("radio", ["serial", "tcp"])
+def test_the_final_message_names_the_radio_after_its_first_line(host: Host, radio: str) -> None:
+    """whiptail cuts the end of a text its box does not hold: the line about the radio, above all
+    the warning about a radio over TCP, follows the first line, before the rows a long user name
+    or a long command makes longer (#190). The log has the same text."""
+    chosen = ["tcp", "192.0.2.30", "5000", "yes"] if radio == "tcp" else [str(host.serial)]
+    dialog = ["default", *chosen, "broker.example.org", "no", "bridge", "pw", "yes", "1", "", ""]
+    result = run_installer(host, dialog=dialog)
+    assert result.returncode == 0, result.stderr
+    (box,) = [c for c in host.calls("whiptail") if any("runs in container" in a for a in c)]
+    text = box[-3]
+    lines = text.split("\n")
+    assert lines[0] == f"meshcore-home-gateway {__version__} runs in container 105."
+    if radio == "tcp":
+        assert lines[1] == (
+            "The radio is reached over TCP without authentication (192.0.2.30:5000): whoever "
+            "reaches it can control it and read its private key."
+        )
+        rows = lines[2:]
+    else:
+        assert lines[1:3] == [
+            "The container starts only while the radio is plugged in.",
+            "After re-plugging the radio: pct reboot 105",
+        ]
+        rows = lines[3:]
+    assert rows[:2] == ["", "Broker:       login accepted (no TLS, user 'bridge')"]
+    assert rows[-1].startswith("Update:       ")
+    assert f"meshcore-home-gateway: {text}\n" in result.stderr
+
+
 def test_an_ipv6_radio_address_reaches_probe_in_brackets(host: Host) -> None:
     answers = answers_file(
         host,

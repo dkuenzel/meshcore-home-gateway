@@ -10,6 +10,7 @@ msg	--update needs a container ID	--update braucht eine Container-ID
 msg	Announce the radio to Home Assistant (MQTT discovery)?	Das Funkgerät bei Home Assistant anmelden (MQTT-Erkennung)?
 msg	At its next connect the service sets the radio:	Beim nächsten Verbinden setzt der Dienst am Funkgerät:
 msg	Base topic	Basis-Topic
+msg	Broker:       {login} ({posture})\nSelf-test:    {selftest}\nLogs:         {logs}\nCheck:        {check}\nReconfigure:  {reconfigure}\nUpdate:       {update}	Broker:          {login} ({posture})\nSelbsttest:      {selftest}\nProtokoll:       {logs}\nPrüfen:          {check}\nNeu einrichten:  {reconfigure}\nAktualisieren:   {update}
 msg	Channels to send to	Kanäle, an die gesendet wird
 msg	Command words, comma-separated (e.g. status,arm,disarm)	Befehlswörter, durch Kommas getrennt (z. B. status,arm,disarm)
 msg	Contacts allowed to send commands (direct messages only)	Kontakte, die Befehle senden dürfen (nur Direktnachrichten)
@@ -109,7 +110,7 @@ msg	login accepted	angemeldet
 msg	login failed (see above), the service keeps trying	Anmeldung fehlgeschlagen (siehe oben), der Dienst versucht es weiter
 msg	login not checked	Anmeldung nicht geprüft
 msg	meshcore-home-gateway from {ref} was not installed in container {ctid} (see above)	meshcore-home-gateway aus {ref} wurde nicht in Container {ctid} installiert (siehe oben)
-msg	meshcore-home-gateway {version} runs in container {ctid}.\n\nBroker:       {login} ({posture})\nSelf-test:    {selftest}\nLogs:         {logs}\nCheck:        {check}\nReconfigure:  {reconfigure}\nUpdate:       {update}	meshcore-home-gateway {version} läuft in Container {ctid}.\n\nBroker:          {login} ({posture})\nSelbsttest:      {selftest}\nProtokoll:       {logs}\nPrüfen:          {check}\nNeu einrichten:  {reconfigure}\nAktualisieren:   {update}
+msg	meshcore-home-gateway {version} runs in container {ctid}.	meshcore-home-gateway {version} läuft in Container {ctid}.
 msg	meshcore-home-gateway {version} was not installed in container {ctid} (see above)	meshcore-home-gateway {version} wurde nicht in Container {ctid} installiert (siehe oben)
 msg	no TLS	kein TLS
 msg	no TLS, no user name	kein TLS, kein Benutzername

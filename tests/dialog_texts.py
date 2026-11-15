@@ -480,9 +480,13 @@ FIELD_VALUES: Final[Mapping[str, Worst]] = {
     ),
     "tls": Worst("false", "true or false"),
     "tool": Worst("dpkg-query", "the longest tool preflight looks for"),
-    "user": Worst("meshcore-home-gateway", "the user name the installer suggests"),
+    "user": Worst(
+        "meshcore-home-gateway-second-radio-0001",
+        "a user name longer than the one the installer suggests, as for one of several gateways "
+        "(39 characters)",
+    ),
     "version": Worst("2.10.10rc10", "a program version (longer than Proxmox VE's)"),
-    "was": Worst("meshcore-home-gateway", "as user"),
+    "was": Worst("meshcore-home-gateway-second-radio-0001", "as user"),
 }
 
 # the installer's releases, from its own constant (REPOSITORY=owner/name)
@@ -1069,12 +1073,28 @@ SUMMARY_RESULTS: Final[Mapping[str, frozenset[str]]] = {
 
 
 def _summary(script: Script) -> Expr:
-    """summary_text: its text, with the login and the self-test as they come together
-    (SUMMARY_RESULTS), then the line about the radio (serial or TCP)."""
-    text, radio = script.appended("summary_text", "text").parts
-    message = text.inner if isinstance(text, Output) else text
+    """summary_text: what its last command prints, in the script's order: the first line, the line
+    about the radio (serial or TCP) and the rows, with the login and the self-test as they come
+    together (SUMMARY_RESULTS)."""
+    context = _Context("summary_text")
+    (printed,) = [c for c in script.functions["summary_text"] if _head(c) == "printf"]
+    parts: list[Expr] = []
+    for kind, inner in _parts(printed.words[-1].text):
+        if kind == "lit":
+            parts.append(Lit(inner))
+            continue
+        value = script._variable(inner, context)
+        if value is None:
+            raise DialogError(f"summary_text: cannot read {inner}")
+        parts.append(_paired(value) if inner == "$rows" else value)
+    return Cat(tuple(parts))
+
+
+def _paired(rows: Expr) -> Expr:
+    """The rows of the final message, each login with the self-tests it comes with."""
+    message = rows.inner if isinstance(rows, Output) else rows
     if not isinstance(message, Msg):
-        raise DialogError("summary_text: its text is no t call")
+        raise DialogError("summary_text: its rows are no t call")
     values = dict(message.values)
     logins, selftests = _options(values["login"]), _options(values["selftest"])
     pairs = []
@@ -1085,7 +1105,7 @@ def _summary(script: Script) -> Expr:
         if selftest_id in SUMMARY_RESULTS[login_id]:
             joint = {**values, "login": login, "selftest": selftest}
             pairs.append(Msg(message.msgid, tuple(joint.items())))
-    return Cat((Alt(tuple(pairs)), radio))
+    return Alt(tuple(pairs))
 
 
 def _options(expr: Expr) -> tuple[Expr, ...]:

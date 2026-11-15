@@ -787,11 +787,14 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   `summary()` shows the final message in a box of height 24 (18 lines) without `--scrolltext`.
   `tests/test_dialog_texts.py` checks that it fits in every language with each command that runs
   the installer again: the latest release's, a pre-release's, `main`'s and a clone's at a path of
-  120 characters; with a container ID of four digits and a radio over TCP at an IPv6 address
-  written out in full with its port (46 characters). The address stands where its length breaks
-  no other line, so one of up to 75 characters with its port, a host name of 70, keeps the
-  message at 18 lines in English and German. With `--ref` and a ref of five characters or more,
-  the commands take a line more and the message's last line is cut. The same text is logged to
+  120 characters; with a container ID of four digits, a broker user name of 39 characters and a
+  radio over TCP at an IPv6 address written out in full with its port (46 characters). The line
+  about the radio, the warning about a radio over TCP above all, follows the message's first
+  line, before the rows: what does not fit cuts the end of the last command, never the warning.
+  A user name of up to 71 characters, or with one of 39 an address of up to 75 characters with
+  its port (a host name of 70), keeps the message at 18 lines in English and German. With
+  `--ref` and a ref of five characters or more, the commands take a line more and the message's
+  last line is cut. The same text is logged to
   standard error before the box; with an xterm-like `TERM`, whiptail draws on the terminal's
   alternate screen, so the text shows again when the box closes (with `TERM=linux` the box stays
   on the screen instead). `check_broker()` does the same with the program's message after a

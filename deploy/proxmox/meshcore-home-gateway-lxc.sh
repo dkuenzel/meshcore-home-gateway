@@ -58,7 +58,7 @@ ct.gateway ct.template_storage radio.choice targets.channels targets.contacts "
 # --- language packs: written by `make translations` from deploy/proxmox/locale/*.po; do not edit
 L10N_ORDER=(en de)
 declare -A L10N_NAME=([en]=English [de]=Deutsch)
-declare -A L10N_SHA256=([de]=64931a4991dbee605b12207fa098bcdcd0abbcc7d84526b57b687f7d927d3d4f)
+declare -A L10N_SHA256=([de]=e4466936431334d0b8fc0ad05a3210ad362bb51065b1aa80e77e435a29a0b1d2)
 # --- end of language packs
 L10N_MENU=()   # code, name, code, name, ...: the items of the language menus
 for code in "${L10N_ORDER[@]}"; do L10N_MENU+=("$code" "${L10N_NAME[$code]}"); done
@@ -1491,7 +1491,7 @@ summary() {  # summary CTID: the final message, in the log and in a box
 summary_text() {  # summary_text SAY CTID: the final message, in English (SAY _fill, the log) or
   # in the dialogs' language (SAY t, the box): one set of texts. Commands for the user: pct exec
   # takes the host's PATH, which may lack /usr/local/bin
-  local say=$1 ctid=$2 login posture selftest update text user=${OUT[mqtt.username]-}
+  local say=$1 ctid=$2 login posture selftest update head radio rows user=${OUT[mqtt.username]-}
   case $SELF_TEST in  # self_test's result
     passed) selftest=$($say 'passed') ;;
     problems)
@@ -1525,31 +1525,33 @@ summary_text() {  # summary_text SAY CTID: the final message, in English (SAY _f
     update=$($say 'the installer of a newer release ({releases}) with -- --update {ctid}' \
       releases "$RELEASES" ctid "$ctid")
   fi
+  head=$($say 'meshcore-home-gateway {version} runs in container {ctid}.' \
+    version "$VERSION" ctid "$ctid")
+  if [[ ${OUT[radio.transport]} == serial ]]; then
+    radio=$($say 'The container starts only while the radio is plugged in.
+After re-plugging the radio: {command}' command "pct reboot $ctid")
+  else
+    probe_args   # the address as probe takes it: an IPv6 address in brackets
+    # Translators: security text (docs/translations.md): translate all of it, add nothing.
+    radio=$($say 'The radio is reached over TCP without authentication ({address}): whoever reaches it can control it and read its private key.' \
+      address "${PROBE[1]}")
+  fi
   # Translators: the values start in one column; they are commands to copy, but {login} and
   # {posture} (how the broker connection is secured) and {selftest} (the result of the
   # gateway's own check after the start).
-  text=$($say 'meshcore-home-gateway {version} runs in container {ctid}.
-
-Broker:       {login} ({posture})
+  rows=$($say 'Broker:       {login} ({posture})
 Self-test:    {selftest}
 Logs:         {logs}
 Check:        {check}
 Reconfigure:  {reconfigure}
 Update:       {update}' \
-    version "$VERSION" ctid "$ctid" login "$login" posture "$posture" selftest "$selftest" \
+    login "$login" posture "$posture" selftest "$selftest" \
     logs "pct exec $ctid -- journalctl -u meshcore-home-gateway -f" \
     check "pct exec $ctid -- /usr/local/bin/meshcore-home-gateway check-config" \
     reconfigure "$(invocation) --reconfigure $ctid" update "$update")
-  if [[ ${OUT[radio.transport]} == serial ]]; then
-    text+=$'\n\n'$($say 'The container starts only while the radio is plugged in.
-After re-plugging the radio: {command}' command "pct reboot $ctid")
-  else
-    probe_args   # the address as probe takes it: an IPv6 address in brackets
-    # Translators: security text (docs/translations.md): translate all of it, add nothing.
-    text+=$'\n\n'$($say 'The radio is reached over TCP without authentication ({address}): whoever reaches it can control it and read its private key.' \
-      address "${PROBE[1]}")
-  fi
-  printf '%s' "$text"
+  # the radio right after the first line: whiptail cuts the end of what its box does not hold,
+  # and a long user name or command makes the rows longer, not the warning about TCP
+  printf '%s' "$head"$'\n'"$radio"$'\n\n'"$rows"
 }
 
 # --- modes ----------------------------------------------------------------------------------

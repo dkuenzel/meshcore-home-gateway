@@ -40,6 +40,19 @@ msgstr ""
 msgid "Base topic"
 msgstr ""
 
+#. the values start in one column; they are commands to copy, but {login} and
+#. {posture} (how the broker connection is secured) and {selftest} (the result of the
+#. gateway's own check after the start).
+#, python-brace-format
+msgid ""
+"Broker:       {login} ({posture})\n"
+"Self-test:    {selftest}\n"
+"Logs:         {logs}\n"
+"Check:        {check}\n"
+"Reconfigure:  {reconfigure}\n"
+"Update:       {update}"
+msgstr ""
+
 msgid "Channels to send to"
 msgstr ""
 
@@ -407,19 +420,8 @@ msgstr ""
 msgid "meshcore-home-gateway from {ref} was not installed in container {ctid} (see above)"
 msgstr ""
 
-#. the values start in one column; they are commands to copy, but {login} and
-#. {posture} (how the broker connection is secured) and {selftest} (the result of the
-#. gateway's own check after the start).
 #, python-brace-format
-msgid ""
-"meshcore-home-gateway {version} runs in container {ctid}.\n"
-"\n"
-"Broker:       {login} ({posture})\n"
-"Self-test:    {selftest}\n"
-"Logs:         {logs}\n"
-"Check:        {check}\n"
-"Reconfigure:  {reconfigure}\n"
-"Update:       {update}"
+msgid "meshcore-home-gateway {version} runs in container {ctid}."
 msgstr ""
 
 #, python-brace-format
