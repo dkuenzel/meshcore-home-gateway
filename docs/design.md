@@ -502,7 +502,15 @@ reproduces published reference values and RadioLib's own calculation (`tests/tes
 
 The budget is a token bucket over seconds of airtime
 ([ADR 0008](decisions/0008-outbound-safety-targets-airtime-budget-deduplication.md)): it holds at
-most `burst_s` (default 10 s) and refills at `budget_s_per_hour` (default 36 s, 1 % of an hour).
+most `burst_s` and refills at `budget_s_per_hour` (default 36 s, 1 % of an hour). Up to 2.2
+`burst_s` defaults to 10 s. Since 2.3, unless the file sets it, the bridge derives it at each
+connect from the radio's preset ([ADR 0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md)): the airtime of an advert with a 31-byte name
+and of a long flooded direct message beside it, rounded up, at least 10 s and at most
+`max(10, budget_s_per_hour)`. EU/UK Narrow and every faster preset keep 10 s; slower presets get
+what an advert and an alert need. A new size keeps the bucket's level, at most the new capacity,
+and never adds to it. The state file keeps the effective burst and the radio's modulation, so a
+start before the radio connects uses the last one; `state` publishes the value in effect and
+whether the file set it or the bridge derived it.
 Over any interval *T* the airtime the bridge counts for its own transmissions is bounded by
 `burst_s + budget × T / 3600`, plus at most one long message per restart: the bucket's level is
 written to the state file at once after each transmission and at the stop, and a start takes it
@@ -638,11 +646,60 @@ The detail is in [design-home-assistant.md](design-home-assistant.md#67-home-ass
 ### 6.8 Configuration
 
 One TOML file, `/etc/meshcore-home-gateway/config.toml`, owner `root`, group
-`meshcore-home-gateway`, mode 0640 (it holds the broker password). Unknown keys are errors. Every
-setting is in [`configuration.md`](configuration.md). The installer writes the file through
+`meshcore-home-gateway`, mode 0640 (it holds the broker password, unless `password_file` names a
+file of its own). Unknown keys are errors. Every setting is in
+[`configuration.md`](configuration.md). The installer writes the file through
 `meshcore-home-gateway config render`, which validates with the same code as the service and
 creates a missing directory with mode 0755 whatever the umask, so that the service user reaches
-the file.
+the file. The service only reads it: its sandbox makes `/etc` read-only.
+
+**The settings registry** (since 2.3, [ADR 0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md)). `core.settings` holds one entry per
+key. It knows what the parser does not:
+
+* the installer answer's type (it replaces `config._ANSWER_TYPES`);
+* the history of the default since 2.0.0, each change with its effect;
+* the current recommendation, if any: a value or *let the gateway decide*, the version since
+  which it holds, its concern (security, privacy, reliability, feature), a one-sentence reason
+  and the effect of taking it;
+* who may change the key: the installer (which dialog), the file, the gateway (unless the file
+  sets it) or the radio (a seed key of ADR 0020).
+
+An effect is one of *deletes* (the first start with the value deletes stored data), *grants*
+(someone gains a right), *widens* (more of other people's data is published or kept) and
+*neutral*. The parser stays the only validator. A recommendation is a last resort: what the
+gateway can derive, it derives (`burst_s`, §6.3).
+
+Tests keep the registry true: its keys are the keys the parser reads and the keys of
+`configuration.md`; each last default equals the parser's; a key whose default changed recommends
+the new one; the changelog names every key whose default or recommendation changes in a version;
+the release plan refuses a changed default without its history entry. `tools/recommendations.py`
+writes the table *Recommended values and changed defaults* of `configuration.md` from it.
+
+**The update review.** The new version reviews the file before it becomes active:
+`config review` (§6.9) lists what changes or deserves a decision, in four kinds: `changes_now` (a
+default changed and the file does not set the key), `deviates` (the file sets another value than
+the recommended), `offered` (the default is not the recommended) and `deprecated`. An item is
+listed only when taking it changes the value in effect for this installation. Identity and trust
+settings without a recommendation are never items. The consent rules:
+
+* The recommended value is preselected only when taking it is *neutral*; otherwise *keep* is.
+  Before a first start that deletes data, *Export first* is preselected.
+* An unattended run changes nothing the file sets and records nothing as kept. A changed default
+  that grants or widens is written with its old value. `review=recommended` in an answers file
+  takes only neutral items.
+* *Keep mine* is kept as `[settings] kept = ["KEY@X.Y.Z"]`, which hides the key's
+  recommendations up to that version and changes no behaviour. Taking a recommendation equal to
+  the new default removes the line.
+
+The installer only shows the items, in whiptail or in numbered prompts, and sends back one word
+per key; the program writes the file (§9). New installations leave preferences that equal their
+default out of the file (`homeassistant.discovery`, `homeassistant.device_name`,
+`messages.ascii_only`), so that a later default applies to them.
+
+**What the household sees.** The `config` document carries a `review` section: the open and the
+kept recommendations of the keys it shows, as codes and values, and a count of the others.
+*Settings* marks those rows with the recommendation, its reason and who decides, as information,
+never as a warning. Home Assistant changes nothing in the file.
 
 ### 6.9 Command line
 
@@ -669,6 +726,9 @@ the file.
 | `meshcore-home-gateway history export [--table T] [--format F] [--since DATE] [--state-dir DIR]` | Print a table of the history (`messages`, `positions` or `readings`) as JSON lines (`jsonl`) or CSV, oldest first, read only while the service runs. Times in ISO 8601 and UTC; `--since` takes a date or a date and time in ISO 8601 (UTC without a zone). In CSV, control characters become spaces and a text that begins with `=`, `+`, `-` or `@` gets a leading `'`, so that a spreadsheet shows it rather than computes it. Columns that a history not yet migrated lacks stay empty. Since 2.1 `messages` ends with `target`, `delivery_id`, `queued_at` (a time), `suspect` (`true` or `false`) and `reason`, since 2.2 then `nonce` (`true` or `false`), the keys of the `history` document ([mqtt-api.md](mqtt-api.md#history-history)). Exit 1 without a history or with one of a newer version. |
 | `meshcore-home-gateway config render` | Write a validated configuration (TLS files loaded) from `key=value` answers (installer). |
 | `meshcore-home-gateway config answers` | Print a configuration as answers, the inverse of `render` (installer, reconfigure). |
+| `meshcore-home-gateway config review [--from-version V] [--state-dir DIR] [--json \| --list \| --plan D \| --apply D --output FILE]` | Since 2.3: compare the configuration with this version's defaults and recommendations ([§6.8](#68-configuration)): without a mode a report for people, `--json` the items, `--list` tab-separated lines with finished texts for the installer, `--plan` the text of the installer's final screen, `--apply` a new configuration from one `KEY=recommended\|keep\|later\|export` line per open item (other keys are a usage error). Read only but for `--output`; it never connects to the radio or the broker and never prints a secret. Exit 0, also with open items; 2 on a usage error; 78 when the file cannot be reviewed. |
+| `meshcore-home-gateway install switch --unit FILE [--config-new FILE]` | Since 2.3: run as root by a staged zipapp in `/usr/local/lib/meshcore-home-gateway/`: put itself under its versioned name, point `current.pyz` and `/usr/local/bin/meshcore-home-gateway` at it, install the units, reload systemd; then, with `--config-new`, keep the configuration as `config.toml.<old version>` and move the new one in place (the installer, later the updater). |
+| `meshcore-home-gateway broker acl [--role homeassistant]` | Since 2.3: print the broker ACL lines the role needs for this configuration's topics, from the table the gateway subscribes with; each line knows the version it appeared in, so the update review names the new ones. |
 
 Exit codes: 0 success, 1 failure, 2 usage error (invalid arguments), 78 configuration error (the
 systemd unit does not restart on it).
@@ -1211,16 +1271,25 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   `current.pyz` to the active version, `/usr/local/bin/meshcore-home-gateway` pointing to it. The
   zipapp runs with `/usr/bin/python3 -I` (isolated mode: no user site, no environment variables).
 * **Update:** `meshcore-home-gateway-lxc.sh --update <id>` downloads the new zipapp (from a
-  release, checked against its `SHA256SUMS`) or builds it, under a temporary name next to the old
-  one, checks the current configuration with it, then moves it to its versioned name, switches the
-  symlink and restarts; a failed check leaves the old version active, also when
-  the version string did not change. Rollback switches the symlink back to a version still
-  installed; an update with an unchanged version string replaces that version's file, and the unit
-  file the update installed stays in place (it is not rolled back; a release's unit names its
-  version in a comment). `--reconfigure <id>`
-  runs the dialogs again with the current settings as defaults (`meshcore-home-gateway config
-  answers`) and keeps the settings it does not ask for, and targets or command senders the radio no
-  longer offers; `--answers <file>` installs without dialogs.
+  release, checked against its `SHA256SUMS` and the digest the installer carries) or builds it,
+  under a temporary name next to the old one, checks the current configuration with it, then
+  moves it to its versioned name, switches the symlink and restarts; a failed check leaves the old
+  version active, also when the version string did not change. Since 2.3 the staged version first
+  reviews the configuration ([§6.8](#68-configuration), [ADR 0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md)): with a terminal and
+  something to decide, the installer asks (whiptail when installed, numbered prompts otherwise)
+  and shows one final screen with what changes, what was answered and what is left to do; without
+  a terminal it follows the consent rules. Nothing is written before the final answer, and the old
+  version keeps running meanwhile. The staged version then switches itself first and the
+  configuration second (`install switch`), keeping the old file as `config.toml.<old version>`
+  when an answer changed it. `--review <id>` asks the same questions of the installed version
+  without an update. Rollback switches the symlink back to a version still installed and, since
+  2.3, restores the `config.toml.<old version>` an update wrote; an update with an unchanged
+  version string replaces that version's file, and the unit file the update installed stays in
+  place (it is not rolled back; a release's unit names its version in a comment).
+  `--reconfigure <id>` runs the dialogs again with the current settings as defaults
+  (`meshcore-home-gateway config answers`) and keeps the settings it does not ask for, and targets
+  or command senders the radio no longer offers; since 2.3 it ends with the review.
+  `--answers <file>` installs without dialogs.
 * **Backup:** the configuration file, `/var/lib/meshcore-home-gateway/state.json` and
   `telemetry-excluded.json` next to it, and the history (`history.sqlite3`).
 * **Releases** ([ADR 0013](decisions/0013-signed-releases-with-github-artifact-attestations.md)):
@@ -1291,6 +1360,7 @@ version, like the CI matrix, and fails if one is missing.
 | A release checked by CI, the installer's self-test and the maintainer's use | [0030](decisions/0030-release-checked-by-ci-self-test-and-use.md) |
 | Untrusted text: canonical where it enters, encoded at every sink (proposed) | [0034](decisions/0034-untrusted-text-from-the-mesh.md) |
 | The companion state model: presence, positions that age, confirmed movement (proposed) | [0035](decisions/0035-the-companion-state-model.md) |
+| The settings registry, recommendations and the update review by the new version (proposed) | [0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md) |
 
 
 ### 11.1 Choices without a record of their own

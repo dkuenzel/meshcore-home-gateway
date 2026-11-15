@@ -15,7 +15,7 @@ and example automations are in [`home-assistant.md`](home-assistant.md).
 | Radio link | `binary_sensor` (connectivity) | `state` → `radio`; the radio's static facts as attributes |
 | Battery | `sensor` (voltage) | `state` → `battery_v` |
 | Airtime last hour | `sensor` (duration) | `state` → `airtime_1h_s` |
-| Airtime available | `sensor` (duration) | `state` → `airtime_available_s` |
+| Airtime available | `sensor` (duration) | `state` → `airtime_available_s`; the attribute `budget_s_per_hour`, since 2.3 also `burst_s` and `burst_source` (`configured` or `derived`) |
 | Queue | `sensor` | `state` → `queue` |
 | Gateway degraded | `binary_sensor` (problem) | `state` → `health.degraded`; the health section as attributes |
 | Last packet RSSI, SNR | `sensor` (signal strength), disabled by default | `rx` (only with `publish_rx_log`) |
@@ -24,7 +24,7 @@ and example automations are in [`home-assistant.md`](home-assistant.md).
 | Message history | `sensor` (timestamp), its own availability | `history` → the newest message's `at`; the document as attributes |
 | Messages on their way | `sensor`, its own availability | `pending` → `total`; the document as attributes |
 | Refused commands | `sensor` (timestamp), its own availability, only with command words | `refused_commands` → the newest `commands[0].at`; the document as attributes |
-| Configuration | `sensor` (timestamp), diagnostic | `config` → `started_at`; the settings in effect as attributes, read only |
+| Configuration | `sensor` (timestamp), diagnostic | `config` → `started_at`; the settings in effect and, since 2.3, the `review` section as attributes, read only |
 | Command | `event` (configured words) | `command` |
 | Send to *alias* | `notify`, one per target | `send/<alias>` |
 | Write to *alias*, Send what is written to *alias* | `text`, `button`, one pair per target not in `hidden_targets`, QoS 0 | `homeassistant/draft/target/<alias>` → `text`; → `…/request` |

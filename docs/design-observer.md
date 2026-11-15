@@ -107,7 +107,12 @@ flowchart LR
   radio connect, as a channel text's room depends on the radio's name. The targets are a list in
   ADR 0015's form, cut from the end so that the whole document stays within 15 KiB (the
   configuration allows any number of targets). `started_at` is when the observer was made, at the
-  service's start, which is when the configuration was read.
+  service's start, which is when the configuration was read. Since 2.3 the document also carries
+  the `review` section ([ADR 0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md)): the recommendations of this version that the file
+  does not follow, and those the administrator kept, for the keys the document shows, as codes
+  and values; the others are counted. It is computed at the same moments, because a
+  recommendation can depend on the radio (the derived burst). The document's 15 KiB bound counts
+  it; the targets give way first.
 * **Messages on their way** go to the `pending` document (oldest first, the whole document within
   8 KiB): the outbox keeps the messages it accepted until their final event, the one it delivers
   included, which the queue's count in `state` leaves out (#112). An entry follows its delivery
