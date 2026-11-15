@@ -58,7 +58,7 @@ ct.gateway ct.template_storage radio.choice targets.channels targets.contacts "
 # --- language packs: written by `make translations` from deploy/proxmox/locale/*.po; do not edit
 L10N_ORDER=(en de)
 declare -A L10N_NAME=([en]=English [de]=Deutsch)
-declare -A L10N_SHA256=([de]=eb83b57bf964f837402fb24b915d9eacb0c732fef56d1e5b4e379f0a3979552e)
+declare -A L10N_SHA256=([de]=f22df31d1e3ece34f9b1e229bba1030b09c98225cf0818885e8e4d10adfe4d39)
 # --- end of language packs
 L10N_MENU=()   # code, name, code, name, ...: the items of the language menus
 for code in "${L10N_ORDER[@]}"; do L10N_MENU+=("$code" "${L10N_NAME[$code]}"); done
@@ -304,7 +304,7 @@ pass_settings() {  # configuration settings from --answers go to the configurati
 choose_setup() {  # each item starts with the setup's name, as the docs and an answers file name it
   local setup
   setup=$(ask setup menu "$(t 'Setup')" "default" \
-    default "$(t 'default (recommended): asks only for the radio, the broker and the targets')" \
+    default "$(t 'default (recommended): asks only for the radio, broker and targets')" \
     advanced "$(t 'advanced (all settings): container, network, topics, Home Assistant')")
   if [[ $setup == advanced ]]; then ADVANCED=1; fi
 }

@@ -2906,7 +2906,7 @@ def test_the_menus_show_their_items_and_shorten_a_long_device_name(host: Host) -
     setup = menus[0]
     start = setup.index("--menu") + 6
     assert dict(zip(setup[start::2], setup[start + 1 :: 2], strict=True)) == {  # docs' names
-        "default": "default (recommended): asks only for the radio, the broker and the targets",
+        "default": "default (recommended): asks only for the radio, broker and targets",
         "advanced": "advanced (all settings): container, network, topics, Home Assistant",
     }
     radio = menus[1]

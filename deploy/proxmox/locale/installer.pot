@@ -389,7 +389,7 @@ msgstr ""
 msgid "creating the service user failed"
 msgstr ""
 
-msgid "default (recommended): asks only for the radio, the broker and the targets"
+msgid "default (recommended): asks only for the radio, broker and targets"
 msgstr ""
 
 msgid "disk size and memory must be whole numbers"

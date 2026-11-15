@@ -417,7 +417,7 @@ msgstr "Erstellen von Container {ctid} fehlgeschlagen (siehe oben)"
 msgid "creating the service user failed"
 msgstr "Anlegen des Dienstbenutzers fehlgeschlagen"
 
-msgid "default (recommended): asks only for the radio, the broker and the targets"
+msgid "default (recommended): asks only for the radio, broker and targets"
 msgstr "Standard (empfohlen): fragt nur nach Funkgerät, Broker und Zielen"
 
 msgid "disk size and memory must be whole numbers"

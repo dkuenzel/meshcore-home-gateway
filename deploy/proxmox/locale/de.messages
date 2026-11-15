@@ -101,7 +101,7 @@ msg	copying meshcore-home-gateway into container {ctid} failed (see above)	Kopie
 msg	could not download {template} to {storage}	{template} ließ sich nicht nach {storage} herunterladen
 msg	creating container {ctid} failed (see above)	Erstellen von Container {ctid} fehlgeschlagen (siehe oben)
 msg	creating the service user failed	Anlegen des Dienstbenutzers fehlgeschlagen
-msg	default (recommended): asks only for the radio, the broker and the targets	Standard (empfohlen): fragt nur nach Funkgerät, Broker und Zielen
+msg	default (recommended): asks only for the radio, broker and targets	Standard (empfohlen): fragt nur nach Funkgerät, Broker und Zielen
 msg	disk size and memory must be whole numbers	Datenträgergröße und Arbeitsspeicher müssen ganze Zahlen sein
 msg	installing packages in container {ctid} failed (see above)	Installieren der Pakete in Container {ctid} fehlgeschlagen (siehe oben)
 msg	invalid settings (see above)	ungültige Einstellungen (siehe oben)
