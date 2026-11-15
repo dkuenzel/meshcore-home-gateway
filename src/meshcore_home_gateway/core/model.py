@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 
 EARTH_RADIUS_M = 6_371_000.0
+MAX_LATITUDE, MAX_LONGITUDE = 90.0, 180.0
 
 
 class MessageKind(StrEnum):
@@ -29,6 +30,13 @@ class Position:
 
     latitude: float
     longitude: float
+
+
+def on_earth(latitude: float, longitude: float) -> bool:
+    """Whether a latitude and a longitude in degrees can be a position: within ±90° and ±180°.
+    The one range check of the positions in adverts, contact records and telemetry answers
+    (#179): the firmware passes on and stores any pair a node sends."""
+    return abs(latitude) <= MAX_LATITUDE and abs(longitude) <= MAX_LONGITUDE
 
 
 def distance_m(a: Position, b: Position) -> float:

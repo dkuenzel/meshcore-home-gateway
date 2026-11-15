@@ -7,9 +7,10 @@ import re
 
 import pytest
 
-from meshcore_home_gateway.core import lpp
+from meshcore_home_gateway.core import lpp, model
 from meshcore_home_gateway.core.lpp import LppPosition, Named, Reading
 from meshcore_home_gateway.core.model import Position
+from meshcore_home_gateway.protocol import codec
 from tests.radio_emulator import LPP_ALL, LPP_ALL_READINGS, LPP_BME280, LPP_T1000E, LPP_WIO_E5
 
 
@@ -111,6 +112,32 @@ def test_the_rest_after_a_stop_is_kept_undecoded(data: bytes, kept: int, undecod
 )
 def test_impossible_positions_are_none(gps: str) -> None:
     assert lpp.position(lpp.decode(h("01 88 " + gps))) is None
+
+
+@pytest.mark.parametrize(
+    ("latitude", "longitude"),
+    [
+        (90.0, 180.0),
+        (-90.0, -180.0),
+        (90.0001, 8.5),
+        (-90.0001, 8.5),
+        (50.1, 180.0001),
+        (50.1, -180.0001),
+        (89.9999, -179.9999),
+        (800.0, -800.0),
+    ],
+)
+def test_telemetry_and_adverts_share_one_range_check(latitude: float, longitude: float) -> None:
+    """#179 (SEC-3): one check decides for a telemetry answer's GPS reading, in cells of 1e-4
+    degrees, and for the 1e-6 degrees of adverts and contact records (core.model.on_earth):
+    a pair outside ±90° latitude or ±180° longitude is no position from either."""
+    cells = (round(latitude * 10_000), round(longitude * 10_000))
+    gps = b"".join(c.to_bytes(3, "big", signed=True) for c in (*cells, 0))
+    from_telemetry = lpp.position(lpp.decode(h("01 88") + gps))
+    from_advert = codec.position(round(latitude * 1_000_000), round(longitude * 1_000_000))
+    expected = model.on_earth(latitude, longitude)
+    assert (from_telemetry is not None, from_advert is not None) == (expected, expected)
+    assert expected == (abs(latitude) <= 90 and abs(longitude) <= 180)
 
 
 def test_two_different_positions_are_none_and_the_same_twice_is_one() -> None:

@@ -32,7 +32,7 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0022](0022-releases-tagged-by-ci-on-main.md) | Releases tagged by CI on main, from the version a pull request writes | accepted; amended by 0023 and 0030; amended 2026-11-05 (a release tagged a day after its version), 2026-11-06 (a candidate tagged at once) and 2026-11-07 (a tag pushed by hand checked too) |
 | [0023](0023-public-interfaces-kept-by-a-snapshot.md) | Four public interfaces, kept within a major version by a policy and a snapshot of the code | accepted |
 | [0024](0024-telemetry-values-in-home-assistant-expire.md) | Telemetry values in Home Assistant expire when the companion stops answering | accepted |
-| [0025](0025-positions-in-adverts-checked-from-the-packet-log.md) | Positions in adverts: checked from the packet log; the radio's record decides until then | accepted |
+| [0025](0025-positions-in-adverts-checked-from-the-packet-log.md) | Positions in adverts: checked from the packet log; the radio's record decides until then | accepted; amended 2026-11-15 (a pair off the globe is no position) |
 | [0026](0026-gateway-tested-against-the-real-firmware-built-natively.md) | The gateway is tested against the real firmware, built natively | accepted; amended by 0030 |
 | [0027](0027-message-catalogs-compiled-when-loaded.md) | Message catalogs compiled when they are loaded | accepted |
 | [0028](0028-outgoing-queue-kept-across-restarts.md) | The outgoing queue kept across restarts, alerts first | accepted; amended 2026-11-03 (where its tests are) and 2026-11-07 (the queue kept through a stop; an alert ends a wait) |

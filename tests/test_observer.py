@@ -1493,6 +1493,28 @@ def test_an_excluded_contact_gets_back_neither_its_readings_nor_its_telemetry_po
     history.close()
 
 
+def test_a_position_off_the_globe_is_no_position_of_the_contact(tmp_path: Path) -> None:
+    """#179 (SEC-3): the firmware keeps what an advert carries unchecked, so a record may hold a
+    pair no place has. 2.2.0 published 2000°, -2000° as the contact's position from its advert,
+    Home Assistant's tracker took it and computed a distance to home for it, and the map got an
+    impossible marker. It is no position now: none in the contact document nor in the index's
+    list of positions in adverts, also where the history kept it as the contact's newest fix."""
+    history = History.open(tmp_path / "history.sqlite3")
+    assert history is not None
+    far = replace(GREENHOUSE, latitude_e6=2_000_000_000, longitude_e6=-2_000_000_000)
+    key = far.public_key.hex()
+    history.add_position(key, Fix(Position(2000.0, -2000.0), NOW - 100, "advert"))  # by 2.2.0
+    bus = FakeBus()
+    observer = Observer(bus, TOPICS, history=history, wall_clock=lambda: NOW)
+    observer.radio_event(ContactsRead(table(far), NOW))
+    document = last(bus, f"{ROOT}/contacts/{key}")
+    position = ("latitude", "longitude", "position_at", "position_source", "advert_position")
+    assert [document[k] for k in position] == [None, None, None, None, False]
+    index = last(bus, f"{ROOT}/contacts")
+    assert (index["advert_position"], index["advert_position_total"]) == ([], 0)
+    history.close()
+
+
 def test_with_an_unreadable_exclusions_file_no_contact_gets_back_its_readings_or_telemetry_position(
     tmp_path: Path,
 ) -> None:

@@ -12,7 +12,13 @@ import struct
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from meshcore_home_gateway.core.model import InboundMessage, MessageKind, Position, TextType
+from meshcore_home_gateway.core.model import (
+    InboundMessage,
+    MessageKind,
+    Position,
+    TextType,
+    on_earth,
+)
 from meshcore_home_gateway.core.text import cut_utf8
 from meshcore_home_gateway.protocol.codes import (
     PROTOCOL_VERSION,
@@ -316,10 +322,12 @@ class SelfInfo:
 
 def position(latitude_e6: int, longitude_e6: int) -> Position | None:
     """A position from the firmware's int32 values in 10^-6 degrees; None for 0, 0, its value
-    for "no position" (BaseChatMesh.cpp:108-120)."""
+    for "no position" (BaseChatMesh.cpp:108-120), and for a pair off the globe, which the
+    firmware stores unchecked (AdvertDataHelpers.cpp:47-49, BaseChatMesh.cpp:193-196; #179)."""
     if latitude_e6 == 0 and longitude_e6 == 0:
         return None
-    return Position(latitude_e6 / 1_000_000, longitude_e6 / 1_000_000)
+    latitude, longitude = latitude_e6 / 1_000_000, longitude_e6 / 1_000_000
+    return Position(latitude, longitude) if on_earth(latitude, longitude) else None
 
 
 def _mode(bits: int) -> TelemetryMode | int:

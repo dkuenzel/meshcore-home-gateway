@@ -30,6 +30,12 @@ format, the command line and Home Assistant discovery are public interfaces
   codes. Such a message makes no guess at the code. It is still refused as `code_missing` and
   listed among the refused commands, but it no longer counts toward the lock; 5 wrong codes
   within an hour lock a sender as before (#176).
+- A position outside ±90° latitude or ±180° longitude in a contact's record, in an advert or in
+  the radio's own self info was taken as it came: the firmware stores what a node sends without a
+  check. The contact document published it, Home Assistant's tracker took it and computed a
+  distance to home, and the map got an impossible marker. Such a pair is now no position, by the
+  same check that already dropped one from a telemetry answer; an advert that carries one still
+  counts as carrying a position, as one with 0, 0 does (#179).
 
 ### Security
 

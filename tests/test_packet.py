@@ -58,6 +58,19 @@ def test_an_advert_without_position_with_transport_codes_and_two_byte_hashes() -
     assert advert.name == "Alice"
 
 
+def test_an_advert_with_a_position_off_the_globe_carries_the_flag_but_no_position() -> None:
+    """#179 (SEC-3): the firmware sends and stores the pair unchecked
+    (src/helpers/AdvertDataHelpers.cpp:47-49). The flag still says that the advert carries a
+    position, as with 0, 0 (ADR 0025); the pair is no position."""
+    far = app_data(position=(2_000_000_000, -2_000_000_000))
+    packet = parse_packet(bytes([0x11, 0x00]) + advert_payload(far))
+    assert packet is not None
+    advert = parse_advert(packet)
+    assert advert is not None
+    assert advert.shares_position
+    assert advert.position is None
+
+
 def test_feature_fields_are_skipped_and_the_name_is_cut_like_the_firmware() -> None:
     data = bytes([0x80 | 0x20 | 0x40 | 0x02]) + b"\x01\x00\x02\x00" + b"R" * 40
     packet = parse_packet(bytes([0x12, 0x00]) + advert_payload(data))  # direct, no path
