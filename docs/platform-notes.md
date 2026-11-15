@@ -83,6 +83,7 @@ One line per fact, by section.
 * In a password or input box, Tab moves the focus to the buttons instead of being typed, and what is typed after it is lost.
 * whiptail takes every argument that starts with `-` for an option, also a text, a menu tag or a list item, unless it follows `--`.
 * A message box shows as many lines as fit its height and cuts the rest without a mark; with `--scrolltext` the text scrolls, but Enter no longer closes the box.
+* A menu shows as many lines of its text as fit above its list and cuts the rest without a mark; a checklist one line more.
 
 **[Mosquitto](#mosquitto)**
 
@@ -787,6 +788,24 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   `whiptail --msgbox "$(seq 1 30)" 12 40` shows 1 to 6 and closes with Enter;
   `whiptail --scrolltext --msgbox "$(seq 1 30)" 12 40` stays open on Enter; Tab, then Enter
   closes it.
+* **A menu shows as many lines of its text as fit above its list and cuts the rest without a
+  mark; a checklist one line more.** A menu's text gets the box's height less 7 lines and less
+  the list's height: a menu of 20x78 with a list of 3 shows 10 lines, with a list of 10 it shows
+  3, and one of 24x78 with a list of 3 shows 14. A checklist of the same size shows 11, 4 and 15.
+  The list and the buttons stay whole, and nothing marks the cut. With `--fb` (full buttons) the
+  text gets 2 lines less. A yes/no box lays out its text as a message box does (above): a box of
+  height 12 shows 6 lines, one of height 22 shows 16. *Verified:* on 2026-11-15, unlike the
+  entries above, with 0.52.24-2ubuntu2 alone: a script drove the real program in a pseudo
+  terminal under `LC_ALL=C.UTF-8`, menus and checklists of 16x60, 20x78 and 24x78 with lists of
+  3, 5 and 10, and yes/no boxes of 12x72 and 22x78, each with a text of 30 numbered lines; newt
+  `r0-52-24` `whiptail.c:555-556` (the window is the box less 2 lines), `dialogboxes.c:318` (a
+  menu's text gets the window's height less 4, the button row and the list), `:464` (a
+  checklist's less 3), `:23` and `:604-612` (the button row is 1 line, 3 with `--fb`). *Here:*
+  the installer's menus and checklists are 20x78 with a list of 10 (`show_dialog()`), which
+  leaves 3 and 4 lines of text, and each of their texts is a single line; its yes/no boxes are
+  12x72 and show 6. No test compares a text's length with its box. *Check:*
+  `whiptail --menu -- "$(seq 1 30)" 20 78 3 a A b B c C` shows 1 to 10 above the list; with
+  `--fb` before `--menu`, 1 to 8.
 
 ## Mosquitto
 
