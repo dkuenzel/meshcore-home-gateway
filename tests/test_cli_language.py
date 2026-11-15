@@ -1448,7 +1448,7 @@ contacts   added manually
 telemetry  base deny, location deny, environment deny
 position   none, not in adverts
 airtime    factor 9: the radio sends at most 10 %
-burst      an advert nearby (1.1 s) and a long message (2.1 s) fit into airtime.burst_s (10 s)
+burst      an advert nearby (1.10 s) and a long message (2.13 s) fit into airtime.burst_s (10 s)
   abababababababababababababababababababababababababababababababab  chat     Alice
   abababababab0202020202020202020202020202020202020202020202020202  repeater Bob  REMOTE CLI
 channels
@@ -1499,13 +1499,13 @@ def test_probe_keeps_its_english_report(tmp_path: Path, monkeypatch: pytest.Monk
             ["contacts   all added automatically", "position   none, shared in adverts"],
             [
                 (
-                    "burst      an advert nearby (4.1 s) and a long message (8.0 s) take more "
+                    "burst      an advert nearby (4.13 s) and a long message (8.00 s) take more "
                     "than airtime.burst_s (10 s): no advert nearby can go; set burst_s to 13"
                 )
             ],
             [
                 (
-                    "burst      a long message (26.8 s) takes more than airtime.burst_s (10 s): "
+                    "burst      a long message (26.77 s) takes more than airtime.burst_s (10 s): "
                     "long messages fail and no advert nearby can go; set burst_s to 41"
                 )
             ],

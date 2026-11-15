@@ -1032,7 +1032,7 @@ msgstr ""
 #. room for both, the gateway sends no advert; a long message beyond the burst fails
 #: src/meshcore_home_gateway/cli/probe.py
 #, python-brace-format
-msgid "burst      a long message ({message:.1f} s) takes more than airtime.burst_s ({burst:g} s): long messages fail and no advert nearby can go; set burst_s to {needed}"
+msgid "burst      a long message ({message:.2f} s) takes more than airtime.burst_s ({burst:g} s): long messages fail and no advert nearby can go; set burst_s to {needed}"
 msgstr ""
 
 #. a line of probe's report, its value in the column of the other lines: whether
@@ -1042,7 +1042,7 @@ msgstr ""
 #. room for both, the gateway sends no advert; a long message beyond the burst fails
 #: src/meshcore_home_gateway/cli/probe.py
 #, python-brace-format
-msgid "burst      an advert nearby ({advert:.1f} s) and a long message ({message:.1f} s) fit into airtime.burst_s ({burst:g} s)"
+msgid "burst      an advert nearby ({advert:.2f} s) and a long message ({message:.2f} s) fit into airtime.burst_s ({burst:g} s)"
 msgstr ""
 
 #. a line of probe's report, its value in the column of the other lines: whether
@@ -1052,7 +1052,7 @@ msgstr ""
 #. room for both, the gateway sends no advert; a long message beyond the burst fails
 #: src/meshcore_home_gateway/cli/probe.py
 #, python-brace-format
-msgid "burst      an advert nearby ({advert:.1f} s) and a long message ({message:.1f} s) take more than airtime.burst_s ({burst:g} s): no advert nearby can go; set burst_s to {needed}"
+msgid "burst      an advert nearby ({advert:.2f} s) and a long message ({message:.2f} s) take more than airtime.burst_s ({burst:g} s): no advert nearby can go; set burst_s to {needed}"
 msgstr ""
 
 #. what the gateway does about a setting of the radio that differs from the

@@ -488,41 +488,49 @@ def test_probe_leaves_an_unreadable_state_file_alone(
 
 FIT = "burst      an advert nearby ({}) and a long message ({}) fit into airtime.burst_s ({})"
 ADVERT_ONLY = (
-    "burst      an advert nearby (4.1 s) and a long message (8.0 s) take more than "
+    "burst      an advert nearby (4.13 s) and a long message (8.00 s) take more than "
     "airtime.burst_s (10 s): no advert nearby can go; set burst_s to 13"
 )
 NEITHER = (
-    "burst      a long message (26.8 s) takes more than airtime.burst_s (10 s): long messages "
+    "burst      a long message (26.77 s) takes more than airtime.burst_s (10 s): long messages "
     "fail and no advert nearby can go; set burst_s to 41"
 )
+JUST_ABOVE = (  # to a tenth: 3.8 s and 6.2 s, more than 10 s
+    "burst      an advert nearby (3.81 s) and a long message (6.23 s) take more than "
+    "airtime.burst_s (10 s): no advert nearby can go; set burst_s to 11"
+)
+LONG_NAME = "Radio1 with a name of 31 bytes."  # the longest the advert carries
 
 
 @pytest.mark.parametrize(
-    ("spreading_factor", "burst", "line"),
+    ("radio", "burst", "line"),
     [
-        (8, None, FIT.format("1.1 s", "2.1 s", "10 s")),
-        (10, None, ADVERT_ONLY),
-        (10, 13, FIT.format("4.1 s", "8.0 s", "13 s")),
-        (12, None, NEITHER),
+        ({"spreading_factor": 8}, None, FIT.format("1.10 s", "2.13 s", "10 s")),
+        ({"spreading_factor": 10}, None, ADVERT_ONLY),
+        ({"spreading_factor": 10}, 13, FIT.format("4.13 s", "8.00 s", "13 s")),
+        ({"spreading_factor": 12}, None, NEITHER),
+        ({"spreading_factor": 10, "coding_rate": 6, "name": LONG_NAME}, None, JUST_ABOVE),
     ],
 )
 def test_probe_says_whether_an_advert_and_a_long_message_fit_the_burst(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
-    spreading_factor: int,
+    radio: dict[str, Any],
     burst: int | None,
     line: str,
 ) -> None:
     """#181: the airtimes at the radio's settings, with its name, against airtime.burst_s of the
-    configuration (without one its default), and the burst that holds both, as the connect warns."""
-    radio = EmulatedRadio(spreading_factor=spreading_factor)
+    configuration (without one its default), and the burst that holds both, as the connect warns.
+    The airtimes go to the hundredth, as the table of presets: just above the burst, tenths would
+    contradict the line."""
+    emulated = EmulatedRadio(**radio)
     config = []
     if burst is not None:
         written = tmp_path / "config.toml"
         text = EXAMPLE.read_text(encoding="utf-8").replace("burst_s = 10", f"burst_s = {burst}")
         written.write_text(text, encoding="utf-8")
         config = ["--config", str(written)]
-    with TcpRadioServer(radio) as server:
+    with TcpRadioServer(emulated) as server:
         address = f"127.0.0.1:{server.port}"
         state = ["--state-dir", str(tmp_path)]
         assert main(["probe", "--tcp", address, *config, *state]) == EX_OK

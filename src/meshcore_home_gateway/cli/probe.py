@@ -257,16 +257,16 @@ _POSITION = {  # known; shared in adverts
 # room for both, the gateway sends no advert; a long message beyond the burst fails
 _BURST = {  # both fit; a long message fits
     (True, True): N_(
-        "burst      an advert nearby ({advert:.1f} s) and a long message ({message:.1f} s) fit "
+        "burst      an advert nearby ({advert:.2f} s) and a long message ({message:.2f} s) fit "
         "into airtime.burst_s ({burst:g} s)"
     ),
     (False, True): N_(
-        "burst      an advert nearby ({advert:.1f} s) and a long message ({message:.1f} s) take "
+        "burst      an advert nearby ({advert:.2f} s) and a long message ({message:.2f} s) take "
         "more than airtime.burst_s ({burst:g} s): no advert nearby can go; set burst_s to "
         "{needed}"
     ),
     (False, False): N_(
-        "burst      a long message ({message:.1f} s) takes more than airtime.burst_s ({burst:g} "
+        "burst      a long message ({message:.2f} s) takes more than airtime.burst_s ({burst:g} "
         "s): long messages fail and no advert nearby can go; set burst_s to {needed}"
     ),
 }

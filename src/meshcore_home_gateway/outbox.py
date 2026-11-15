@@ -996,16 +996,16 @@ class Delivery:
             self._airtime.longest_s = longest  # the least a restart gets (ARC-005)
             if longest > self.budget.capacity_s:
                 log.warning(
-                    "a long direct message takes %.1f s of airtime at the radio's settings, more "
-                    "than airtime.burst_s (%.1f s): such messages fail (exceeds_airtime_burst)",
+                    "a long direct message takes %.2f s of airtime at the radio's settings, more "
+                    "than airtime.burst_s (%g s): such messages fail (exceeds_airtime_burst)",
                     longest,
                     self.budget.capacity_s,
                 )
             both = advert_reserve_s(len(info.name.encode("utf-8")), MAX_TEXT_BYTES, info.lora)
             if both > self.budget.capacity_s:
                 log.warning(
-                    "an advert nearby and a long direct message take %.1f s of airtime at the "
-                    "radio's settings, more than airtime.burst_s (%.1f s): no advert nearby can "
+                    "an advert nearby and a long direct message take %.2f s of airtime at the "
+                    "radio's settings, more than airtime.burst_s (%g s): no advert nearby can "
                     "go (refused: airtime_budget); set burst_s to %d",
                     both,
                     self.budget.capacity_s,

@@ -517,8 +517,8 @@ def test_the_connect_names_the_burst_an_advert_beside_a_long_message_needs(
         scenario(lambda: main(""))
     assert burst_warnings(caplog) == [
         (
-            f"an advert nearby and a long direct message take {SF10_BOTH_S:.1f} s of airtime at "
-            "the radio's settings, more than airtime.burst_s (10.0 s): no advert nearby can go "
+            f"an advert nearby and a long direct message take {SF10_BOTH_S:.2f} s of airtime at "
+            "the radio's settings, more than airtime.burst_s (10 s): no advert nearby can go "
             f"(refused: airtime_budget); set burst_s to {needed}"
         )
     ]
@@ -552,6 +552,50 @@ def test_the_burst_warning_follows_the_preset_and_the_burst(
     with caplog.at_level(logging.INFO):
         scenario(main)
     assert len(burst_warnings(caplog)) == (1 if warned else 0)
+
+
+LONG_NAME = "Radio1 with a name of 31 bytes."  # the longest the advert carries
+JUST_ABOVE = (  # to a tenth: 10.0 s, more than 10.0 s
+    "an advert nearby and a long direct message take 10.04 s of airtime at the radio's settings, "
+    "more than airtime.burst_s (10 s): no advert nearby can go (refused: airtime_budget); set "
+    "burst_s to 11"
+)
+LONG_FAILS = (  # to a tenth: 8.0 s, more than 8.0 s (7.95)
+    "a long direct message takes 8.00 s of airtime at the radio's settings, more than "
+    "airtime.burst_s (7.95 s): such messages fail (exceeds_airtime_burst)"
+)
+NO_ADVERT = (
+    "an advert nearby and a long direct message take 12.92 s of airtime at the radio's settings, "
+    "more than airtime.burst_s (7.95 s): no advert nearby can go (refused: airtime_budget); set "
+    "burst_s to 13"
+)
+
+
+@pytest.mark.parametrize(
+    ("coding_rate", "burst", "warnings"),
+    [(6, "", [JUST_ABOVE]), (8, "burst_s = 7.95", [LONG_FAILS, NO_ADVERT])],
+)
+def test_the_burst_warnings_print_the_airtime_to_the_hundredth(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    coding_rate: int,
+    burst: str,
+    warnings: list[str],
+) -> None:
+    """Just above the burst, an airtime to a tenth would contradict the warning: at 62.5 kHz,
+    SF 10, CR 4/6 the advert of a name of 31 bytes and a long message take 10.04 s, which reads
+    10.0 s, more than 10 s. The airtimes go to the hundredth, as the table of presets in
+    configuration.md, and the burst as configured, as probe prints it."""
+    radio = EmulatedRadio(spreading_factor=10, coding_rate=coding_rate, name=LONG_NAME)
+
+    async def main() -> None:
+        async with running(config(airtime=burst), radio, tmp_path):
+            pass
+
+    with caplog.at_level(logging.INFO):
+        scenario(main)
+    said = [r.getMessage() for r in caplog.records if "more than airtime.burst_s" in r.getMessage()]
+    assert said == warnings
 
 
 def test_an_advert_longer_than_the_burst_is_refused(tmp_path: Path) -> None:
