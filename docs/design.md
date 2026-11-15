@@ -658,7 +658,9 @@ the file. The service only reads it: its sandbox makes `/etc` read-only.
 key. It knows what the parser does not:
 
 * the installer answer's type (it replaces `config._ANSWER_TYPES`);
-* the history of the default since 2.0.0, each change with its effect;
+* the history of the default since 2.0.0, each change with its effect; a key added later names
+  the effect of its first default against the version before the key, and the value that
+  behaves as that version did (`last_known_days`: 0);
 * the current recommendation, if any: a value or *let the gateway decide*, the version since
   which it holds, its concern (security, privacy, reliability, feature), a one-sentence reason
   and the effect of taking it;
@@ -666,9 +668,11 @@ key. It knows what the parser does not:
   sets it) or the radio (a seed key of ADR 0020).
 
 An effect is one of *deletes* (the first start with the value deletes stored data), *grants*
-(someone gains a right), *widens* (more of other people's data is published or kept) and
-*neutral*. The parser stays the only validator. A recommendation is a last resort: what the
-gateway can derive, it derives (`burst_s`, §6.3).
+(someone gains a right), *widens* (more data is published, kept, read or sent off the host,
+whoever's it is: other people's names, the household's texts in the journal, the container's
+address to GitHub) and *neutral*. An effect belongs to a move from the value in effect, so the
+review computes it per item. The parser stays the only validator. A recommendation is a last
+resort: what the gateway can derive, it derives (`burst_s`, §6.3).
 
 Tests keep the registry true: its keys are the keys the parser reads and the keys of
 `configuration.md`; each last default equals the parser's; a key whose default changed recommends
@@ -680,22 +684,28 @@ writes the table *Recommended values and changed defaults* of `configuration.md`
 `config review` (§6.9) lists what changes or deserves a decision, in four kinds: `changes_now` (a
 default changed and the file does not set the key), `deviates` (the file sets another value than
 the recommended), `offered` (the default is not the recommended) and `deprecated`. An item is
-listed only when taking it changes the value in effect for this installation. Identity and trust
-settings without a recommendation are never items. The consent rules:
+listed only when taking it changes the value in effect for this installation. A key the gateway
+decides is an item only when the file pins it, or when its default became derived and the
+derived value differs from the old default here (`burst_s` at a slow preset). Identity and trust
+settings without a recommendation are never items. Every item that deletes stored data offers
+*Export first*, with the count of the rows it would delete. The consent rules:
 
 * The recommended value is preselected only when taking it is *neutral*; otherwise *keep* is.
-  Before a first start that deletes data, *Export first* is preselected.
-* An unattended run changes nothing the file sets and records nothing as kept. A changed default
-  that grants or widens is written with its old value. `review=recommended` in an answers file
-  takes only neutral items.
+  Before a first start that deletes data because the release changed a default, *Export first*
+  is preselected.
+* An unattended run without a `review` answer changes nothing the file sets and records nothing
+  as kept; `review` and `review.KEY` answers act as ADR 0036's table says. A changed default that
+  grants or widens is written with its old value. `review=recommended` in an answers file takes
+  only neutral items.
 * *Keep mine* is kept as `[settings] kept = ["KEY@X.Y.Z"]`, which hides the key's
   recommendations up to that version and changes no behaviour. Taking a recommendation equal to
   the new default removes the line.
 
 The installer only shows the items, in whiptail or in numbered prompts, and sends back one word
-per key; the program writes the file (§9). New installations leave preferences that equal their
+per key; the program writes the file (§9). The installer leaves preferences that equal their
 default out of the file (`homeassistant.discovery`, `homeassistant.device_name`,
-`messages.ascii_only`), so that a later default applies to them.
+`messages.ascii_only`), at a new installation and at `--reconfigure`, unless the file, the answers
+or a shown dialog set them, so that a later default applies to them.
 
 **What the household sees.** The `config` document carries a `review` section: the open and the
 kept recommendations of the keys it shows, as codes and values, and a count of the others.
@@ -1289,10 +1299,13 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   version keeps running meanwhile. The staged version then switches itself first and the
   configuration second (`install switch`), keeping the old file as `config.toml.<old version>`
   when an answer changed it. `--review <id>` asks the same questions of the installed version
-  without an update. Rollback switches the symlink back to a version still installed and, since
-  2.3, restores the `config.toml.<old version>` an update wrote; an update with an unchanged
-  version string replaces that version's file, and the unit file the update installed stays in
-  place (it is not rolled back; a release's unit names its version in a comment).
+  without an update. Rollback switches the symlink back to a version still installed, by hand
+  ([deployment.md](deployment.md#update-reconfigure-remove)). Since 2.3 an update keeps the old
+  file as `config.toml.<old version>`, and a roll back by hand puts it back with the symlink,
+  because a version before 2.3 refuses a file with `[settings]`; `--rollback` (2.5) will do both.
+  An update with an unchanged version string replaces that version's file, and the unit file the
+  update installed stays in place (it is not rolled back; a release's unit names its version in a
+  comment).
   `--reconfigure <id>` runs the dialogs again with the current settings as defaults
   (`meshcore-home-gateway config answers`) and keeps the settings it does not ask for, and targets
   or command senders the radio no longer offers; since 2.3 it ends with the review.

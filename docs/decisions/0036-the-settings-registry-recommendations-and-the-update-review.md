@@ -40,7 +40,8 @@ Four facts of today's code shape the answer:
   default setup (`lxc.sh:228-236`), and `ask_bridge` stores every answer (`lxc.sh:1079-1093`). A
   default installation therefore writes `homeassistant.discovery = true`,
   `homeassistant.device_name = "MeshCore radio"` and `messages.ascii_only = false`, beside the
-  identity and connection settings. The program itself already keeps defaults out of a file:
+  identity and connection settings, and `--reconfigure` (`lxc.sh:1577`) writes them again into a
+  file that lacked them. The program itself already keeps defaults out of a file:
   `config answers` lists only the settings present, "so settings left at their default keep
   following the default" (`config.py:1038-1045`, `tests/test_config.py:639-640`). A pinned
   preference looks like the administrator's choice to any later comparison.
@@ -57,7 +58,10 @@ The service cannot write its own configuration: `/etc` is read-only in its sandb
 (`ProtectSystem=strict`, `deploy/systemd/meshcore-home-gateway.service:51`), and it should stay
 so. Home Assistant gives every user the same rights on entities (`USER_POLICY`,
 `homeassistant/auth/permissions/system_policies.py:7`), and an MQTT device cannot raise a Repairs
-issue (`homeassistant/components/mqtt/const.py:389-418`: no repairs platform). Both at 2026.10.2.
+issue. MQTT discovery takes only the components of `SUPPORTED_COMPONENTS`
+(`homeassistant/components/mqtt/const.py:423-456`, subscribed in `discovery.py:616-628`): the
+entity platforms, `device_automation` and `tag`. The integration raises issues only about its own
+configuration (`__init__.py:325`, `:528`; `entity.py:293`, `:439`). All at 2026.10.2.
 
 Where do recommendations and the history of defaults live? Which program compares them with the
 file? Who asks, and what may change without a person? How does the household learn of it?
@@ -86,8 +90,6 @@ file? Who asks, and what may change without a person? How does the household lea
 * As today: the changelog and hand edits
 * dpkg's way: always keep the file's value, with *keep* preselected for every item
 * Always the recommended: preselect it, and take it in unattended runs too
-* Household overrides now: a store of runtime values that Home Assistant may change (#174,
-  settings increment C), instead of or beside the review
 * Migrate silently with a backup (Zigbee2MQTT), or tie defaults to the first installed version
   (NixOS `system.stateVersion`)
 
@@ -97,6 +99,10 @@ Chosen option: "the new version reviews against a registry", because it is the o
 the hand edits, keeps every grant behind a person's answer, and gives the docs, the installer and
 Home Assistant one source.
 
+Household overrides (values Home Assistant may change, decision 2 of the 2.3 plan) are no option
+here: they serve another need, and they are still open (*Open decisions*). The review and the
+overrides are orthogonal, so accepting this record decides nothing about them.
+
 ### The registry
 
 One pure module, `core/settings.py`, holds one entry per configuration key. It knows what the
@@ -104,51 +110,65 @@ parser does not: the history of each default, the current recommendation and its
 change does, and who may change the key. The parser stays the only validator.
 
 ```python
-class Effect(StrEnum):       # what moving to a value does; one per change, the weightiest
-    DELETES = "deletes"      # the first start with it deletes stored data
-    GRANTS = "grants"        # someone gains a right: a sender, Home Assistant's users, a LAN client
-    WIDENS = "widens"        # more of other people's data is published, kept or read
-    NEUTRAL = "neutral"      # none of these
+class Effect(StrEnum):  # what moving to a value does; one per change, the weightiest
+    DELETES = "deletes"  # the first start with it deletes stored data
+    GRANTS = "grants"  # someone gains a right: a sender, Home Assistant's users, a LAN client
+    WIDENS = "widens"  # more data is published, kept, read or sent off the host, whoever's
+    NEUTRAL = "neutral"  # none of these
+
 
 @dataclass(frozen=True, slots=True)
-class Default:               # one value the default has had, oldest first
-    since: str               # "2.0.0", "2.3.0"
-    value: object            # DERIVED: the gateway decides
-    effect: Effect           # of the change from the value before; NEUTRAL for the first
+class Default:  # one value the default has had, oldest first
+    since: str  # "2.0.0", "2.3.0"
+    value: object  # DERIVED: the gateway decides
+    # of the change from the behaviour before: the entry before, or, for a key's first entry,
+    # the version before the key
+    effect: Effect
+    # a first entry that changes behaviour: the value that behaves as the version before the
+    # key did (last_known_days: 0)
+    before: object = SAME
+
 
 @dataclass(frozen=True, slots=True)
 class Recommendation:
-    value: object            # DERIVED: "let the gateway decide", which removes the line
+    value: object  # DERIVED: "let the gateway decide", which removes the line
     since: str
-    concern: Concern         # SECURITY | PRIVACY | RELIABILITY | FEATURE
-    reason: str              # msgid, one sentence, at most 140 characters in every language
-    effect: Effect           # of taking it
-    applies: Callable[[Context], bool] = always   # e.g. only with heard_nodes = "full"
+    concern: Concern  # SECURITY | PRIVACY | RELIABILITY | FEATURE
+    reason: str  # msgid, one sentence, at most 140 characters in every language
+    effect: Effect | Callable[[object], Effect]  # of taking it, from the value in effect
+    applies: Callable[[Context], bool] = always  # e.g. only with heard_nodes = "full"
+
 
 @dataclass(frozen=True, slots=True)
 class Key:
-    key: str                 # dotted, as configuration.md writes it: "messages.clean_received"
-    answer: type             # str, int, float, bool or list: the installer answer's type
-    how: How                 # who may change it, and where
+    key: str  # dotted, as configuration.md writes it: "messages.clean_received"
+    answer: type  # str, int, float, bool or list: the installer answer's type
+    how: How  # who may change it, and where
     defaults: tuple[Default, ...]
-    title: str | None = None # msgid, at most 60 characters; required with a recommendation
+    title: str | None = None  # msgid, at most 60 characters; required with a recommendation
     docs: str | None = None  # "configuration.md#messages"
     recommended: Recommendation | None = None
-    deprecated: Deprecation | None = None          # since, and the rewrite the program can do
-    derive: Callable[[Context], object] | None = None   # for DERIVED values
+    deprecated: Deprecation | None = None  # since, and the rewrite the program can do
+    derive: Callable[[Context], object] | None = None  # for DERIVED values
 ```
 
 * **Every key has an entry.** About 70 today, each with its type and its history. `_ANSWER_TYPES`
   goes: `config.py` builds the installer's answer types from the registry, so two tables become
   one.
 * **History.** `defaults` starts at 2.0.0, or at the version that added the key. The review
-  serves the 2.x major; a 1.x file goes through 2.0's breaking notes. The first entries:
+  serves the 2.x major; a 1.x file goes through 2.0's breaking notes. A key added later can
+  change behaviour with its first default: then its first entry names the effect against the
+  version before the key, and `before` the value that behaves as that version did. Such an entry
+  is a changed default like any other: a `changes_now` item, and the consent rules apply. The
+  first entries:
 
   | Key | History of the default | Effect of the last change |
   | --- | --- | --- |
   | `messages.clean_received` | `false` (2.0.0), `true` (2.3.0) | neutral: no stored row is deleted (ADR 0034) |
   | `airtime.burst_s` | `10.0` (2.0.0), derived (2.3.0) | neutral |
   | `contacts.heard_nodes` | `"keys"` (2.0.0), `"full"` (2.2.0) | widens ([ADR 0032](0032-heard-nodes-kept-with-name-signal-and-time-by-default.md)) |
+  | `telemetry.last_known_days` (new, [ADR 0035](0035-the-companion-state-model.md)) | `7` (2.3.0); `before` `0`: 2.2 shows no last known position | widens: last known positions reach every Home Assistant user and the recorder |
+  | the update check's switch (new, ADR 0039, which names the key) | on (2.3.0); `before` off: 2.2 has no check | widens: the container's address reaches GitHub once a day |
 
   `clean_received`, `heard_nodes` and `publish_channels` came with 2.0.0a1 (`CHANGELOG.md:955-962`).
 * **Recommendations.** A recommendation is a last resort: if the gateway can derive a value from
@@ -162,8 +182,9 @@ class Key:
   | `messages.clean_received` | `true` | 2.3.0 | security | neutral |
   | `airtime.burst_s` | let the gateway decide | 2.3.0 | reliability | neutral |
   | `contacts.heard_nodes` | `"full"` | 2.2.0 | feature | widens |
+  | `telemetry.last_known_days` | `7` | 2.3.0 | feature | widens (from `0`) |
   | `messages.publish_channels` | `"targets"` | 2.0.0 | privacy | deletes (from `"all"`: the next start deletes the other channels' messages) |
-  | `diagnostics.log_level` | `"info"` | 2.0.0 | privacy | neutral |
+  | `diagnostics.log_level` | `"info"`, only while the file has `"debug"` (`applies`) | 2.0.0 | privacy | neutral (from `"debug"`: logs less) |
   | `diagnostics.publish_rx_log` | `false` | 2.0.0 | privacy | neutral |
   | `mqtt.password_file` | a file, when `password` is inline | 2.0.0 | security | neutral |
 
@@ -174,9 +195,16 @@ class Key:
 * **Effect.** Each change has one effect, the weightiest: *deletes*, then *grants*, then
   *widens*, then *neutral*. *Deletes* means stored data: a start that deletes rows of the history
   or the state. Cleaning texts that arrive later deletes nothing stored. So the `clean_received`
-  flip is *neutral* and applies everywhere. *Grants* and *widens* are told apart for the words the
-  administrator reads (a right, or more of other people's data); every consent rule below treats
-  them alike.
+  flip is *neutral* and applies everywhere. *Widens* counts every kind of data, whoever's it is:
+  more of other people's data published or kept, and the household's own data logged or sent off
+  the host (`"debug"` writes texts, positions and keys into the journal; the daily update check
+  shows the container's address to GitHub). *Grants* and *widens* are told apart for the words
+  the administrator reads (a right, or more data and whose); every consent rule below treats them
+  alike.
+* **An effect belongs to a move**, from the value in effect to the new one: `"info"` logs less
+  than `"debug"` and more than `"warning"`. Where the value in effect decides, `effect` is a
+  function of it, and the review computes each item's effect from the file. `log_level`'s
+  recommendation also applies only to `"debug"`, so a quieter file is not asked at all.
 * **Who may change it** (`How`). One of: *the installer* (a dialog of the default or the advanced
   setup, named), *the file* (an answers file or by hand), *the gateway* (it decides unless the
   file sets the key), *the radio* (a seed key of
@@ -208,7 +236,12 @@ class Key:
   `tests/test_dashboard.py:3080-3092` already does).
 * The last `Default` equals what `parse_config` of a minimal file gives; `DERIVED` equals the
   parser's unset value.
-* Histories are ordered, their versions valid, the first entry neutral.
+* Histories are ordered and their versions valid. A first entry that is not neutral names
+  `before`, and `parse_config` with `before` behaves as the version before the key (a fixture
+  per such key).
+* For every recommended key with a finite set of values (booleans and choices), the effect of
+  the move from each allowed value to the recommended one: a move that publishes, keeps, logs or
+  sends more is never neutral, so never preselected.
 * A key whose default changed recommends the new default from that version.
 * Every `title` is at most 60 and every `reason` at most 140 characters in every shipped
   language and in the pseudo-language `xx`; neither holds a tab or a line break.
@@ -241,10 +274,12 @@ budget.
 * **The regulatory bound is unchanged.** It is the radio's own limiter, 10 % in the 10 % band by
   the managed profile. A larger burst changes the gateway's short-term peaks, not the hour.
 
-### New installations stop pinning preferences
+### The installer stops pinning preferences
 
-On a new installation the installer leaves out a preference that equals its default, unless an
-answers file names it or the advanced setup changed it. The preferences are
+Whenever the installer renders a file, at a new installation and at `--reconfigure`, it writes a
+preference only when the file or the answers already set it, or when a dialog that was shown got
+an answer other than the default. The default setup's `ask_advanced` answers without a dialog, so
+it never pins. The preferences are
 `homeassistant.discovery`, `homeassistant.device_name` and `messages.ascii_only`. Identity and
 connection settings stay written: `mqtt.base_topic`, `mqtt.node_id`, `mqtt.port`, `mqtt.tls` and
 `homeassistant.language` (the language menu's choice). Brokers, ACLs and entity IDs refer to them.
@@ -288,9 +323,17 @@ meshcore-home-gateway config review [--config FILE] [--from-version X.Y.Z] [--st
 | Kind | When | Choices |
 | --- | --- | --- |
 | `changes_now` | a default changed after `--from-version`, the file does not set the key, and the value in effect changes for this installation | *Take the new behaviour* / *Keep the old behaviour* (writes the old value); with *deletes*, *Export first* too |
-| `deviates` | the file sets a value other than the recommendation | *Take the recommended* / *Keep mine (not asked again)* / *Decide later* |
+| `deviates` | the file sets a value other than the recommendation | *Take the recommended* / *Keep mine (not asked again)* / *Decide later*; with *deletes*, *Export first, then take it* too |
 | `offered` | the file does not set the key, and the default is not the recommendation | as `deviates` |
 | `deprecated` | the file sets a key that goes in the next major | *Replace it* / *Keep until 3.0 (asked again)* |
+
+**Items that delete.** Every item whose taking deletes stored data offers *Export first* and
+takes the decision word `export`, whatever its kind. Rule 1 decides what is preselected: *Export
+first* for a `changes_now` item, whose deletion the release decided; *Keep* for the others, where
+taking is a choice. With `--state-dir` the item says how many rows the first start would delete,
+counted read only in the history. 2.3 has one such item: `messages.publish_channels = "targets"`
+taken from `"all"`, which deletes the messages of the channels that are not published at the next
+start (`wiring.py:252`).
 
 Migrations and acceptances (a renamed key, a new rule between settings) are items of 3.0 only
 (as #186's design plans), with the same machinery.
@@ -299,8 +342,10 @@ Migrations and acceptances (a renamed key, a new rule between settings) are item
 
 * a key marked kept for this recommendation's `since` or a later one;
 * a key whose value in effect already is the recommended one, or would not change by taking it;
-* anything the gateway decides itself, unless the file pins it: then *Let the gateway decide*
-  removes the line;
+* anything the gateway decides itself, with two exceptions: the file pins it (then *Let the
+  gateway decide* removes the line), or its default became derived after `--from-version` and the
+  derived value differs from the old default for this installation (a `changes_now` item, such as
+  the derived burst at a slow preset);
 * identity and trust settings without a recommendation: the broker, credentials, topics, the node
   ID, the radio link, senders, words, exposure. The review never proposes a value for them.
 
@@ -316,12 +361,13 @@ Decided by the maintainer on 2026-11-15, as recommended in the 2.3 plan (decisio
 
 1. **Preselection.** The recommended value is preselected only when taking it is *neutral*: it
    grants nothing, widens nothing and deletes no stored data. Otherwise *Keep* is preselected.
-   Before a first start that deletes data, *Export first* is preselected; the deletion stays the
-   release's decided default.
-2. **An unattended run changes nothing the file sets and records nothing as kept.** The next
-   interactive review asks again, and Home Assistant shows the open items meanwhile. This is
-   debconf's rule: under a non-interactive frontend a question is not marked as seen
-   (`Debconf/ConfModule.pm:188-197`, debconf 1.5.86).
+   Before a first start that deletes data because the release changed a default, *Export first*
+   is preselected; the deletion stays the release's decided default.
+2. **An unattended run without a `review` answer changes nothing the file sets and records
+   nothing as kept.** `review` and `review.KEY` answers act as the table of *Unattended runs*
+   says. The next interactive review asks again, and Home Assistant shows the open items
+   meanwhile. This is debconf's rule: under a non-interactive frontend a question is not marked
+   as seen (`Debconf/ConfModule.pm:188-197`, debconf 1.5.86).
 3. **A changed default that grants or widens is written with its old value by an unattended
    update.** The behaviour then changes only with a person's answer: the next interactive review
    shows the key as `deviates`, with *Keep* preselected.
@@ -330,7 +376,8 @@ Decided by the maintainer on 2026-11-15, as recommended in the 2.3 plan (decisio
 5. **"Keep mine" is kept in the file** as `[settings] kept = ["key@version"]`.
 6. **Taking a recommendation equal to the new default removes the line**, so the file follows the
    defaults from then on. A kept mark for the key goes with it.
-7. **New installations stop pinning preference defaults** (above).
+7. **The installer stops pinning preference defaults**, at a new installation and at
+   `--reconfigure` (above).
 8. **Home Assistant shows recommendations read only** (below).
 9. **`deletes` means stored data**, so the decided `clean_received` flip applies everywhere.
 
@@ -339,7 +386,10 @@ Decided by the maintainer on 2026-11-15, as recommended in the 2.3 plan (decisio
 *neutral*. Where the file does not set the key, it is a `changes_now` item: the final screen lists
 it, and an unattended update applies it. Where the file sets `false`, it is a `deviates` item:
 *Take the recommended* is preselected, *Keep mine* is recorded in `[settings] kept`, and *Decide
-later* asks again at the next update; an unattended update changes nothing there.
+later* asks again at the next update; an unattended update changes nothing there. The second
+item is new: `[telemetry] last_known_days` ([ADR 0035](0035-the-companion-state-model.md)) widens,
+so an interactive update asks with *Keep the old behaviour* preselected, and an unattended one
+writes `last_known_days = 0`.
 
 ### `[settings] kept`
 
@@ -527,20 +577,23 @@ An unattended run is one without a terminal (cron, `ssh` without `-t`) or one wi
 | `changes_now`, grants or widens | the old value written, not kept | the old value written | the old value written, kept | as named |
 | `changes_now`, deletes | applies, as released | applies | the old value written, kept | as named; `export` exports first |
 | `deviates`, `offered`, `deprecated`, neutral | unchanged, nothing recorded | taken | kept | as named |
-| the same, grants, widens or deletes | unchanged, nothing recorded | **unchanged** | kept | as named |
+| the same, grants, widens or deletes | unchanged, nothing recorded | **unchanged** | kept | as named; `export` exports first |
 
 * `review` takes `recommended`, `keep` or `later`; `review.<key>` takes `recommended`, `keep`,
-  `later` or `export`. They join the installer's answers (`INSTALLER_KEYS`, `lxc.sh:53-54`). An
-  unknown review key, or one that is no item of this review, stops the run before anything is
-  written. `review=later` keeps a terminal run silent.
+  `later` or, for an item that deletes, `export`. They join the installer's answers
+  (`INSTALLER_KEYS`, `lxc.sh:53-54`). An unknown review key, or one that is no item of this
+  review, stops the run before anything is written. `review=later` keeps a terminal run silent.
 * Configuration keys in an answers file are ignored by `--update`, as today, now with one log
   line: passing an installation's answers again must not reconfigure.
 * The log names each open item in English, with how to decide it: "review:
   [messages] clean_received is false, recommended true since 2.3.0 (security); unchanged. Decide
   with --review 105 in a terminal, or review.messages.clean_received=recommended in --answers".
 * A changed default that deletes applies unattended because the release decided it, as 2.2's purge
-  did. A notice with the counts and *Export first* (#186's design) is built with the first release
-  that needs it. Nothing in 2.3 deletes stored data.
+  did. No changed default of 2.3 deletes stored data, but taking one of its recommendations does:
+  `messages.publish_channels = "targets"` from `"all"`. So 2.3 builds the count and *Export first*
+  of #186's design for every item that deletes (*Items that delete*, above). An unattended run
+  takes such an item only with its own line, `review.messages.publish_channels=recommended` or
+  `=export`.
 
 ### The install steps move into the program (amends ADR 0006)
 
@@ -551,17 +604,19 @@ at it, installs the units, reloads systemd, and then switches the configuration 
 It refuses unless run as root from a file in `/usr/local/lib/meshcore-home-gateway/`. It imports
 what it needs before it renames its own file: zipimport reads a module by its path.
 
-* **Why.** The configuration switch and the kept copy belong in the same step as the program's,
-  with their modes and owners right; Python tests them as units, the shell only through stubs.
-  ADR 0039's check unit and the updater of 2.5 (installing from Home Assistant) need the same
-  switch without the installer. One implementation serves all three.
+* **Why.** In 2.3 the gain is one tested switch of the program and the configuration, with their
+  modes and owners right: Python tests it as units, the shell only through stubs. The one later
+  reuse is the updater of 2.5 (installing from Home Assistant), which needs the switch without the
+  installer. ADR 0039's check unit needs none: it runs without root and only fetches
+  `release.json`, and the installer's own update installs its unit file.
 * **What stays in the shell:** packages, the journal limit, the user, staging (the download, the
   digests, the build of a source checkout), `check-config` and the dialogs.
 * **Bytes.** The installer keeps its five switch lines (`lxc.sh:866-870`) for a staged version
   before 2.3. `--release X.Y.Z` installs any release, and the installer's options only grow within
   a major ([ADR 0023](0023-public-interfaces-kept-by-a-snapshot.md)). So the move saves no bytes
   in 2.x. It keeps what the switch gains (the configuration, more units, a roll back) out of the
-  installer. The old lines go in 3.0.
+  installer. Until 3.0 there are two switch paths, the shell's for releases before 2.3 and the
+  program's, and both are kept and tested. The old lines go in 3.0.
 * **The budget.** About 16.6 KB remain after 2.2.1. The review's loop (whiptail and plain, the
   bulk menu, `--review`, the answers keys) is the largest bidder of 2.3. Its texts come from the
   program, so the installer's catalog grows by a few button labels only. The size test guards the
@@ -604,7 +659,8 @@ the strategy of #169, from the same codes):
   "Recommended since 2.3: on"; under the meaning, "Why: removes control and direction characters
   from strangers' names and texts. Your administrator decides at the next update, or now with the
   installer's `--review`." For a widening or granting item it adds what taking it would allow.
-* A kept key: "Kept on purpose by your administrator (asked with 2.2)."
+* A kept key: "Kept on purpose by your administrator (recommended since 2.2)." The mark stores
+  the recommendation's `since`, not the version that asked.
 * `other_open`: "1 more recommendation concerns a setting this page does not show. Your
   administrator's next update asks."
 * *Radio and airtime*: "bursts of 13 s, set by the gateway for this radio's settings" from
@@ -626,7 +682,7 @@ whose install call only administrators may make.
 | Command line | `config review` with its options, JSON keys and `--list` line kinds; `install switch`; `broker acl` |
 | MQTT | `config.review`; `state.airtime_burst_s` and `state.airtime_burst_source` |
 | Discovery | *Airtime available* gains the attributes `burst_s` and `burst_source` |
-| Installer | `--review CTID`; dialogs in `--update` and `--reconfigure` in a terminal; the answers `review` and `review.<key>`; new installations leave three preferences out |
+| Installer | `--review CTID`; dialogs in `--update` and `--reconfigure` in a terminal; the answers `review` and `review.<key>`; three preferences left out unless set, at a new installation and at `--reconfigure` |
 
 Asking in `--update` changes behaviour only in a terminal with something open. Scripts without a
 terminal behave as today, plus log lines and the rules above.
@@ -644,7 +700,7 @@ terminal behave as today, plus log lines and the rules above.
 * Good, because the burst fits the radio's preset without a setting, and the household sees that
   the gateway set it.
 * Good, because the configuration switch, the kept copy and the units live in one tested program
-  step, which ADR 0039 and the updater of 2.5 reuse.
+  step, which the updater of 2.5 reuses.
 * Bad, because a file with `[settings]` is refused by versions before 2.3. A roll back needs the
   kept `config.toml.<old version>`; `docs/deployment.md` says so, and `--rollback` (2.5) restores
   it.
@@ -657,7 +713,11 @@ terminal behave as today, plus log lines and the rules above.
 * Bad, because an administrator who keeps a security recommendation keeps the weaker setting. It is
   recorded and shown on *Settings* as kept on purpose.
 * Bad, because the installer grows by the review's loop, within the 16.6 KB left. The legacy
-  switch lines stay for older releases until 3.0.
+  switch lines stay for older releases until 3.0, so two switch paths are kept and tested until
+  then.
+* Bad, because a new key whose default shows more than before asks existing installations, and an
+  unattended update keeps the old behaviour. In 2.3 that is `last_known_days`: an unattended
+  update shows no last known positions until someone takes the default.
 * Bad, because the marks need a new dashboard until the strategy of #169 (2.5).
 * Neutral, because at slow presets the gateway's short-term peaks grow, within the radio's own
   limiter.
@@ -680,9 +740,10 @@ terminal behave as today, plus log lines and the rules above.
 * **B1 and B2, the air and the radio.** The review never talks to the radio. The derived burst
   changes only the gateway's own short-term peaks.
 
-The threat model's B6 gains the update's rules: the staged program reviews, an unattended run
-changes nothing the file sets, and what grants, widens or deletes needs an answer naming it. Its
-residual risks gain the kept security recommendation.
+The threat model's B6 and its residual risks say so in this pull request, marked as proposed for
+2.3: the staged program reviews, an unattended run without a review answer changes nothing the
+file sets, and what grants, widens or deletes needs an answer naming it; a kept security
+recommendation keeps the weaker setting.
 
 ### Confirmation
 
@@ -693,14 +754,21 @@ residual risks gain the kept security recommendation.
   fixtures of each kind and effect; `kept` hides its `since` and not a later one; a pre-release
   counts as its release; no changed defaults without `--from-version`; the pinned-default hint;
   every `--list` text within its lines and columns in every language, by 2.2.1's wrap model;
-  backslashes round-trip through `printf %b`.
+  backslashes round-trip through `printf %b`; the item of a deleting recommendation with its count
+  from a fixture history and *Export first*; an unpinned derived burst at a slow preset is a
+  `changes_now` item, and at EU/UK Narrow no item.
 * **`--apply`**: each answer per kind; idempotence (the review of the result lists only *later*
   items); a property test that keys not named keep their values; an unknown key or word exits 2
   and writes nothing; mode and group as `config render`; `kept` round-trips.
 * **No secret**: a property test with generated passwords, user names and hosts over `--json`,
   `--list`, `--plan` and the `review` section. No mesh text in any item.
-* **Consent rules**: a registry test that nothing non-neutral is preselected; the unattended table
-  row by row.
+* **Consent rules**: the registry test over every allowed value of each recommended key with a
+  finite set of values (above); nothing non-neutral preselected; a new key's first default with
+  its effect against the version before it (`last_known_days` from 2.2: *Keep the old behaviour*
+  preselected, `0` written unattended); the unattended table row by row.
+* **Codes and texts**: the guard test of
+  [design §6.12](../design.md#612-translations) covers the review's `kind`, `concern` and
+  `effect` and `airtime_burst_source` in every shipped language.
 * **Installer** (`tests/test_installer.py`, the `pct exec` stub answering `config review` from an
   environment variable, as it answers `probe --list` from `PROBE_PROFILE`): nothing open, no
   dialog, the file byte for byte, no whiptail needed; whiptail flows with `--default-item`, the
@@ -709,7 +777,9 @@ residual risks gain the kept security recommendation.
   the unattended table; a staged version without the command behaving as today; the switch order;
   `config.toml.<old>` with its mode and group, and no copy when nothing was written; Ctrl-C
   leaving everything as it was; the dialogs in `xx`; the size test; `shellcheck`.
-* **New installations**: the answers sent no longer hold the three preferences unless answered.
+* **Pinning**: the answers a new installation sends hold none of the three preferences unless
+  answered; `--reconfigure` of a file without them leaves them out, of one that sets them keeps
+  them, and writes one whose shown dialog got another answer.
 * **`install switch`**: run from a built zipapp in a temporary root, the program before the file,
   its own rename last.
 * **Home Assistant**: contract tests on 2026.10 and 2026.11 render the marks from documents with
@@ -759,17 +829,6 @@ The draft of #185 (`zerotouch.md` §6.1).
   Home Assistant) would be one Enter away, and unattended runs would take it with nobody present.
   That contradicts the maintainer's rule that security-relevant settings never change without
   consent.
-
-### Household overrides now
-
-Settings increment C of #174: `settings.json`, `config/set`, rows Home Assistant may change.
-
-* Good, because a household could change a listed setting from Home Assistant, with *Undo*.
-* Bad, because it costs 3,500–5,000 lines for two settings the analysis itself calls rare (the
-  radio's name and its transmit power), which the maintenance port serves with MeshCore's own app.
-* Bad, because it does not remove the update's hand edits, which concern the administrator's file.
-* Neutral, because nothing here blocks it: a `row` field joins `Key`, `[settings] changeable`
-  joins `kept`, and a row with a recommendation would show *Use recommended*.
 
 ### Migrate silently, or tie defaults to the first installed version
 
@@ -824,7 +883,17 @@ Refinements of this record, for the review of this pull request:
 * An item is listed only when taking it changes the value in effect for this installation (the
   derived burst stays 10 s at EU/UK Narrow, so most updates into 2.3 do not ask about it).
 * The move of the install steps saves no installer bytes in 2.x (above); the 2.3 plan counted
-  2.9 KB.
+  2.9 KB. Its gain is the tested switch, reused by the updater of 2.5, not by ADR 0039's unit.
+* *Widens* counts the household's own data too, when it is logged or leaves the host. #186's
+  design spoke of "widens access"; the first draft of this record narrowed it to other people's
+  data, which would have preselected the update check.
+* An effect belongs to a move from the value in effect, and a new key's first default carries
+  its effect against the version before the key. So `last_known_days` and the update check ask
+  existing installations, which decision 6 of the 2.3 plan foresees for the check ("offered to
+  existing ones by the review").
+* Every item that deletes offers *Export first* with its count, not only a changed default: the
+  `publish_channels` recommendation deletes in 2.3.
+* The installer stops pinning at `--reconfigure` too, not only at a new installation.
 * The registry's histories start at 2.0.0: `clean_received`, `heard_nodes` and `publish_channels`
   came with 2.0.0a1, not 1.0.0 as the analyses wrote.
 
@@ -834,11 +903,15 @@ Two decisions of the 2.3 plan are still open
 ([design §13.1](../design.md#131-release-23-the-foundations-and-updates-that-ask)). This record
 depends on neither.
 
-* **Household overrides** (settings increment C, #174; decision 2). Recommended:
-  defer until a setting that households change often needs it. The name and the power are then
-  changed through the maintenance port (2.4), the change is reported after every connect, and a
-  new name is announced by the gateway. The design stays on file. The registry and `[settings]`
-  leave room for it: a `row` field, `[settings] changeable`, *Use recommended* on a row.
+* **Household overrides** (settings increment C, #174; decision 2): `settings.json`,
+  `config/set`, rows Home Assistant may change, with *Undo*. Recommended: defer until a setting
+  that households change often needs it. The name and the power are then changed through the
+  maintenance port (2.4), the change is reported after every connect, and a new name is announced
+  by the gateway. For the maintainer: building it costs 3,500–5,000 lines for the two settings the
+  analysis expects households to change (the radio's name and its transmit power), and it would
+  not remove the update's hand edits, which concern the administrator's file. The design stays on
+  file, and nothing here blocks it: a `row` field joins `Key`, `[settings] changeable` joins
+  `kept`, and a row with a recommendation would show *Use recommended*.
 * **The upstream firmware route** (decision 10) concerns
   [ADR 0035](0035-the-companion-state-model.md), which records it. It does not touch the
   settings.
@@ -848,7 +921,8 @@ depends on neither.
 * [ADR 0034](0034-untrusted-text-from-the-mesh.md): the `clean_received` flip, the review's first
   `changes_now` item.
 * [ADR 0035](0035-the-companion-state-model.md): `[telemetry] last_known_days` and
-  `rest_radius_m` get registry entries, without a recommendation.
+  `rest_radius_m` get registry entries. `last_known_days` recommends its default from 2.3.0, as
+  every key whose default changed, and widens; `rest_radius_m` has no recommendation.
 * ADR 0039 (2.3.0a1, to be written): the daily check in its own sandboxed unit (decision 6 of
   the 2.3 plan), `release.json` built from this registry, and the update entity whose summary
   says what the update will ask. Referenced here, decided there.
@@ -865,7 +939,8 @@ depends on neither.
 * the installer has less than 4 KB left: move `plan_text` and the summary's texts into the
   program;
 * whiptail changes its layout (the platform note's check);
-* a release deletes stored data at its first start: build the notice with *Export first*.
+* a release deletes stored data at its first start: check that the count and *Export first* of
+  2.3 cover its case.
 
 ### Sources
 

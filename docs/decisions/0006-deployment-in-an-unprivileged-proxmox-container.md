@@ -139,5 +139,6 @@ to a valid configuration. `tests/manual/installer_dialogs.py` drives the real wh
   its recommendations; in a terminal it asks, without one it follows that record's consent rules. It
   writes the configuration only on an answer and keeps the old one as `config.toml.<old version>`.
   The staged program switches itself first and the configuration second (`install switch`).
-  `--review CTID` asks the same questions without an update. New installations leave out preferences
-  that equal their default.
+  `--review CTID` asks the same questions without an update. The installer, at a new installation
+  and at `--reconfigure`, leaves out preferences that equal their default unless the file, the
+  answers or a shown dialog set them.

@@ -156,7 +156,12 @@ user in a tight systemd sandbox.
 secrets in files of their own (0640, for the service's group), as systemd credentials that root
 alone reads only with a drop-in ([deployment](deployment.md#4-operations)); backups without
 secrets unless asked;
-automatic security updates in the container ([deployment](deployment.md#4-operations)).
+automatic security updates in the container ([deployment](deployment.md#4-operations)). Since 2.3
+(proposed, [ADR 0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md)):
+an update's staged, verified program reviews the configuration before it switches; an unattended
+run without a review answer changes nothing the file sets; a change that grants, widens or deletes
+needs an answer that names it, and a changed default that grants or widens is written with its old
+value; the service still cannot write its configuration.
 
 ### B7: the project and its users
 
@@ -226,6 +231,10 @@ The full list is [design §7.4](design.md#74-residual-risks). The ones this mode
   secret the radios share would make `confirmed` a proof; that is for the MeshCore project.
 * **The broker's ACL is the only guard of the bus.** The gateway warns about an open broker and
   restores its documents; it cannot tell a forged event from its own.
+* **A kept security recommendation keeps the weaker setting** (since 2.3, proposed,
+  [ADR 0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md)). An
+  administrator may answer *Keep mine*; the review records it in `[settings] kept`, and *Settings*
+  shows it as kept on purpose, but the setting stays as it was.
 
 ## Assumptions
 
