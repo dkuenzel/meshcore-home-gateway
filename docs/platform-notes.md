@@ -802,23 +802,19 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   before the message, which holds the start warnings, the error and the hint of a refused login
   without a user name and TLS in German (17 lines); a longer message loses its own end, not the
   question. The plan for the radio's settings is a message box of 24x78 too, without
-  `--scrolltext`: `choose_profile()` lists as many of its contacts as `fold -s -w 74` (under
-  `LC_ALL=C`) says fit in 18 lines, and counts the others in a line of their own ("contacts not
-  listed here: 3 (see the installer's output)"); the log before the box lists every contact.
-  fold counts bytes and breaks at the last blank, so `fits()` first writes each space whiptail
-  breaks a line at as blanks, one a cell (U+3000 two), and each character below U+2300 but
-  Hangul's (U+1100 to U+11FF), such as an umlaut, Greek or Cyrillic, a typographic quote or
-  dash, and U+FFFD as one byte: each takes one cell or none. Any other character keeps its 3 or
-  4 bytes, more than the 2 cells of a wide one, also where whiptail breaks a long word before
-  it. So fold never counts fewer cells than whiptail and breaks a line no later: a contact whose
-  name holds umlauts takes the one line whiptail gives it, not two; with emoji or CJK in names
-  the box may list fewer contacts than would fit, never one too many. It tries at most 17
-  numbers of contacts, from the most that can fit down, however many the radio holds.
-  `tests/test_dialog_texts.py` lays out four realistic plans with the values `probe --list
-  profile` prints, such as every kind of node added automatically and telemetry for contacts,
-  with up to 16 contacts named with 31 bytes; with all six settings such a box lists 2 to 8 of
-  them. It checks `fits()` against texts of umlauts, wide letters, every space whiptail breaks
-  at and a radio's name of control characters written as `\u0001` around a Unicode space
+  `--scrolltext`, and it lists no contact: `choose_profile()` shows the settings the service
+  sets, only reports or leaves alone, one line for each kind of contact with its count
+  ("Contacts made favourites: 12"), and a last line saying that the installer's output above
+  lists every contact; the log before the box lists each with the start of its key and its
+  name. So its text has a bound, and nothing is measured at run time:
+  `tests/test_dialog_texts.py` lays out its worst case in every language, every setting the
+  managed profile manages with the values `probe --list profile` prints (every kind of node
+  added automatically, every telemetry mode, every duty cycle from 10 to 100 %) and in the form
+  whose line takes the most lines, a radio's name of 31 bytes in the most columns (a family
+  emoji, whose zero-width joiners probe writes as `\u200d`, and six letters: 32 columns), and
+  each count with three digits. It takes 18 lines in English and in German. A radio's name of
+  control or format characters, which probe writes as `\u` escapes of 6 columns each, can make
+  the box longer; whiptail then cuts its last lines, which the log has
   (#190). *Check:*
   `whiptail --msgbox "$(seq 1 30)" 12 40` shows 1 to 6 and closes with Enter;
   `whiptail --scrolltext --msgbox "$(seq 1 30)" 12 40` stays open on Enter, without an arrow or

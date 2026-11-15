@@ -10,14 +10,13 @@ cases and over every text below, and compares it with the model.
 
 from __future__ import annotations
 
-import os
-import re
-import subprocess
 from collections.abc import Sequence
 from typing import Final
 
 import pytest
 
+from meshcore_home_gateway.cli.common import _json_text
+from meshcore_home_gateway.views import SETTING_NAMES
 from tests import dialog_texts as model
 from tests.dialog_texts import Box
 
@@ -279,119 +278,33 @@ def test_a_failed_login_shows_what_the_program_printed() -> None:
     assert "broker refused the connection: Not authorized (no user name)" in english[0]
 
 
-def test_the_plan_lists_the_contacts_its_box_holds(dialogs: list[model.Dialog]) -> None:
-    """The plan's box lists as many contacts as fold says it holds and counts the others in a line
-    of its own (#190): no --scrolltext, with which Enter does not close the box and whiptail marks
-    no text below. Every realistic plan lists two contacts and counts some of PLAN_CONTACTS, in
-    every language; the installer measures with the box's own lines and columns."""
-    (box,) = [d.box for d in dialogs if model.PLAN_NOT_LISTED in d.msgids()]
-    assert box == model.PLAN_BOX
+def test_the_plan_box_holds_its_worst_case(dialogs: list[model.Dialog]) -> None:
+    """The plan's box counts the contacts and lists none (#190), so its text has a bound that
+    nothing measures at run time: every setting the managed profile manages, each at the values
+    and in the form whose line takes the most lines, a radio's name of 31 bytes in the most
+    columns, and each count of contacts with three digits. The box has 24 rows, the most a
+    terminal of 80x24 shows, and no --scrolltext, with which Enter would not close it and
+    whiptail marks no text below: the worst case fits in every language
+    (test_every_text_fits_its_box). The model has every text of plan_text, and only those."""
+    (dialog,) = [d for d in dialogs if model.PLAN_LISTED in d.msgids()]
+    assert dialog.box == model.PLAN_BOX
+    assert dialog.function == "choose_profile"
+    assert not [d.where() for d in dialogs if d.box.scroll]
     script = model.Script(model.SCRIPT.read_text(encoding="utf-8"))
-    assert f'fits "$box" {box.text_width} {box.lines}' in script.text
-    assert not [dialog.where() for dialog in dialogs if dialog.box.scroll]
-    plans = model.COMPOSED["plan_text"](script)
-    assert isinstance(plans, model.PlanBox)
-    assert len(model.PLAN_CONTACT.split(" ", 1)[1].encode()) == 31  # the most a name takes
+    assert set(dialog.msgids()) == script.messages_in("plan_text")
+    assert {len(name.encode()) for name in model.PLAN_NAMES} == {31}  # the most the radio stores
+    names = [_json_text(name) for name in model.PLAN_NAMES]  # as probe prints them
+    assert max(map(model.text_width, names)) == 34  # 32 columns and the quotes
     for language, catalog in LANGUAGES.items():
         translate = model.translator(catalog, language)
-        for plan in plans.plans:
-            assert plan.listed(translate, 2) == 2, (language, plan.heading)
-            assert plan.listed(translate, model.PLAN_CONTACTS) < model.PLAN_CONTACTS
-            text = plan.text(translate, model.PLAN_CONTACTS, 0)
-            assert translate(model.PLAN_NOT_LISTED).split("{")[0] in text
-
-
-def _radio_name(space: str) -> str:
-    """The plan's line for a radio whose own name holds control characters, which the program
-    writes as \\u0001, and a space whiptail breaks a line at: a run of 74 bytes or more without
-    a blank, which whiptail breaks at that space (#190)."""
-    return '  name: "' + "\\u0001" * 11 + space + "\\u0001" * 8 + '" -> "MeshCore Gateway Hof"'
-
-
-# the spaces whiptail breaks a line at that are no ASCII blank
-_SPACES: Final = sorted(char for char in model.SPACES if ord(char) > 0x7F)
-# lines of narrow letters that take at most 74 cells, but more bytes: one line each, in fold too
-_NARROW: Final = (
-    "  Kontakt 0123456789ab Funkgerät Mühlenhöhe Süd 01: zum Favoriten gemacht",  # 77 bytes
-    "  contact 0123456789ab " + "\N{REPLACEMENT CHARACTER}" * 31 + ": made a favourite",
-    "Ω" * 74,
-    "Ж" * 74,
-    "\N{LATIN SMALL LETTER A WITH DOT BELOW}" * 74,
-    "\N{EM DASH}" * 74,
-    "„Grüße“ \N{EN DASH} „Straße“ … € → ≤ ≥ ≠ ™ " * 2,
-    "\N{THAI CHARACTER KO KAI}" * 74,
-    "\N{GEORGIAN LETTER AN}" * 74,
-)
-# texts whose lines fold must not count fewer of than whiptail shows
-_FOLDED: Final = (
-    "Schlüssel Funkgerät Überprüfung äöüÄÖÜß " * 6,
-    "漢字かな " * 40,
-    "a" * 73 + " " + "b" * 80,
-    "  " + "x" * 74 + "\n" + "y\N{EN QUAD}" * 50,
-    "word " * 15 + "\nnext line\\nafter the two characters",
-    *(_radio_name(space) for space in _SPACES),
-    *(
-        "a" * 73 + wide + "a" * 80
-        for wide in ("漢", "\N{GRINNING FACE}", "\N{FULLWIDTH DIGIT ONE}")
-    ),
-    "ä" * 80 + " " + "ö" * 80,
-    *_NARROW,
-)
-
-
-def test_fold_counts_no_fewer_lines_than_whiptail_shows() -> None:
-    """The installer measures a text with fold (fits), which counts bytes and breaks at the last
-    blank within the columns: never fewer lines than whiptail wraps the text into, for German
-    and wide letters, a wide one where a long word breaks, every space whiptail breaks at, also
-    in a radio's name of control characters written as \\u0001, and long words."""
-    box = model.PLAN_BOX
-    for text in _FOLDED:
-        assert model.folded_lines(text, box.text_width) >= len(box.layout(text + "\n")), text
-
-
-def test_fold_counts_a_narrow_letter_as_one_column() -> None:
-    """A line of umlauts, Greek, Cyrillic, Thai, Georgian, typographic signs or U+FFFD that takes
-    at most 74 cells is one line for fits(), as for whiptail, although it takes more bytes: the box
-    lists a contact with such a name as the one line whiptail shows (#190)."""
-    box = model.PLAN_BOX
-    for text in _NARROW:
-        assert len(box.layout(text + "\n")) == 1, text
-        assert len(text.encode()) > box.text_width, text
-        assert model.folded_lines(text, box.text_width) == 1, text
-
-
-def _installer_fits(cases: Sequence[tuple[str, int, int]]) -> list[bool]:
-    """The script's own fits TEXT COLUMNS LINES, for each case."""
-    script = model.SCRIPT.read_text(encoding="utf-8")
-    (function,) = re.findall(r"^fits\(\) \{.*?^\}\n", script, re.MULTILINE | re.DOTALL)
-    loop = 'while IFS= read -r -d "" text && read -r -d "" columns && read -r -d "" lines; do\n'
-    loop += '  if fits "$text" "$columns" "$lines"; then echo yes; else echo no; fi\ndone\n'
-    data = "".join(f"{text}\0{columns}\0{lines}\0" for text, columns, lines in cases)
-    answers = subprocess.run(  # noqa: S603 - bash with the script's function
-        ["bash", "-c", function + loop],  # noqa: S607 - the system's bash, as the installer's
-        input=data.encode(),
-        capture_output=True,
-        check=True,
-        env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
-    ).stdout.decode()
-    return [answer == "yes" for answer in answers.split()]
-
-
-def test_the_installer_measures_as_the_model_does() -> None:
-    """The script's fits() needs as many lines as the model's folded_lines(): yes with that many,
-    no with one fewer, for every text above and the realistic plans in every language."""
-    texts = list(_FOLDED)
-    plans = model.COMPOSED["plan_text"](model.Script(model.SCRIPT.read_text(encoding="utf-8")))
-    assert isinstance(plans, model.PlanBox)
-    for language, catalog in LANGUAGES.items():
-        translate = model.translator(catalog, language)
-        texts += [plan.text(translate, model.PLAN_CONTACTS, 9) for plan in plans.plans]
-    columns = model.PLAN_BOX.text_width
-    cases = []
-    for text in texts:
-        lines = model.folded_lines(text, columns)
-        cases += [(text, columns, lines), (text, columns, lines - 1)]
-    assert _installer_fits(cases) == [True, False] * len(texts)
+        changes = model.worst_changes(translate)
+        assert [change.setting for change in changes] == list(SETTING_NAMES.values())
+        texts = dialog.text.render(translate)
+        assert len(texts) == 3  # sets; only reports with untested firmware; observes
+        for text in texts:
+            assert text.count(str(model.PLAN_COUNT)) == 2, text  # each with its count
+            assert text.endswith(f"\n{translate(model.PLAN_LISTED)}\n")  # as the box ends
+            assert len(model.PLAN_BOX.layout(text)) <= model.PLAN_BOX.lines, (language, text)
 
 
 LANGUAGES: Final = model.catalogs()

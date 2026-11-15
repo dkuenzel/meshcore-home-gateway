@@ -15,8 +15,8 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
   added manually only, no telemetry for anyone, no position in adverts, and the 10 % duty cycle in
   the EU band 869.40–869.65 MHz, a default the configuration can change (configuration.md,
   `[radio.profile]`; ADR 0020). The installer
-  shows what changes (a box that cannot hold every contact counts the others, which the
-  installer's output lists); in the advanced setup it also asks for the radio's name. With firmware other than companion 1.18 it
+  shows what changes (its box counts the contacts, and the installer's output above it lists
+  each); in the advanced setup it also asks for the radio's name. With firmware other than companion 1.18 it
   only reports; check the settings in the app then, or set `radio.profile.manage = "always"`.
 * **Broker:** an MQTT user for the gateway, with an ACL (mqtt-api.md, last section); the ACL is
   required when commands are configured. A standalone Mosquitto reads a user added with

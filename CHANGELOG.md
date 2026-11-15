@@ -62,9 +62,9 @@ format, the command line and Home Assistant discovery are public interfaces
   start and its end (each more of its end when two would read the same), and the setup's
   items start with the names the docs and an answers file give them, default and advanced. The plan for the radio's settings lost its last lines, contacts and the
   settings left alone, with the values the radio reports already with four contacts; its box has
-  24 rows, lists as many contacts as it holds and counts the others, which the installer's
-  output lists, and does not scroll, since a scrolling box closed only with Tab, then Enter and
-  showed no mark of the text below. The final message could lose the end of its
+  24 rows and does not scroll, since a scrolling box closed only with Tab, then Enter and showed
+  no mark of the text below, and it counts the contacts instead of listing them (the installer's
+  output above it lists each). The final message could lose the end of its
   warning about a radio over TCP: in German when the login and the self-test took two lines each
   or the radio's IPv6 address was written out in full, and in both languages with a broker user
   name longer than the suggested one; three of its results are shorter, and the line about the

@@ -59,7 +59,25 @@ msgstr ""
 msgid "Command words, comma-separated (e.g. status,arm,disarm)"
 msgstr ""
 
+#. {count} is a number of contacts; the installer's output above the box lists
+#. each of them.
+#, python-brace-format
+msgid "Contacts added as favourites: {count}"
+msgstr ""
+
 msgid "Contacts allowed to send commands (direct messages only)"
+msgstr ""
+
+#, python-brace-format
+msgid "Contacts made favourites: {count}"
+msgstr ""
+
+#, python-brace-format
+msgid "Contacts not on the radio: {count}"
+msgstr ""
+
+#, python-brace-format
+msgid "Contacts that are no favourites: {count}"
 msgstr ""
 
 msgid "Contacts to send to"
@@ -220,6 +238,12 @@ msgid ""
 "After re-plugging the radio: {command}"
 msgstr ""
 
+#. the last line of the plan's box, below the counts of contacts: the
+#. installer's output before the box lists each contact with the start of its key and its
+#. name.
+msgid "The installer's output above lists every contact."
+msgstr ""
+
 #. security text (docs/translations.md): translate all of it, add nothing.
 #, python-brace-format
 msgid "The radio is reached over TCP without authentication ({address}): whoever reaches it can control it and read its private key."
@@ -323,28 +347,6 @@ msgstr ""
 
 #, python-brace-format
 msgid "command failed at line {line}"
-msgstr ""
-
-#. {contact} is the start of a contact's key and its name.
-#, python-brace-format
-msgid "contact {contact}: added as a favourite"
-msgstr ""
-
-#, python-brace-format
-msgid "contact {contact}: made a favourite"
-msgstr ""
-
-#, python-brace-format
-msgid "contact {contact}: no favourite"
-msgstr ""
-
-#, python-brace-format
-msgid "contact {contact}: not on the radio"
-msgstr ""
-
-#. {count} is a number; the installer's output lists every contact.
-#, python-brace-format
-msgid "contacts not listed here: {count} (see the installer's output)"
 msgstr ""
 
 msgid "container ID must be a number of at least 100"

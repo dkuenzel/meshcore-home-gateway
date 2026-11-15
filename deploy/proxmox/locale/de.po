@@ -67,8 +67,26 @@ msgstr "Kanäle, an die gesendet wird"
 msgid "Command words, comma-separated (e.g. status,arm,disarm)"
 msgstr "Befehlswörter, durch Kommas getrennt (z. B. status,arm,disarm)"
 
+#. {count} is a number of contacts; the installer's output above the box lists
+#. each of them.
+#, python-brace-format
+msgid "Contacts added as favourites: {count}"
+msgstr "Als Favoriten hinzugefügte Kontakte: {count}"
+
 msgid "Contacts allowed to send commands (direct messages only)"
 msgstr "Kontakte, die Befehle senden dürfen (nur Direktnachrichten)"
+
+#, python-brace-format
+msgid "Contacts made favourites: {count}"
+msgstr "Zu Favoriten gemachte Kontakte: {count}"
+
+#, python-brace-format
+msgid "Contacts not on the radio: {count}"
+msgstr "Kontakte, die nicht auf dem Funkgerät sind: {count}"
+
+#, python-brace-format
+msgid "Contacts that are no favourites: {count}"
+msgstr "Kontakte, die keine Favoriten sind: {count}"
 
 msgid "Contacts to send to"
 msgstr "Kontakte, an die gesendet wird"
@@ -246,6 +264,12 @@ msgstr ""
 "Der Container startet nur, solange das Funkgerät eingesteckt ist.\n"
 "Nach erneutem Einstecken des Funkgeräts: {command}"
 
+#. the last line of the plan's box, below the counts of contacts: the
+#. installer's output before the box lists each contact with the start of its key and its
+#. name.
+msgid "The installer's output above lists every contact."
+msgstr "Die Ausgabe des Installers oben führt jeden Kontakt auf."
+
 #. security text (docs/translations.md): translate all of it, add nothing.
 #, python-brace-format
 msgid "The radio is reached over TCP without authentication ({address}): whoever reaches it can control it and read its private key."
@@ -259,7 +283,7 @@ msgid ""
 "The radio's firmware is not tested: the service only reports what differs\n"
 "(radio.profile.manage = always sets it anyway):"
 msgstr ""
-"Die Firmware des Funkgeräts ist nicht getestet: Der Dienst meldet nur, was abweicht\n"
+"Ungetestete Firmware des Funkgeräts: Der Dienst meldet nur, was abweicht\n"
 "(radio.profile.manage = always setzt es trotzdem):"
 
 msgid "The service leaves alone:"
@@ -352,28 +376,6 @@ msgstr "die Version des Checkouts {path} ist nicht lesbar"
 #, python-brace-format
 msgid "command failed at line {line}"
 msgstr "Befehl in Zeile {line} fehlgeschlagen"
-
-#. {contact} is the start of a contact's key and its name.
-#, python-brace-format
-msgid "contact {contact}: added as a favourite"
-msgstr "Kontakt {contact}: als Favorit hinzugefügt"
-
-#, python-brace-format
-msgid "contact {contact}: made a favourite"
-msgstr "Kontakt {contact}: zum Favoriten gemacht"
-
-#, python-brace-format
-msgid "contact {contact}: no favourite"
-msgstr "Kontakt {contact}: kein Favorit"
-
-#, python-brace-format
-msgid "contact {contact}: not on the radio"
-msgstr "Kontakt {contact}: nicht auf dem Funkgerät"
-
-#. {count} is a number; the installer's output lists every contact.
-#, python-brace-format
-msgid "contacts not listed here: {count} (see the installer's output)"
-msgstr "Hier nicht aufgeführte Kontakte: {count} (siehe die Ausgabe des Installers)"
 
 msgid "container ID must be a number of at least 100"
 msgstr "die Container-ID muss eine Zahl ab 100 sein"
@@ -604,12 +606,12 @@ msgstr "{setting}: {live} (am Funkgerät geändert; beibehalten)"
 
 #, python-brace-format
 msgid "{setting}: {live}, not {wanted} (compiled out of the radio's firmware)"
-msgstr "{setting}: {live}, nicht {wanted} (nicht in die Firmware des Funkgeräts kompiliert)"
+msgstr "{setting}: {live}, nicht {wanted} (nicht in die Firmware kompiliert)"
 
 #. a setting of the radio, its value and the one the service had set.
 #, python-brace-format
 msgid "{setting}: {live}, not {wanted} (did not take effect; no longer set)"
-msgstr "{setting}: {live}, nicht {wanted} (nicht wirksam geworden; wird nicht mehr gesetzt)"
+msgstr "{setting}: {live}, nicht {wanted} (ohne Wirkung; nicht mehr gesetzt)"
 
 #, python-brace-format
 msgid "{setting}: {live}, not {wanted} (the firmware does not support it)"

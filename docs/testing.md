@@ -424,12 +424,13 @@ script's own text where the script gives one, else the longest realistic value t
 `tests/dialog_texts.py` names with its reason (`FIELD_VALUES`, `EMBEDDED`, each form of a value
 a candidate). A value that is the program's message, such as what `check-config --broker`
 printed after a failed login, is built from the program's own catalog in the same language, as
-the installer runs it (`DIALOG_VALUES`). The final message and the plan for the radio are put
-together as the script does, in the combinations that can occur; the plan, in four realistic
-cases with the values `probe --list profile` prints (`PLAN_SETTINGS`) and up to 16 contacts, with
-as many contacts listed as the installer lists: it measures the plan with `fold` and counts the
-contacts its box does not hold (`Plan.listed`). `tests/test_installer.py` checks that the
-installer's box shows the same text in English and German. It also lays out the
+the installer runs it (`DIALOG_VALUES`). The final message is put together as the script does,
+in the combinations that can occur. The plan for the radio counts its contacts and lists none, so
+its box has a worst case (`PlanBox`), whether the service sets the radio or only reports: every
+setting the managed profile manages with the values `probe --list profile` prints and in the form
+whose line takes the most lines, a radio's name of 31 bytes in the most columns, and each count of
+contacts with three digits. `tests/test_installer.py` checks that the installer's box shows the
+model's text in English and German, also with that worst case. It also lays out the
 rows of every menu as whiptail does in a terminal of 80 columns, the rows the script fills into
 an array with their worst cases (`LIST_ROWS`), and fails when a tag or an item is shortened or
 runs over the box's border. A box with `--scrolltext` is exempt, as its text scrolls; the

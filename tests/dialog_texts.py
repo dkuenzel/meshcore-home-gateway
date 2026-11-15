@@ -25,12 +25,10 @@ from __future__ import annotations
 import functools
 import importlib.util
 import itertools
-import os
 import re
-import subprocess
 import sys
 import unicodedata
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
@@ -38,9 +36,12 @@ from typing import Any, Final, NamedTuple
 
 from meshcore_home_gateway import i18n
 from meshcore_home_gateway.catalog import read_po
+from meshcore_home_gateway.cli.common import _json_text
 from meshcore_home_gateway.config import parse_config
 from meshcore_home_gateway.config_checks import start_warnings
+from meshcore_home_gateway.core import profile as core_profile
 from meshcore_home_gateway.texts import Text
+from meshcore_home_gateway.views import SETTING_NAMES, setting_value
 
 ROOT: Final = Path(__file__).resolve().parent.parent
 SCRIPT: Final = ROOT / "deploy" / "proxmox" / "meshcore-home-gateway-lxc.sh"
@@ -1112,181 +1113,187 @@ def _options(expr: Expr) -> tuple[Expr, ...]:
     return expr.options if isinstance(expr, Alt) else (expr,)
 
 
-# the radio's settings as `probe --list profile` writes them (tests/test_cli.py): name, value on
-# the radio and wanted, each its longest realistic value: every kind of node added automatically,
-# telemetry for contacts in all three fields, a duty cycle with two decimals, names of 31 bytes
-PLAN_SETTINGS: Final = (
-    ("manual_add", "false", "true"),
-    ("autoadd", '["overwrite_oldest", "chat", "repeater", "room", "sensor"]', "[]"),
-    (
-        "telemetry",
-        '{"base": "contacts", "location": "contacts", "environment": "contacts"}',
-        '{"base": "deny", "location": "deny", "environment": "deny"}',
-    ),
-    ("advert_location", '"share"', '"none"'),
-    ("duty_cycle_percent", "33.33", "10.0"),
-    ("name", '"' + "r" * 31 + '"', '"' + "g" * 31 + '"'),  # the most bytes a name takes
-)
-# a contact the plan lists: the start of its key and a name of 31 bytes, the most the radio
-# stores; a plan has up to PLAN_CONTACTS of them (contact targets and command senders)
-PLAN_CONTACTS: Final = 16
-PLAN_CONTACT: Final = "0123456789ab " + "Handheld of a neighbour 0001xyz"
-# the plan's box, whose lines and columns the installer measures the plan against (fits)
+# --- the plan for the radio's settings (choose_profile, plan_text) ----------------------------
+
+# the plan's box: it counts the contacts and lists none, so its text has a bound, the worst case
+# of PlanBox, which a box of 24 rows (18 lines) holds in every language (test_dialog_texts.py)
 PLAN_BOX: Final = Box("msgbox", 24, 78)
+# the heading of the plan's first section: the service sets the radio (tested firmware, or
+# radio.profile.manage = always), or it only reports (untested firmware, or observe)
+PLAN_SETS: Final = "At its next connect the service sets the radio:"
+PLAN_UNTESTED: Final = (
+    "The radio's firmware is not tested: the service only reports what differs\n"
+    "(radio.profile.manage = always sets it anyway):"
+)
+PLAN_OBSERVED: Final = "With radio.profile.manage = observe the service only reports what differs:"
 PLAN_LEFT: Final = "The service leaves alone:"
-PLAN_NOT_LISTED: Final = "contacts not listed here: {count} (see the installer's output)"
+# a setting the service leaves alone, by the action `probe --list profile` names; only a setting
+# the configuration seeds (core.profile.KINDS: the name) is kept as changed on the radio
+PLAN_LEFT_FORMS: Final = {
+    "kept": "{setting}: {live} (changed on the radio; kept)",
+    "given_up": "{setting}: {live}, not {wanted} (did not take effect; no longer set)",
+    "unsupported": "{setting}: {live}, not {wanted} (the firmware does not support it)",
+    "disabled": "{setting}: {live}, not {wanted} (compiled out of the radio's firmware)",
+}
+# the contact targets and command senders the service adds or makes favourites, or only reports,
+# counted by their action: the first two under PLAN_SETS, the others under what is reported
+PLAN_COUNTS: Final = {
+    "add": "Contacts added as favourites: {count}",
+    "favourite": "Contacts made favourites: {count}",
+    "missing": "Contacts not on the radio: {count}",
+    "not_favourite": "Contacts that are no favourites: {count}",
+}
+PLAN_LISTED: Final = "The installer's output above lists every contact."
+PLAN_COUNT: Final = 999  # three digits: the radio holds a few hundred contacts at most
+# a radio's name of 31 bytes, the most it stores, in the most columns, without a space: 31
+# letters, or a family emoji, whose three zero-width joiners probe writes as \u200d (6 columns
+# each), and 6 letters: 32 columns
+_FAMILY: Final = "\N{ZERO WIDTH JOINER}".join(("\N{MAN}", "\N{WOMAN}", "\N{GIRL}", "\N{BOY}"))
+PLAN_NAMES: Final = ("W" * 31, _FAMILY + "W" * 6, "W" * 6 + _FAMILY)
+_SEED: Final = core_profile.Kind.SEED
 
 
-def _fold_byte(char: str) -> bytes:
-    """What fits() gives fold for a character: a space whiptail breaks a line at as blanks, one
-    a cell (U+3000 two); one byte for a character below U+2300 but Hangul's (U+1100-U+11FF), as
-    an umlaut, and for U+FFFD, each of which takes one cell or none; any other its bytes, at
-    least 3, more than the cells it takes."""
-    code = ord(char)
-    if code > 0x7F and char in SPACES:
-        return b" " * max(cell_width(char), 1)
-    if (0x7F < code < 0x2300 and not 0x1100 <= code <= 0x11FF) or code == 0xFFFD:
-        return b"x"
-    return char.encode()
+class Change(NamedTuple):
+    """A line `change SETTING LIVE WANTED ACTION` of `probe --list profile`."""
+
+    setting: str
+    live: str
+    wanted: str
+    action: str  # set, reported, or a key of PLAN_LEFT_FORMS
+
+
+def plan_line(translate: Language, change: Change) -> str:
+    """A setting's line in the plan, without its indentation: as found and as wanted, or why the
+    service leaves it alone."""
+    if change.action in {"set", "reported"}:
+        return f"{change.setting}: {change.live} -> {change.wanted}"
+    return _fill(translate(PLAN_LEFT_FORMS[change.action]), change._asdict())
+
+
+def plan_box_text(
+    translate: Language,
+    changes: Sequence[Change],
+    counts: Mapping[str, int],
+    *,
+    observe: bool = False,
+) -> str:
+    """What plan_text writes for the box (`plan_text t LINES count`): each section's heading and
+    its settings, the contacts counted by action in their section, and PLAN_LISTED when there
+    are any, without the last line break (as $(...) gives it). `observe`: radio.profile.manage
+    = observe."""
+    sets: list[str] = []
+    reported: list[str] = []
+    left: list[str] = []
+    for change in changes:
+        section = {"set": sets, "reported": reported}.get(change.action, left)
+        section.append(plan_line(translate, change))
+    for action, msgid in PLAN_COUNTS.items():
+        if counts.get(action):
+            line = _fill(translate(msgid), {"count": str(counts[action])})
+            (sets if action in {"add", "favourite"} else reported).append(line)
+    lines = []
+    sections = (
+        (PLAN_SETS, sets),
+        (PLAN_OBSERVED if observe else PLAN_UNTESTED, reported),
+        (PLAN_LEFT, left),
+    )
+    for heading, items in sections:
+        if items:
+            lines += [translate(heading), *(f"  {item}" for item in items)]
+    if any(counts.values()):
+        lines.append(translate(PLAN_LISTED))
+    return "\n".join(lines)
+
+
+def _shapes(values: Iterable[object]) -> list[str]:
+    """Each value as `probe --list profile` prints it, two of each shape at most: whiptail wraps
+    two texts of ASCII alike when they differ only in letters and digits, and two values of a
+    shape stand for a value that differs from another of the same shape."""
+    shapes: dict[str, list[str]] = {}
+    for value in values:
+        text = _json_text(value)
+        same = shapes.setdefault(re.sub(r"\S", "x", text) if text.isascii() else text, [])
+        if len(same) < 2 and text not in same:
+            same.append(text)
+    return [text for same in shapes.values() for text in same]
 
 
 @functools.cache
-def folded_lines(text: str, columns: int) -> int:
-    """The lines `LC_ALL=C fold -s -w COLUMNS` makes of `text` and a final line break, as the
-    installer's fits() counts them, after each character became what _fold_byte() says: never
-    fewer columns than a character's cells, and a break at the last blank within the columns,
-    never later than whiptail breaks."""
-    folded = subprocess.run(  # noqa: S603 - fold with our arguments
-        ["fold", "-s", "-w", str(columns)],  # noqa: S607 - the system's fold, as the installer's
-        input=b"".join(map(_fold_byte, clean_newlines(text) + "\n")),
-        capture_output=True,
-        check=True,
-        env={"LC_ALL": "C", "PATH": os.environ.get("PATH", "/usr/bin:/bin")},
-    )
-    return folded.stdout.count(b"\n")
+def plan_values() -> dict[str, tuple[list[str], list[str]]]:
+    """Each setting the managed profile manages, by the name `probe --list profile` gives it: the
+    values the radio can report and those the profile can want, as probe prints them (one of each
+    shape). The radio reports its auto-add byte and its telemetry modes as they are, the duty
+    cycle from the airtime factor that its firmware clamps to 0 to 9 at boot (100 % to 10 %),
+    which the profile can want too; a name of 31 bytes either way (PLAN_NAMES)."""
+    want = core_profile.desired(core_profile.TEN_PERCENT_BAND_KHZ[0]).values
+    factors = range(core_profile.MAX_AIRTIME_FACTOR_MILLI + 1)
+    found: dict[str, tuple[Iterable[object], Iterable[object]]] = {
+        core_profile.MANUAL_ADD: ((False, True), [want[core_profile.MANUAL_ADD]]),
+        core_profile.AUTOADD: (range(256), [want[core_profile.AUTOADD]]),
+        core_profile.TELEMETRY: (range(64), [want[core_profile.TELEMETRY]]),
+        core_profile.ADVERT_LOCATION: ((0, 1), [want[core_profile.ADVERT_LOCATION]]),
+        core_profile.AIRTIME_FACTOR: (factors, factors),
+    }
+    values = {
+        SETTING_NAMES[key]: (
+            _shapes(setting_value(key, value) for value in lives),
+            _shapes(setting_value(key, value) for value in wanted),
+        )
+        for key, (lives, wanted) in found.items()
+    }
+    values[SETTING_NAMES[core_profile.NAME]] = (_shapes(PLAN_NAMES), _shapes(PLAN_NAMES))
+    return values
 
 
-@dataclass(frozen=True)
-class Plan:
-    """A realistic plan of `probe --list profile`, as plan_text writes it: its first section's
-    heading, the settings in that section, a contact's line there, and the settings the service
-    leaves alone (msgid and values)."""
-
-    heading: str
-    settings: tuple[tuple[str, str, str], ...]
-    contact: str
-    left: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = ()
-
-    def msgids(self) -> Iterator[str]:
-        yield self.heading
-        yield self.contact
-        yield PLAN_NOT_LISTED
-        if self.left:
-            yield PLAN_LEFT
-        yield from (msgid for msgid, _ in self.left)
-
-    def text(self, translate: Language, contacts: int, listed: int) -> str:
-        """The plan with `contacts` contacts, `listed` of them listed and the others counted in a
-        line of their own, without its last line break (as $(...) gives it)."""
-        lines = [f"  {name}: {live} -> {wanted}" for name, live, wanted in self.settings]
-        lines += ["  " + _fill(translate(self.contact), {"contact": PLAN_CONTACT})] * listed
-        if listed < contacts:
-            count = {"count": str(contacts - listed)}
-            lines.append("  " + _fill(translate(PLAN_NOT_LISTED), count))
-        plan = "".join(f"{line}\n" for line in [translate(self.heading), *lines]) if lines else ""
-        if self.left:
-            plan += f"{translate(PLAN_LEFT)}\n"
-            plan += "".join(f"  {_fill(translate(m), dict(v))}\n" for m, v in self.left)
-        return plan.rstrip("\n")
-
-    def listed(self, translate: Language, contacts: int) -> int:
-        """How many of `contacts` contacts the installer lists in the box: all, or one fewer
-        until fits() says the box holds the text, or none (choose_profile). Each contact listed
-        takes a line or more and the heading above them one: it starts at one fewer than the
-        box's lines at most."""
-        listed = min(contacts, PLAN_BOX.lines - 1)
-        while listed > 0 and (
-            folded_lines(self.text(translate, contacts, listed), PLAN_BOX.text_width)
-            > PLAN_BOX.lines
-        ):
-            listed -= 1
-        return listed
+def worst_changes(translate: Language, action: str = "set") -> list[Change]:
+    """Each setting of plan_values() at its worst for the box, in a language: the values and the
+    action (`action`, set or reported, or one that leaves it alone) whose line takes the most
+    lines. whiptail wraps each line of a text apart from the others, so the box's worst case is
+    every line at its worst."""
+    seeds = {SETTING_NAMES[k] for k, kind in core_profile.KINDS.items() if kind is _SEED}
+    worst = []
+    for setting, (lives, wanted) in plan_values().items():
+        actions = [action, *(a for a in PLAN_LEFT_FORMS if a != "kept" or setting in seeds)]
+        candidates = [
+            Change(setting, live, value, kind)
+            for live, value, kind in itertools.product(lives, wanted, actions)
+            if live != value  # the plan names a setting that differs
+        ]
+        worst.append(
+            max(candidates, key=lambda c: len(PLAN_BOX.layout(f"  {plan_line(translate, c)}")))
+        )
+    return worst
 
 
 @dataclass(frozen=True)
 class PlanBox(Expr):
-    """choose_profile's box: each plan with each number of contacts up to PLAN_CONTACTS, as many
-    listed as the installer lists."""
-
-    plans: tuple[Plan, ...]
+    """choose_profile's box at its worst, in each case of its first section: the service sets the
+    radio and adds contacts and makes others favourites; or it only reports, with untested
+    firmware or radio.profile.manage = observe, contacts not on the radio and others that are no
+    favourites. Each setting at its worst (worst_changes), each count with three digits."""
 
     def render(self, translate: Language) -> list[str]:
-        return _unique(
-            [
-                plan.text(translate, contacts, plan.listed(translate, contacts))
-                for plan in self.plans
-                for contacts in range(PLAN_CONTACTS + 1)
-            ]
-        )
+        texts = []
+        for action, observe in (("set", False), ("reported", False), ("reported", True)):
+            counted = ("add", "favourite") if action == "set" else ("missing", "not_favourite")
+            counts = dict.fromkeys(counted, PLAN_COUNT)
+            changes = worst_changes(translate, action)
+            texts.append(plan_box_text(translate, changes, counts, observe=observe))
+        return texts
 
     def msgids(self) -> Iterator[str]:
-        for plan in self.plans:
-            yield from plan.msgids()
+        yield from (PLAN_SETS, PLAN_UNTESTED, PLAN_OBSERVED, PLAN_LEFT)
+        yield from PLAN_LEFT_FORMS.values()
+        yield from PLAN_COUNTS.values()
+        yield PLAN_LISTED
 
 
 def _plan(script: Script) -> Expr:
-    """plan_text in the plan's box, for four realistic plans: on a new radio with tested firmware
-    every setting is set and the contacts are added; with untested firmware (auto) or with
-    radio.profile.manage = observe they are only reported; on a radio the service has managed
-    before, two settings are set, contacts are made favourites, and four settings are left
-    alone, one of each kind (only the name, which the configuration seeds, is kept)."""
-    settings = {name: (name, live, wanted) for name, live, wanted in PLAN_SETTINGS}
-
-    def left(msgid: str, name: str) -> tuple[str, tuple[tuple[str, str], ...]]:
-        _, live, wanted = settings[name]
-        return msgid, (("setting", name), ("live", live), ("wanted", wanted))
-
-    sets = "At its next connect the service sets the radio:"
-    plans = (
-        Plan(sets, PLAN_SETTINGS, "contact {contact}: added as a favourite"),
-        Plan(
-            "The radio's firmware is not tested: the service only reports what differs\n"
-            "(radio.profile.manage = always sets it anyway):",
-            PLAN_SETTINGS,
-            "contact {contact}: not on the radio",
-        ),
-        Plan(
-            "With radio.profile.manage = observe the service only reports what differs:",
-            PLAN_SETTINGS,
-            "contact {contact}: no favourite",
-        ),
-        Plan(
-            sets,
-            (settings["manual_add"], settings["advert_location"]),
-            "contact {contact}: made a favourite",
-            (
-                left("{setting}: {live} (changed on the radio; kept)", "name"),
-                left(
-                    "{setting}: {live}, not {wanted} (did not take effect; no longer set)",
-                    "telemetry",
-                ),
-                left(
-                    "{setting}: {live}, not {wanted} (the firmware does not support it)",
-                    "duty_cycle_percent",
-                ),
-                left(
-                    "{setting}: {live}, not {wanted} (compiled out of the radio's firmware)",
-                    "autoadd",
-                ),
-            ),
-        ),
-    )
-    names = script.messages_in("plan_text")
-    for plan in plans:
-        for msgid in plan.msgids():
-            if msgid not in names:
-                raise DialogError(f"plan_text has no text {msgid!r}")
-    return PlanBox(plans)
+    """plan_text in the plan's box: the model has every text of plan_text, and only those."""
+    box = PlanBox()
+    if set(box.msgids()) != script.messages_in("plan_text"):
+        raise DialogError("plan_text: its texts are not the model's (PlanBox)")
+    return box
 
 
 COMPOSED: Final[Mapping[str, Callable[[Script], Expr]]] = {

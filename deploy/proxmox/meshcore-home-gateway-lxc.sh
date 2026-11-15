@@ -58,7 +58,7 @@ ct.gateway ct.template_storage radio.choice targets.channels targets.contacts "
 # --- language packs: written by `make translations` from deploy/proxmox/locale/*.po; do not edit
 L10N_ORDER=(en de)
 declare -A L10N_NAME=([en]=English [de]=Deutsch)
-declare -A L10N_SHA256=([de]=4bb2aca53bf03e347725e1afc759dd75e2ac2ce6028ff990e5c3dfe2bff86b84)
+declare -A L10N_SHA256=([de]=307276fa4fcdd218c5229e144657cbd30fd432655d05b7ed9d22580d0c1e244d)
 # --- end of language packs
 L10N_MENU=()   # code, name, code, name, ...: the items of the language menus
 for code in "${L10N_ORDER[@]}"; do L10N_MENU+=("$code" "${L10N_NAME[$code]}"); done
@@ -1312,42 +1312,19 @@ choose_profile() {  # the radio's name, and what the managed profile changes (AD
   log "${plan//$'\n'/$'\n'  }"$'\n  '
   if (( INTERACTIVE )); then
     # whiptail cuts what its box does not hold without a mark, and with --scrolltext Enter does
-    # not close the box and nothing marks the text below: the box lists as many contacts as it
-    # holds (24 rows: 18 lines of 74 columns) and counts the others, which the log lists. Each
-    # contact listed takes a line or more and the heading above them one: 17 at most fit
-    local box listed
-    listed=$(grep -c '^contact' <<<"$lines" || true)
-    if (( listed > 17 )); then listed=17; fi
-    box=$(plan_text t "$lines" "$listed")
-    while (( listed > 0 )) && ! fits "$box" 74 18; do
-      listed=$(( listed - 1 ))
-      box=$(plan_text t "$lines" "$listed")
-    done
-    whiptail --title "$TITLE" --msgbox -- "$box"$'\n' 24 78 >&2 || true
+    # not close the box and nothing marks the text below: the box counts the contacts, which the
+    # log above lists, so its text has a bound, which a box of 24 rows (18 lines of 74 columns)
+    # holds in every language (tests/test_dialog_texts.py)
+    whiptail --title "$TITLE" --msgbox -- "$(plan_text t "$lines" count)"$'\n' 24 78 >&2 || true
   fi
 }
 
-fits() {  # fits TEXT COLUMNS LINES: TEXT, as whiptail wraps it in lines of COLUMNS, needs at most
-  # LINES. It may say no to a text that fits, never yes to one that does not. fold counts bytes
-  # and breaks at the last blank: first, each space whiptail breaks a line at becomes blanks, one
-  # a cell (U+3000 two), and each character below U+2300 but Hangul's (U+1100-U+11FF), as an
-  # umlaut, and U+FFFD one byte, as each takes one cell or none. Any other keeps its bytes, at
-  # least 3, more than its cells also where a long word breaks before a wide one: fold never
-  # counts fewer cells than whiptail and breaks a line no later than whiptail does
-  local text=${1//'\n'/$'\n'} count   # whiptail takes the two characters \n for a line break
-  count=$(printf '%s\n' "$text" | LC_ALL=C sed -e $'s/\xe3\x80\x80/  /g' -e $'s/\xe1\x9a\x80/ /g' \
-      -e $'s/\xe2\x80[\x80-\x86\x88-\x8a\xa8\xa9]/ /g' -e $'s/\xe2\x81\x9f/ /g' \
-      -e $'s/[\xc2-\xdf][\x80-\xbf]/x/g' -e $'s/\xe0[\x80-\xbf][\x80-\xbf]/x/g' \
-      -e $'s/\xe1[\x80-\x83\x88-\xbf][\x80-\xbf]/x/g' -e $'s/\xe2[\x80-\x8b][\x80-\xbf]/x/g' \
-      -e $'s/\xef\xbf\xbd/x/g' | LC_ALL=C fold -s -w "$2" | wc -l)
-  (( count <= $3 ))
-}
-
-plan_text() {  # plan_text SAY LINES [LISTED]: what `probe --list profile` LINES plan, or nothing
+plan_text() {  # plan_text SAY LINES [count]: what `probe --list profile` LINES plan, or nothing
   # to do; in English (SAY _fill, the log) or in the dialogs' language (SAY t, the box): one set
-  # of texts. LISTED: list at most that many contacts, and count the others in a line of its own
-  local say=$1 most=${3--1} kind setting live wanted action contact sets="" reported="" left=""
-  local plan="" listed=0 more_set=0 more_reported=0
+  # of texts. The log lists each contact (in English, as all the log); count: the box counts
+  # them by what the service does, and says that the log lists them
+  local say=$1 kind setting live wanted action contact sets="" reported="" left="" plan=""
+  local -A counted=()
   while IFS=$'\t' read -r kind setting live wanted action; do
     case $kind/$action in
       change/set) sets+="  $setting: $live -> $wanted"$'\n' ;;
@@ -1368,34 +1345,34 @@ plan_text() {  # plan_text SAY LINES [LISTED]: what `probe --list profile` LINES
           setting "$setting" live "$live" wanted "$wanted")"$'\n' ;;
       contact/*)  # contact KEY ACTION NAME: a contact target or command sender
         case $live in add|favourite|missing|not_favourite) ;; *) continue ;; esac
-        if (( most >= 0 && listed >= most )); then   # not listed: counted
-          if [[ $live == add || $live == favourite ]]; then more_set=$(( more_set + 1 ))
-          else more_reported=$(( more_reported + 1 )); fi
+        if [[ ${3-} == count ]]; then
+          counted[$live]=$(( ${counted[$live]:-0} + 1 ))
           continue
         fi
-        listed=$(( listed + 1 ))
-        contact="${setting:0:12}${wanted:+ $wanted}"   # the start of its key, and its name
+        # the log's own lines, in English as all of it: the start of its key, and its name
+        contact="  contact ${setting:0:12}${wanted:+ $wanted}"
         case $live in
-          add)
-            # Translators: {contact} is the start of a contact's key and its name.
-            sets+="  $($say 'contact {contact}: added as a favourite' contact "$contact")"$'\n' ;;
-          favourite)
-            sets+="  $($say 'contact {contact}: made a favourite' contact "$contact")"$'\n' ;;
-          missing)
-            reported+="  $($say 'contact {contact}: not on the radio' contact "$contact")"$'\n' ;;
-          not_favourite)
-            reported+="  $($say 'contact {contact}: no favourite' contact "$contact")"$'\n' ;;
+          add) sets+="$contact: added as a favourite"$'\n' ;;
+          favourite) sets+="$contact: made a favourite"$'\n' ;;
+          missing) reported+="$contact: not on the radio"$'\n' ;;
+          not_favourite) reported+="$contact: no favourite"$'\n' ;;
         esac ;;
     esac
   done <<<"$2"
-  if (( more_set )); then
-    # Translators: {count} is a number; the installer's output lists every contact.
-    sets+="  $($say "contacts not listed here: {count} (see the installer's output)" \
-      count "$more_set")"$'\n'
+  if [[ -v 'counted[add]' ]]; then
+    # Translators: {count} is a number of contacts; the installer's output above the box lists
+    # each of them.
+    sets+="  $($say 'Contacts added as favourites: {count}' count "${counted[add]}")"$'\n'
   fi
-  if (( more_reported )); then
-    reported+="  $($say "contacts not listed here: {count} (see the installer's output)" \
-      count "$more_reported")"$'\n'
+  if [[ -v 'counted[favourite]' ]]; then
+    sets+="  $($say 'Contacts made favourites: {count}' count "${counted[favourite]}")"$'\n'
+  fi
+  if [[ -v 'counted[missing]' ]]; then
+    reported+="  $($say 'Contacts not on the radio: {count}' count "${counted[missing]}")"$'\n'
+  fi
+  if [[ -v 'counted[not_favourite]' ]]; then
+    reported+="  $($say 'Contacts that are no favourites: {count}' \
+      count "${counted[not_favourite]}")"$'\n'
   fi
   if [[ -n $sets ]]; then
     plan+="$($say 'At its next connect the service sets the radio:')"$'\n'$sets
@@ -1408,6 +1385,12 @@ plan_text() {  # plan_text SAY LINES [LISTED]: what `probe --list profile` LINES
 (radio.profile.manage = always sets it anyway):")"$'\n'$reported
   fi
   if [[ -n $left ]]; then plan+="$($say 'The service leaves alone:')"$'\n'$left; fi
+  if (( ${#counted[@]} )); then
+    # Translators: the last line of the plan's box, below the counts of contacts: the
+    # installer's output before the box lists each contact with the start of its key and its
+    # name.
+    plan+="$($say "The installer's output above lists every contact.")"$'\n'
+  fi
   printf '%s' "$plan"
 }
 
