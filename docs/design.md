@@ -613,6 +613,13 @@ way), `config` (the settings in effect, which the bridge hands it at the start a
 connect), `refused_commands` (the latest refused commands, which the bridge hands it at the start
 and the inbox after each refusal, §6.4), and the events `contact`, `node` and `telemetry`.
 
+Since 2.3 one pure module, `core/companion.py`, decides for every contact whether it is heard,
+where it is and whether it moves ([ADR 0035](decisions/0035-the-companion-state-model.md)). Every report enters it with its precise
+time; the observer's minute tick moves the states that change by time alone. A position ages by
+silence and ends at once by withdrawal; the last known one stays, dated, for 7 days. The gateway
+clears a companion's old advert position from the radio's record by itself, under the managed
+profile.
+
 The detail is in [design-observer.md](design-observer.md#66-observer-documents-and-history).
 
 ### 6.7 Home Assistant
@@ -621,6 +628,10 @@ The bridge publishes one device-based discovery document for itself
 ([ADR 0010](decisions/0010-home-assistant-through-mqtt-device-discovery.md)) and one for each
 contact ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)); entities
 and example automations are in [`home-assistant.md`](home-assistant.md).
+
+Since 2.3 each companion's device also has *Heard* (its presence) and *Last known position*,
+which carries coordinates only while the companion is silent, so a `person` never follows it
+([ADR 0035](decisions/0035-the-companion-state-model.md)).
 
 The detail is in [design-home-assistant.md](design-home-assistant.md#67-home-assistant).
 
@@ -695,6 +706,11 @@ SEC-016): a contact is asked only once included, or as a contact target or comma
 the first start holds nothing. With `ask = "all"` it excludes every companion that is not its
 own instead. Values expire when a companion stops
 answering ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)).
+
+Since 2.3 the interval counts from the companion's last report, and one movement rule decides
+both how often it is asked and which fixes are published: a companion at rest keeps the fix where
+it came to rest, and only a move that a second answer confirms draws a line
+([ADR 0035](decisions/0035-the-companion-state-model.md)).
 
 The detail is in [design-telemetry.md](design-telemetry.md#611-telemetry).
 
@@ -773,6 +789,10 @@ gateway announces entities for it: the message history, the messages on their wa
 *Send* for each chat, and the configuration ([ADR 0031](decisions/0031-household-chat-problems-and-settings-on-the-generated-dashboard.md)).
 Since 2.2 *Contacts* has *Advert to radios nearby* under the QR code
 ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)).
+
+Since 2.3 every card that names a companion reads its state: a silent companion says so with its
+age, and its older facts show muted, without raising a problem; the map shows a last known
+position in blue-grey with a clock ([ADR 0035](decisions/0035-the-companion-state-model.md)).
 
 The detail is in [design-home-assistant.md](design-home-assistant.md#613-dashboard).
 
@@ -1270,6 +1290,7 @@ version, like the CI matrix, and fails if one is missing.
 | What a contact of the radio is trusted with | [0029](decisions/0029-what-a-contact-is-trusted-with.md) |
 | A release checked by CI, the installer's self-test and the maintainer's use | [0030](decisions/0030-release-checked-by-ci-self-test-and-use.md) |
 | Untrusted text: canonical where it enters, encoded at every sink (proposed) | [0034](decisions/0034-untrusted-text-from-the-mesh.md) |
+| The companion state model: presence, positions that age, confirmed movement (proposed) | [0035](decisions/0035-the-companion-state-model.md) |
 
 
 ### 11.1 Choices without a record of their own

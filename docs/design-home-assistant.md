@@ -32,7 +32,7 @@ and example automations are in [`home-assistant.md`](home-assistant.md).
 | Contacts, Nodes heard | `sensor` | `contacts` → `total`, `nodes` → `total` |
 | Contact, New node | `event` | `contact`, `node` |
 | Noise floor, Radio transmit time last hour, uptime and packet counters | `sensor`, diagnostic; the counters disabled by default | `stats` |
-| Contact with remote access, Companion position in adverts | `binary_sensor` (problem) | `contacts` → `remote_cli_total`, `advert_carries_position_total` |
+| Contact with remote access, Companion position in adverts | `binary_sensor` (problem) | `contacts` → `remote_cli_total`, `advert_carries_position_total`; since 2.3 the companions heard within the last day as the attributes `heard`, `heard_total` |
 | Look-alike node heard | `binary_sensor` (problem) | `nodes` → `look_alike_total` |
 | Show hidden contacts | `button` | → `homeassistant/show_hidden` |
 | Send advert nearby | `button`, QoS 0; unavailable while the gateway is offline or the radio not connected, and with `[homeassistant] radio_controls = false` or `controls = false` (announced, never removed) | → `advert/send` ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)) |
@@ -45,7 +45,10 @@ and example automations are in [`home-assistant.md`](home-assistant.md).
 | Telemetry | `event` (`answered`, `unanswered`) | `telemetry` |
 | Telemetry | `switch`, configuration, on each companion's device | `contacts/<key>` → `telemetry_excluded`; → `contacts/<key>/telemetry` |
 | Telemetry state | `sensor` (enum) on each companion's device | `contacts/<key>` → `telemetry_state` |
-| Position in adverts | `binary_sensor` (problem) on each companion's device | `contacts/<key>` → `advert_carries_position` |
+| Position in adverts | `binary_sensor` (problem) on each companion's device | `contacts/<key>` → `advert_carries_position`; since 2.3 `advert_heard_at` as an attribute |
+| Heard (2.3) | `sensor` (enum) on each companion's device, and on each contact of a type the gateway asks | `contacts/<key>` → `presence` |
+| Last known position (2.3) | `sensor` (timestamp), icon `mdi:map-clock-outline`, on the same devices | `contacts/<key>` → `position_reported_at` while `position_state` is `ageing` or `last_known`; coordinates as attributes only while `last_known` |
+| Position | `device_tracker` on the same devices; since 2.3 announced from the start | `contacts/<key>` → coordinates; since 2.3 available while `position_state` is `current`, `ageing` or `fixed`, with `motion` and `motion_since` as attributes |
 | Battery, MCU temperature, a sensor per reading | `sensor` (their class and unit, state class `measurement`) on a companion's device, with its first answer that carries them | `contacts/<key>` → `battery_v`, `mcu_temperature_c`, `readings`; available while `telemetry_current` |
 
 All entities share the availability topic, so they become unavailable when the bridge is offline,
@@ -62,6 +65,13 @@ state file keeps these removals pending for 30 days, because the gateway cannot 
 Assistant has received them. The placeholders are enabled: when Home Assistant removes a disabled
 entity, it clears the whole device's discovery topic itself. The gateway subscribes to that topic
 and announces again when Home Assistant clears it.
+
+Since 2.3 at most one entity of a contact carries coordinates at a time: the tracker while its
+position is current, ageing or fixed, and *Last known position* while it is last known
+([ADR 0035](decisions/0035-the-companion-state-model.md)). Home Assistant's map shows every entity with `latitude` and `longitude`, and
+a `person` reads only device trackers, so the last known position appears on maps and never moves
+a person. Both new sensors are announced with the device, enabled, and never removed, as every
+contact component ([platform notes](platform-notes.md#home-assistant-mqtt), a disabled entity).
 
 Each contact's device (`mqtt/contact_devices.py`) sits on its own topic one level below the
 gateway's device ID and follows the radio's table: it is announced after a table read, updated
@@ -174,6 +184,19 @@ their way, a draft and its *Send* for each chat and the configuration
   footer covered the line until the page was scrolled (#143); above it, its place depends on
   neither the thread's length nor the screen, and while it shows, the thread starts lower by its
   height ([platform-notes.md](platform-notes.md#home-assistant-dashboards)).
+* **A companion's state** (2.3, [ADR 0035](decisions/0035-the-companion-state-model.md)). One macro maps *Heard*, the position state
+  and the advert fact to words and marks, and every card that names a companion uses it.
+  Precedence, highest first: the gateway offline or its radio away (one line at the top, no
+  companion raises a problem); a former contact (on its chat page); `long_quiet`; `never`;
+  `quiet`; the facts (the advert position, the battery, the position's age); `heard`. The highest
+  is the one message; the facts below it show muted with their age. The advert fact is a problem
+  only while the companion was heard within the last day; the *Overview* problem reads the
+  gateway's `heard` attribute for it. *Where everyone is* says "since 10:31" for a current
+  position, grey "position from 10:31" for an ageing one, a grey clock and "last known 3 hours
+  ago" for a last known one, and "no position" with the reason in the fold. The map lists each
+  companion's *Last known position* beside its tracker, with `color: blue-grey` and
+  `label_mode: icon`. Every icon has a word beside it. The marks on every card, and the *now* and
+  *trips* maps, come with the redesign in 2.4.
 * **What changes while the dashboard stays** comes from Markdown templates over the device
   registry: the contacts of this gateway (the contact devices whose via device is the gateway's),
   the heard nodes, the last contact event. What a card needs as fixed IDs is written when the
