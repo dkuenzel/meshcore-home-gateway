@@ -30,13 +30,14 @@ format, the command line and Home Assistant discovery are public interfaces
 - The documentation says what Home Assistant and its companion app make of names and texts from
   the mesh, and what to do: the more-info dialog turns an attribute that starts with `http` into
   a link (a message's `text` and `sender_name`, a *New node*'s `name`); the app renders HTML in
-  a notification's message and acts on a message that is one of its command words, for which
-  the guide gives a recipe that keeps a forwarded text a text; Home Assistant exposes the
+  a notification's message on Android and acts on a message that is one of its command words,
+  for which the guide gives a recipe that keeps a forwarded text a text; Home Assistant exposes the
   temperature and humidity sensors of companions' telemetry, named as their owners chose, to its
-  conversation agent by default, and so to a language model behind it. It recommends `[messages] clean_received = true`, which drops control and direction
-  characters from names and texts where they enter; the default stays `false`. development.md
-  and the threat model no longer say that names are always cleaned or that nothing from the
-  mesh reaches an entity ID (#179).
+  conversation agent by default, and so to a language model behind it. It recommends
+  `[messages] clean_received = true`, which drops control and direction characters from names
+  and texts where they enter; the default stays `false`. development.md and the threat model no
+  longer say that names are always cleaned or that nothing from the mesh reaches an entity ID
+  (#179).
 
 ## [2.2.0] - 2026-11-16
 

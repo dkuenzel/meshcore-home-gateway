@@ -837,33 +837,49 @@ async def test_the_documented_automations_work(
     assert problems(caplog) == []
 
 
+# What the guide says to leave out of the recipe to a phone for an iPhone, whose app documents
+# no HTML formatting
+ANDROID_ONLY = "| replace('&', '&amp;') | replace('<', '&lt;')"
+
+
 @pytest.mark.parametrize(
     "case",
     [
-        ("Alice", "None", "Mesh · Alice: None"),
-        ("Alice", "[1, 2]", "Mesh · Alice: [1, 2]"),
-        ("Alice", "1.10", "Mesh · Alice: 1.10"),
-        ("Alice", "request_location_update", "Mesh · Alice: request_location_update"),
+        ("Alice", "None", "Mesh · Alice: None", None),
+        ("Alice", "[1, 2]", "Mesh · Alice: [1, 2]", None),
+        ("Alice", "1.10", "Mesh · Alice: 1.10", None),
+        ("Alice", "request_location_update", "Mesh · Alice: request_location_update", None),
         (
             "<b>Eve</b>",
             "<img src=x> & {{ 7 * 7 }}",
             "Mesh · &lt;b>Eve&lt;/b>: &lt;img src=x> &amp; {{ 7 * 7 }}",
+            "Mesh · <b>Eve</b>: <img src=x> & {{ 7 * 7 }}",
         ),
     ],
 )
+@pytest.mark.parametrize("phone", ["android", "iphone"])
 async def test_the_recipe_to_a_phone_keeps_a_mesh_text_a_text(
     hass: HomeAssistant,
     mqtt: Any,
     caplog: pytest.LogCaptureFixture,
-    case: tuple[str, str, str],
+    case: tuple[str, str, str, str | None],
+    phone: str,
 ) -> None:
     """#179, SEC-6: the guide's automation that forwards a direct message to the companion app
     hands on a text that is never a command word, whose HTML tags Android shows as typed, and
-    that stays a text whatever it looks like (None, a list, a number, a template)."""
-    name, text, message = case
+    that stays a text whatever it looks like (None, a list, a number, a template). For an
+    iPhone, the guide leaves out the two replacements, and the text goes on as it came."""
+    name, text, message, on_iphone = case
     (automation,) = [
         a for a in guide_automations() if a["alias"] == "Phone notice of a mesh message"
     ]
+    assert f"`{ANDROID_ONLY}`" in GUIDE.read_text(encoding="utf-8")
+    if phone == "iphone":
+        (action,) = automation["actions"]
+        data = re.sub(r"\s*" + re.escape(ANDROID_ONLY), "", action["data"])
+        assert data != action["data"]
+        automation = {**automation, "actions": [{**action, "data": data}]}
+        message = on_iphone or message
     calls: list[dict[str, Any]] = []
 
     async def phone(call: Any) -> None:

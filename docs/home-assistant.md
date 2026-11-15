@@ -1152,12 +1152,17 @@ mode: queued
 
 The name and the text are someone else's ([names and texts from the
 mesh](#names-and-texts-from-the-mesh)), so the recipe keeps them inert. The fixed start means the
-message is never one of the app's command words; `&` and `<` replaced, Android shows HTML tags
-as typed instead of rendering them; one template for the whole `data` keeps a text such as
-`None`, `[1, 2]` or `1.10` a text ([platform notes](platform-notes.md#home-assistant-mqtt)). The title is
-fixed: keep names and texts out of `title` and out of the keys the app acts on, such as `url`,
-`clickAction`, `image` and `icon_url`. A channel's messages come from anyone with its key: for
-them, add `channel` to `event_type` only for a channel of the household's own.
+message is never one of the app's command words, on Android and on an iPhone. The recipe is
+written for Android, which renders some HTML tags in a message: with `&` and `<` replaced, it
+shows them as typed. The app's documentation describes HTML formatting for Android only. For an
+iPhone, leave out `| replace('&', '&amp;') | replace('<', '&lt;')`: where the message is shown
+as plain text, `Fish & chips` would otherwise read `Fish &amp; chips`. None of this was tried
+on a phone ([platform notes](platform-notes.md#home-assistant-companion-app)). One template for
+the whole `data` keeps a text such as `None`, `[1, 2]` or `1.10` a text
+([platform notes](platform-notes.md#home-assistant-mqtt)). The title is fixed: keep names and
+texts out of `title` and out of the keys the app acts on, such as `url`, `clickAction`, `image`
+and `icon_url`. A channel's messages come from anyone with its key: for them, add `channel` to
+`event_type` only for a channel of the household's own.
 
 Send a message to a contact target and wait until it is confirmed, as a script (paste it in the
 script editor, *Edit in YAML*). It sends through the target's notify entity, takes the `id` of

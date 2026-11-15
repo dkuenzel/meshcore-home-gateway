@@ -1776,7 +1776,9 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   the card escapes the text and the sender name, replaces their line breaks with spaces, and keeps
   them in a `<div>` on one line; each card of the generated dashboard prints every value it reads
   from Home Assistant through one macro that does the same, on a line that is one `<div>`,
-  `<table>` or `<ha-qr-code>` element. `test_the_markdown_card_keeps_a_hostile_text_inert` and
+  `<table>` or `<details>` element, or in the `data` attribute of an `<ha-qr-code>` element
+  without content, which opens no HTML block (#179).
+  `test_the_markdown_card_keeps_a_hostile_text_inert` and
   `home-assistant/tests/test_dashboard.py` (hostile names, three with line breaks, in every place
   a name reaches) check the form of their output. *Check:* `printf
   '![](https://example.org/p.png)' | npx marked@18.0.14` prints an `<img>`; `printf
@@ -2114,12 +2116,15 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   command instead of showing a notification.** *Verified:* read only, the app's documentation on
   `master` (read 2026-11-15): `docs/notifications/basic.md`, *Notification Message HTML
   Formatting*, and `docs/notifications/commands.md`, the tables of commands for iOS and Android;
-  not tried on a phone. *Here:* no example of the guide forwards a mesh text to a phone without
-  the recipe in its examples, whose fixed start keeps the message from being a command word and
-  which replaces `&` and `<` ([names and texts from the
-  mesh](home-assistant.md#names-and-texts-from-the-mesh)); the recipe's template, rendered in
-  Home Assistant 2026.11.0's template engine with `None`, `[1, 2]`, `1.10`, a command word and
-  HTML as texts, keeps each a text. *Check:* the two documents above in
+  not tried on a phone. The section on HTML stands under *Android Specific*; for iOS the
+  documentation says nothing of HTML or of entities such as `&amp;`, and iOS was not checked.
+  *Here:* no example of the guide forwards a mesh text to a phone without the recipe in its
+  examples, whose fixed start keeps the message from being a command word on both platforms and
+  which, for Android, replaces `&` and `<`; for an iPhone the guide leaves the two replacements
+  out ([names and texts from the mesh](home-assistant.md#names-and-texts-from-the-mesh)). The
+  recipe's template, rendered by Home Assistant 2026.10.2 and 2026.11.0 with `None`, `[1, 2]`,
+  `1.10`, a command word and HTML as texts, with and without the replacements, keeps each a
+  text (`home-assistant/tests/test_contract.py`). *Check:* the two documents above in
   `home-assistant/companion.home-assistant`.
 
 ## openHAB Homie binding
