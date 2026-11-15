@@ -254,8 +254,9 @@ own, and a slash before the word makes it another word (`/arm` is no command). F
 sender, "Arm wrestling tonight?" is the command `arm` with `args` `wrestling tonight?`, and the
 automations of `arm` run. The word must stand alone: `arm,` or `armchair` is no command. From a
 sender with a code secret such a message ends in no code: it is refused as `code_missing`, and
-it counts as a wrong code, so five such messages within an hour lock that sender's commands for
-an hour, and the log says that someone may be guessing the codes (below). From a contact that is
+it counts as a wrong code, so five such messages within an hour lock that sender's commands
+until the first of them is an hour old, and the log says that someone may be guessing the codes
+(below). From a contact that is
 no sender it is refused as `sender_not_allowed` and listed among the refused commands. The
 message is published and kept as a chat message in each case ([mqtt-api.md](mqtt-api.md#commands-command)).
 To keep chat from commanding:
