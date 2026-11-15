@@ -75,7 +75,11 @@ telemetry and the telemetry sensors are available only while the answers are cur
 ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)); the device and state
 classes are interface and recorded in the snapshot. Entity IDs use a slug of the contact's name kept from its first appearance, also when
 it comes back within 90 days of leaving the table (at most 1 000 slugs of contacts that left are
-kept, the newest; CODE-003). The gateway subscribes to these topics: an empty document it did not send is the user
+kept, the newest; CODE-003). The device takes the contact's name as the gateway publishes it:
+canonical by default ([design §6.14](design.md#614-untrusted-text)), with the key's first 8 digits
+when the gateway's device or a contact whose device came first has a name that reads the same,
+`AIice` beside `Alice` too (SEC-007, [ADR 0034](decisions/0034-untrusted-text-from-the-mesh.md)). A name that changes renames the device,
+unless a user renamed it in Home Assistant; the entity IDs keep their slug. The gateway subscribes to these topics: an empty document it did not send is the user
 deleting the device in Home Assistant, and the contact stays hidden there until it leaves the table
 or is shown again. At most `homeassistant.contact_devices` contacts get a device; one keeps its
 device while it stays in the table, and free places go to protected contacts, favourites,
@@ -209,6 +213,14 @@ their way, a draft and its *Send* for each chat and the configuration
   one added later; so are the reason codes the API documents for deliveries, contact
   requests (IMP-049) and refused commands. A reason added later, and the radio's own refusals (`error_<code>`,
   `not_found`), stay codes, in `<code>`.
+* **One class of characters, and the frontend checked** (2.3,
+  [ADR 0034](decisions/0034-untrusted-text-from-the-mesh.md)). The characters `m` removes are the class of `core.untrusted`, which a test
+  compares with each copy ([design §6.14](design.md#614-untrusted-text)). CI checks what the
+  frontend makes of each card: a copy of its Markdown pipeline, with the `marked` and `xss`
+  versions of the frontend that each pinned Home Assistant series uses, renders the contract
+  test's cards with the hostile corpus. It fails on an element the card's Markdown did not hold as
+  HTML, or on an address the template did not write, and a test fails when Home Assistant pins
+  another frontend.
 * **Interface:** the command is the only growth (`cli > commands > dashboard`); the dashboard's
   content is not an interface, the entity IDs it names are.
 

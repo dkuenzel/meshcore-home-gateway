@@ -529,7 +529,9 @@ EU duty cycle for them. Telemetry has two budgets of its own, which never take f
    read again first.
 4. `core.commands` decides: not a command, accepted, or rejected with a reason.
 5. The bridge publishes the message on `received` (with the verdict), and an accepted command on
-   `command`. The newest accepted timestamp per sender goes to the state file before the event is
+   `command`. With `[messages] clean_received`, the default since 2.3, the text and the names it
+   carries are published canonical, after the command was judged on the text as it came (§6.14).
+   The newest accepted timestamp per sender goes to the state file before the event is
    published, so a crash cannot turn into a replay; if the file cannot be written, the command is
    rejected (`state_unwritable`) and the service carries on. A command refused because the broker
    is unreachable (`broker_unavailable`) stores its timestamp too: its sender was verified.
@@ -578,6 +580,10 @@ there).
   loss, network) is noticed only after one to two `keepalive_s`; command events go out with QoS 0,
   so one sent in that time is lost instead of being resent after the reconnect. The sender then
   gets no answer and can send the command again.
+* No topic carries a name or a text: contacts appear by key, chats by alias or key. Payloads are
+  JSON, and with `[messages] clean_received`, the default since 2.3, their names and texts hold no
+  control, escape or direction character (§6.14). MQTT 5 asks the same of its own strings
+  (§1.5.4 of the standard).
 * With MQTT 5 the adapter adds what the protocol carries and the core never sees
   ([mqtt-api.md](mqtt-api.md#mqtt-5)): user properties with the gateway, its version and the
   time on every message, an expiry on the events (`queue_ttl_s`, for `command` `max_age_s`),
@@ -770,6 +776,74 @@ Since 2.2 *Contacts* has *Advert to radios nearby* under the QR code
 
 The detail is in [design-home-assistant.md](design-home-assistant.md#613-dashboard).
 
+### 6.14 Untrusted text
+
+[ADR 0034](decisions/0034-untrusted-text-from-the-mesh.md): names and texts the gateway did not write are data in every sink. They come
+from the mesh (the names in records and adverts, message texts, the names channel messages claim)
+and from the bus (texts to send, contact links). One module, `core.untrusted`, holds every rule
+for them, and every sink takes them through it.
+
+Two controls stand side by side, and neither relies on the other:
+
+* **Canonical where it enters.** With `[messages] clean_received`, the default since 2.3, the
+  core takes a text or a name as `canonical_text` or `canonical_name` gives it:
+  * without C0 and C1 controls and DEL, except the line feed of a text;
+  * without the nine explicit direction formatting characters (UAX #9), the byte order mark and
+    the interlinear annotation characters;
+  * without tag characters, except in a subdivision flag (UTS #51);
+  * with a zero-width joiner only between two characters, and at most 30 combining marks after
+    one base (UAX #15's stream-safe bound);
+  * with line separators as line breaks, a name on one line, and runs of spaces as one.
+
+  Everything else stays: emoji sequences, every script with its marks, the direction marks LRM,
+  RLM and ALM, the zero-width space, the soft hyphen. Nothing is normalised, and nothing gets
+  longer. Commands are judged on the text as it came (§6.4). What the gateway sends and writes to
+  the radio follows the same rules, whatever the setting says.
+* **Encoded at every sink**, for that sink: JSON for the documents and events, slugs and keys for
+  topics and identifiers, the macro `m()` and HTML-block placement in the dashboard's cards
+  (§6.13), `shown` for the command line, labels and CSV cells, `%r` in the log, parameters in SQL.
+
+Where text enters the core: the radio's records and adverts, the heard nodes restored from the
+history and the documents the state file kept (the observer); a message's text after its command
+is judged, its sender's name and the name a channel message claims (the inbox); the refusals the
+state file kept; a removal's result. The codec stays faithful, except that a name cut inside a
+UTF-8 sequence loses that sequence instead of ending in U+FFFD.
+
+Who sent a text decides what it may do, never how it is escaped:
+
+| Input | Bound to | Trusted with |
+| --- | --- | --- |
+| A direct message's text | the contact's key: the firmware decrypts it with that contact's secret (a room server's post: the room's key, not its author's) | a command, from an allowlisted sender with its code (§7.3); otherwise text |
+| A telemetry answer | the key prefix the firmware matches; by default only the companions the household included are asked | position, battery and readings of the household's companions (§6.11) |
+| A contact's name | the contact's key; its owner changes it with every newer advert | its device's name, with key digits when another has it |
+| A heard node's name | its own key, which anyone can make | a label in *Add heard node*, marked when taken |
+| A name a channel message claims | nothing: anyone with the channel's secret writes any name | text; one "claimed" look and never a link on the dashboard (2.4) |
+
+**Names that identify.** `name_key` compares names as a person reads them: NFKC, case folding,
+invisible characters left out, and the UTS #39 skeleton for characters that look like Latin
+letters or digits (480 entries of `confusables.txt` 15.1.0, the Unicode version of Debian 13's
+Python). The skeleton maps a capital `I` to `l`, so the key takes the skeleton of the case-folded
+skeleton and counts `i` as `l`: `AIice`, `A1ice` and `ALICE` compare as `Alice`, `B0b` as `Bob`.
+A taken name only gains a mark (§7.2), never a refusal.
+
+**The setting.** With `clean_received = false`, texts and names stay as they came, and the
+encoders at the sinks keep them inert. `name_key`, `shown`, the CSV guard and the dropped cut
+sequence apply either way. The default changed in 2.3; the update review asks about it as its first
+changed default, and an unattended update applies it, because it deletes no stored data
+([ADR 0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md)). Names canonical whatever the setting says would change what `false` means,
+which waits for 3.0.
+
+**What stays.** Home Assistant's more-info dialog makes a link of an attribute that starts with
+`http`, a stranger's name on *New node* included; a click is needed and nothing loads by itself
+([platform notes](platform-notes.md#home-assistant-dashboards)). A text can still say anything,
+and a name a contact or a channel claims can be false: the dashboard shows where each comes from,
+it does not clean the meaning.
+
+**Tests.** One hostile corpus (`tests/hostile_corpus.py`) feeds the unit and property tests of the
+module, the codec, the run end to end on the emulated radio, the Home Assistant contract tests,
+and the check of the frontend's Markdown pipeline, which CI runs for every pinned Home Assistant
+series (§10).
+
 ## 7 Security
 
 ### 7.1 Assets and trust boundaries
@@ -792,7 +866,8 @@ boundaries and what stands in the way of each; this section is its summary.
 | --- | --- |
 | Spoofed command over the air | Commands only from direct messages, which the firmware authenticates with the key shared between sender and radio; channel messages never command (anyone with the channel secret can write any name). |
 | Look-alike contact with the same 6-byte key prefix | Permissions and targets bind full public keys. The sender must be the only contact with its prefix in the table read after the message arrived, and no other key with that prefix may have been seen on the radio in the last 24 hours, so a look-alike that came and went counts. Commands that waited in the radio before the bridge connected are rejected (§7.3). Recommended radio settings, warned about at connect: manual adding, no contact type added automatically. |
-| A node named like a contact or the gateway (anyone chooses a node's name; look-alike letters from other scripts) | Names are compared as a person reads them (NFKC, case folding, Cyrillic and Greek letters that look Latin, characters drawn as nothing left out: Unicode's default ignorables of any category, such as variation selectors and Hangul fillers, and every format character; the braille blank as a space; a name of such characters alone is one blank name): such a heard node is `name_taken` in `nodes` and the `node` event and marked in *Add heard node*; a contact named like the gateway's device or a contact added before gets a device named with its key's first 8 digits. Labels start with the key's digits, which a person compares with the node's screen (SEC-007). |
+| A node named like a contact or the gateway (anyone chooses a node's name; look-alike letters from other scripts, digits for letters, a capital I for an l; direction overrides) | Names are compared as a person reads them (NFKC, case folding, the UTS #39 skeleton of characters that look like Latin letters or digits, with a capital I and a lower-case i as an l, characters drawn as nothing left out: Unicode's default ignorables of any category, such as variation selectors and Hangul fillers, and every format character; the braille blank as a space; a name of such characters alone is one blank name); with `[messages] clean_received`, the default since 2.3, a name holds no direction override, so it displays as it compares (§6.14). Such a heard node is `name_taken` in `nodes` and the `node` event and marked in *Add heard node*; a contact named like the gateway's device or a contact added before gets a device named with its key's first 8 digits. Labels start with the key's digits, which a person compares with the node's screen (SEC-007, [ADR 0034](decisions/0034-untrusted-text-from-the-mesh.md)). |
+| Characters in a name or text that steer what reads it: terminal escapes, direction overrides, tags hidden from people but read by a language model | With `[messages] clean_received`, the default since 2.3, names and texts lose them where they enter, and keep emoji and every script; every sink encodes what it prints (§6.14). |
 | Replayed command packet | Sender timestamp must be newer than the last accepted one of that sender (persisted; a command refused because the broker was unreachable counts too) and within `max_age_s` of the bridge clock. Exact repeats are dropped for an hour, also those of a rejected command. |
 | Command injection into the automation system | Only configured single words become event types; arguments are data. The bridge executes nothing. Automations must treat `args` as untrusted. |
 | Abuse of the send topic by any broker client | Broker authentication and topic ACLs; only configured targets exist; airtime budget, queue limit, duplicate suppression; the events of refused requests are rate-limited. paho reads a message whole before the bridge can check its size, so a broker limit on the packet size keeps huge payloads out of the bridge's memory (mqtt-api.md, last section). |
@@ -1149,7 +1224,7 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
 | Property | the parsers of what the radio, the air and the bus send in: frames, messages, logged packets and adverts, sensor answers, keys, links and cards, cut texts, message catalogs, installer answers and configuration files | Hypothesis makes up the input; each parser returns or refuses with its own error, never another, within a second (`tests/test_properties.py`, CODE-009) |
 | Component | session and bridge | an in-memory radio that emulates the firmware's responses and pushes |
 | Integration | MQTT adapter and bridge end to end | a private `mosquitto` per test on a free port; the system test runs the service as a process (its coverage is measured too) |
-| Contract | discovery, payloads, the documented automations, the names in every language and the generated dashboard in Home Assistant | the real MQTT integration of a pinned Home Assistant release, in its own environment (`make ha-test`); a pseudo-language marks every name and text |
+| Contract | discovery, payloads, the documented automations, the names in every language and the generated dashboard in Home Assistant | the real MQTT integration of a pinned Home Assistant release, in its own environment (`make ha-test`); a pseudo-language marks every name and text; a hostile corpus of names and texts, whose cards a copy of the pinned frontend's Markdown pipeline renders in CI (§6.14) |
 | Firmware | the gateway against MeshCore's own companion and repeater firmware | the pinned release built natively on stand-ins, nodes as processes on a simulated LoRa air, the gateway on a pseudo terminal; scenarios of the hardware checklist run the gateway's service against it: messages, commands, codes and replies, an unreachable contact and the radio profile (steps 3–6, 10–14, 55 and 56), steps 29, 30, 33, 34, 35 and 39 and parts of steps 41 and 43 (the check for positions in adverts), and a test pins down the firmware's part of step 31 (`make firmware-test`, [which parts](testing.md#where-each-step-is-checked), [ADR 0026](decisions/0026-gateway-tested-against-the-real-firmware-built-natively.md)) |
 | Service manager | the zipapp and the systemd unit as installed | on CI's runner, thrown away after the job: the service under systemd as its user, with an emulated radio and a private broker; readiness, the unit's sandbox, `doctor`, a broker restart, the watchdog (`make unit-run`) |
 | Installer | Proxmox host script | runs with stub commands for `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query` and `whiptail`, which answer in the formats of Proxmox VE 9 and parse options like the real whiptail; a manual check drives the real whiptail |
@@ -1194,6 +1269,7 @@ version, like the CI matrix, and fails if one is missing.
 | The outgoing queue kept across restarts, alerts first | [0028](decisions/0028-outgoing-queue-kept-across-restarts.md) |
 | What a contact of the radio is trusted with | [0029](decisions/0029-what-a-contact-is-trusted-with.md) |
 | A release checked by CI, the installer's self-test and the maintainer's use | [0030](decisions/0030-release-checked-by-ci-self-test-and-use.md) |
+| Untrusted text: canonical where it enters, encoded at every sink (proposed) | [0034](decisions/0034-untrusted-text-from-the-mesh.md) |
 
 
 ### 11.1 Choices without a record of their own
@@ -1233,12 +1309,6 @@ reasons (security review 2026-11, ARC-017).
   `[radio] set_clock` keeps the radio on it within plausible bounds, and restarts the radio for a
   clock up to an hour ahead, or whole jumps of MeshCore's nRF52 clock ahead, which the firmware
   sets back no other way (SEC-002, §6.1).
-* **Text from the mesh is published as it came.** Texts and names are data for automations and
-  people, never commands or markup; cleaning them on the way in would change what was received
-  and hide what an attacker sent. Consumers escape them where they display them
-  ([development.md](development.md#text-from-the-mesh-and-the-bus)); `[messages] clean_received`
-  is the opt-in for consumers that cannot (SEC-017), since 2.2 for the names of contacts and
-  heard nodes too (#137).
 
 ## 12 Open questions and future work
 
