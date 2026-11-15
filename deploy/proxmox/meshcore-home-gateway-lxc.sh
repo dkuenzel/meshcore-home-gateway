@@ -58,7 +58,7 @@ ct.gateway ct.template_storage radio.choice targets.channels targets.contacts "
 # --- language packs: written by `make translations` from deploy/proxmox/locale/*.po; do not edit
 L10N_ORDER=(en de)
 declare -A L10N_NAME=([en]=English [de]=Deutsch)
-declare -A L10N_SHA256=([de]=e4466936431334d0b8fc0ad05a3210ad362bb51065b1aa80e77e435a29a0b1d2)
+declare -A L10N_SHA256=([de]=eb83b57bf964f837402fb24b915d9eacb0c732fef56d1e5b4e379f0a3979552e)
 # --- end of language packs
 L10N_MENU=()   # code, name, code, name, ...: the items of the language menus
 for code in "${L10N_ORDER[@]}"; do L10N_MENU+=("$code" "${L10N_NAME[$code]}"); done
@@ -301,11 +301,11 @@ pass_settings() {  # configuration settings from --answers go to the configurati
   done
 }
 
-choose_setup() {
+choose_setup() {  # each item starts with the setup's name, as the docs and an answers file name it
   local setup
   setup=$(ask setup menu "$(t 'Setup')" "default" \
-    default "$(t 'recommended: asks only for the radio, the broker and the targets')" \
-    advanced "$(t 'all settings: container, network, topics, Home Assistant')")
+    default "$(t 'default (recommended): asks only for the radio, the broker and the targets')" \
+    advanced "$(t 'advanced (all settings): container, network, topics, Home Assistant')")
   if [[ $setup == advanced ]]; then ADVANCED=1; fi
 }
 
@@ -897,12 +897,16 @@ limit_journal() {  # limit_journal CTID: the journal keeps at most 100 MB of the
 
 ask_radio() {
   local -a choices=()
-  local path name radio
+  local path name short item radio
   shopt -s nullglob
   for path in "$SERIAL_DIR"/*; do
     name=$(basename -- "$path")
     if (( ${#name} > ITEM_COLUMNS )); then   # its start and its end: the vendor, the serial number
-      name="${name:0:ITEM_COLUMNS/2-2}...${name: -(ITEM_COLUMNS/2-1)}"
+      short="${name:0:ITEM_COLUMNS/2-2}...${name: -(ITEM_COLUMNS/2-1)}"
+      for item in "${choices[@]}"; do   # another's too: more of its end, where serials differ
+        if [[ $item == "$short" ]]; then short="...${name: -(ITEM_COLUMNS-3)}"; break; fi
+      done
+      name=$short
     fi
     choices+=("$path" "$name")
   done

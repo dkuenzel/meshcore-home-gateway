@@ -137,9 +137,10 @@ they show then follow the language; on a new installation it becomes the default
 language of the names in Home Assistant. The script's own log lines, `--help`, errors before the
 menu, `--update` and runs with `--answers` stay English.
 
-The next dialog chooses the setup. **Default** asks only what has no sensible default: the
-radio, the broker address, user and password, and at the end the targets. **Advanced** asks for
-every setting in the table.
+The next dialog chooses the setup; each item starts with its name, which an answers file gives as
+`setup=default` or `setup=advanced`. **Default** (recommended) asks only what has no sensible
+default: the radio, the broker's address, TLS, user and password, and at the end the targets and
+the command senders. **Advanced** asks for every setting in the table.
 
 | Question | Default | Setup |
 | --- | --- | --- |
@@ -300,9 +301,11 @@ the keys of the next section), which gives the same file with the same mode.
 `--answers FILE` skips all dialogs. The file has one `key=value` per line; empty lines and lines
 starting with `#` are ignored. There are two kinds of keys:
 
-* **Answers for the installer:** `setup`, `ct.id`, `ct.hostname`, `ct.storage`, `ct.disk_gb`,
-  `ct.memory_mb`, `ct.bridge`, `ct.ip`, `ct.gateway`, `ct.template_storage`, `radio.choice` (a
-  device path or `tcp`; required, the script never guesses a device), `targets.channels` and
+* **Answers for the installer:** `setup` (`default` or `advanced`), `ct.id`, `ct.hostname`,
+  `ct.storage`, `ct.disk_gb`, `ct.memory_mb`, `ct.bridge`, `ct.ip`, `ct.gateway`,
+  `ct.template_storage`, `radio.choice` (a device path, such as the radio's in
+  `/dev/serial/by-id/`, whose name the radio menu shows, or `tcp`; required, the script never
+  guesses a device), `targets.channels` and
   `targets.contacts` (comma-separated indices and keys as offered by `meshcore-home-gateway probe
   --list`). An unknown key of this kind, or a malformed index or key, stops the script before it
   creates anything. An index or key that the radio does not offer becomes a target all the same,

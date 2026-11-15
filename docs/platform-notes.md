@@ -862,9 +862,12 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   each name and no right border. newt `r0-52-24` `dialogboxes.c:329-347` (the list's width, its
   position and the shortening), `:349-367` (each row, with and without tags), `:477-480` (a
   checklist's row). *Here:* `show_dialog()` gives every menu `--notags`: the tag is the value an
-  answers file names, the item says what it is. The radio menu shows a device by its name in
-  `/dev/serial/by-id/`; `ask_radio()` shortens a name longer than 72 characters to its first 34
-  and its last 35 with `...` between them (`ITEM_COLUMNS`), the vendor and the serial number.
+  answers file names, the item says what it is; the setup's items start with the setup's name,
+  `default` or `advanced`. The radio menu shows a device by its name in `/dev/serial/by-id/`;
+  `ask_radio()` shortens a name longer than 72 characters to its first 34 and its last 35 with
+  `...` between them (`ITEM_COLUMNS`), the vendor and the serial number, or, when another
+  device's name already shortens to the same, to `...` and its last 69, where serial numbers
+  differ.
   `tests/test_dialog_texts.py` checks every row of every menu in every language with this rule,
   and `tests/manual/dialog_texts.py` compares it with whiptail. The checklists of channels and
   contacts are not checked: their rows are the radio's, and a contact's 64-digit key as its tag

@@ -113,10 +113,11 @@ A pre-release has an installer of its own (its address is on the releases page).
 stored on the host: the program is downloaded inside the new container and checked against the
 release's `SHA256SUMS` and the digests the installer carries.
 
-In the default setup the script asks only for the radio (USB serial device or TCP address) and the
-broker; the advanced setup also asks for the container and topic settings. After a confirmation it
-creates an unprivileged Debian 13 container, passes the radio through, installs the service, reads
-the radio's channels and contacts so you can pick targets and command senders, and starts it.
+In the default setup the script asks only for the radio (USB serial device or TCP address), the
+broker, and the targets and command senders; the advanced setup also asks for the container and
+topic settings. After a confirmation it creates an unprivileged Debian 13 container, passes the
+radio through, installs the service, reads the radio's channels and contacts for the targets and
+command senders, and starts it.
 `--reconfigure` and `--update` keep the configuration. Details and the manual equivalent:
 [`docs/deployment.md`](docs/deployment.md).
 

@@ -59,7 +59,7 @@ msg	The service leaves alone:	Der Dienst lässt unverändert:
 msg	Use TLS for the broker connection? Without it the password, the messages, the positions and the commands cross the network in the clear.	TLS für die Verbindung zum Broker verwenden? Ohne TLS gehen das Passwort, die Nachrichten, die Positionen und die Befehle unverschlüsselt durch das Netzwerk.
 msg	With radio.profile.manage = observe the service only reports what differs:	Mit radio.profile.manage = observe meldet der Dienst nur, was abweicht:
 msg	a radio over TCP needs radio.tcp_unauthenticated = true; for USB, install a new container	ein Funkgerät über TCP braucht radio.tcp_unauthenticated = true; für USB installiere einen neuen Container
-msg	all settings: container, network, topics, Home Assistant	alle Einstellungen: Container, Netzwerk, Topics, Home Assistant
+msg	advanced (all settings): container, network, topics, Home Assistant	erweitert (alle Einstellungen): Container, Netzwerk, Topics, Home Assistant
 msg	answers file line {line}: expected key=value	Antwortdatei, Zeile {line}: key=value erwartet
 msg	answers file line {line}: not valid UTF-8 (save the file as UTF-8)	Antwortdatei, Zeile {line}: kein gültiges UTF-8 (speichere die Datei als UTF-8)
 msg	answers file: targets.channels: expected channel indices, comma-separated	Antwortdatei: targets.channels: Kanalnummern erwartet, durch Kommas getrennt
@@ -101,6 +101,7 @@ msg	copying meshcore-home-gateway into container {ctid} failed (see above)	Kopie
 msg	could not download {template} to {storage}	{template} ließ sich nicht nach {storage} herunterladen
 msg	creating container {ctid} failed (see above)	Erstellen von Container {ctid} fehlgeschlagen (siehe oben)
 msg	creating the service user failed	Anlegen des Dienstbenutzers fehlgeschlagen
+msg	default (recommended): asks only for the radio, the broker and the targets	Standard (empfohlen): fragt nur nach Funkgerät, Broker und Zielen
 msg	disk size and memory must be whole numbers	Datenträgergröße und Arbeitsspeicher müssen ganze Zahlen sein
 msg	installing packages in container {ctid} failed (see above)	Installieren der Pakete in Container {ctid} fehlgeschlagen (siehe oben)
 msg	invalid settings (see above)	ungültige Einstellungen (siehe oben)
@@ -132,7 +133,6 @@ msg	pve-container {version} cannot create Debian 13 containers; update the host 
 msg	pveam offers no Debian 13 template (check the host's internet access)	pveam bietet keine Vorlage für Debian 13 an (prüfe den Internetzugang des Hosts)
 msg	radio with WiFi firmware (TCP, no authentication)	Funkgerät mit WLAN-Firmware (TCP, keine Authentifizierung)
 msg	radio.profile.name: 1 to 31 bytes, got '{name}'	radio.profile.name: 1 bis 31 Bytes, erhalten: '{name}'
-msg	recommended: asks only for the radio, the broker and the targets	empfohlen: fragt nur nach Funkgerät, Broker und Zielen
 msg	run as root on the Proxmox host	als root auf dem Proxmox-Host ausführen
 msg	serial device {device} not found	serielles Gerät {device} nicht gefunden
 msg	the broker settings were not accepted: {reason}	die Broker-Einstellungen wurden nicht akzeptiert: {reason}

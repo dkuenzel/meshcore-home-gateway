@@ -1091,7 +1091,7 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   [`deployment.md`](deployment.md)): `deploy/proxmox/meshcore-home-gateway-lxc.sh` runs on the host
   (Proxmox VE 9, or 8 with a `pve-container` that supports Debian 13), straight from its address
   (`bash -c "$(wget -qO- URL)"`); the host keeps nothing. A default setup asks only for the radio,
-  the broker and the targets, an advanced one for everything. After a confirmation it creates an
+  the broker, the targets and the command senders, an advanced one for everything. After a confirmation it creates an
   unprivileged Debian 13 container with nesting, passes the USB serial device through (`dev0`,
   group `dialout` as seen in the container; refused when another container of the host already
   passes it through), installs `python3` and `python3-paho-mqtt` from Debian and the program

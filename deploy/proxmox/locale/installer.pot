@@ -247,7 +247,7 @@ msgstr ""
 msgid "a radio over TCP needs radio.tcp_unauthenticated = true; for USB, install a new container"
 msgstr ""
 
-msgid "all settings: container, network, topics, Home Assistant"
+msgid "advanced (all settings): container, network, topics, Home Assistant"
 msgstr ""
 
 #, python-brace-format
@@ -389,6 +389,9 @@ msgstr ""
 msgid "creating the service user failed"
 msgstr ""
 
+msgid "default (recommended): asks only for the radio, the broker and the targets"
+msgstr ""
+
 msgid "disk size and memory must be whole numbers"
 msgstr ""
 
@@ -500,9 +503,6 @@ msgstr ""
 
 #, python-brace-format
 msgid "radio.profile.name: 1 to 31 bytes, got '{name}'"
-msgstr ""
-
-msgid "recommended: asks only for the radio, the broker and the targets"
 msgstr ""
 
 msgid "run as root on the Proxmox host"

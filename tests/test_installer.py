@@ -2879,9 +2879,10 @@ def test_the_plan_lists_the_contacts_its_box_holds(
 
 
 def test_the_menus_show_their_items_and_shorten_a_long_device_name(host: Host) -> None:
-    """A menu shows its items without their tags (--notags), which are the answers' values; a
-    device's name longer than 72 columns, as a CP2102N's with its serial number, keeps its start
-    and its end, since whiptail would run it over the box's border (#190)."""
+    """A menu shows its items without their tags (--notags), which are the answers' values: the
+    setup's items start with the names the docs and the answers file give them. A device's name
+    longer than 72 columns, as a CP2102N's with its serial number, keeps its start and its end,
+    since whiptail would run it over the box's border (#190)."""
     long = "usb-Example_Vendor_USB_to_UART_Bridge_Controller_" + "0123456789abcdef" * 2
     long += "-if00-port0"
     (host.serial.parent / long).write_text("", encoding="utf-8")
@@ -2902,12 +2903,42 @@ def test_the_menus_show_their_items_and_shorten_a_long_device_name(host: Host) -
     menus = [c for c in host.calls("whiptail") if "--menu" in c]
     assert len(menus) == 2  # the setup and the radio
     assert all("--notags" in menu for menu in menus)
+    setup = menus[0]
+    start = setup.index("--menu") + 6
+    assert dict(zip(setup[start::2], setup[start + 1 :: 2], strict=True)) == {  # docs' names
+        "default": "default (recommended): asks only for the radio, the broker and the targets",
+        "advanced": "advanced (all settings): container, network, topics, Home Assistant",
+    }
     radio = menus[1]
     start = radio.index("--menu") + 6  # --menu -- TEXT HEIGHT WIDTH LIST-HEIGHT
     rows = dict(zip(radio[start::2], radio[start + 1 :: 2], strict=True))
     assert rows[str(host.serial)] == host.serial.name
     assert rows[str(host.serial.parent / long)] == f"{long[:34]}...{long[-35:]}"
     assert rows["tcp"] == "radio with WiFi firmware (TCP, no authentication)"
+
+
+def test_two_devices_whose_names_differ_in_the_middle_get_two_rows(host: Host) -> None:
+    """ask_radio keeps a long name's start and end; two names that differ only between them, as
+    those of two CP2102N whose serial numbers differ in their first digits, would make two equal
+    rows: the second shows more of its end, where the serial numbers differ (#190)."""
+    names = [
+        f"usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_{start}9c2bec11a1c3e2a6a8b1c2d3"
+        "-if00-port0"
+        for start in ("1a2b3c4d", "5e6f7a8b")
+    ]
+    for name in names:
+        (host.serial.parent / name).write_text("", encoding="utf-8")
+    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pw", "yes", "1"]
+    result = run_installer(host, dialog=[*dialog, "", ""])
+    assert result.returncode == 0, result.stderr
+    radio = [c for c in host.calls("whiptail") if "--menu" in c][1]
+    start = radio.index("--menu") + 6
+    rows = dict(zip(radio[start::2], radio[start + 1 :: 2], strict=True))
+    first, second = (rows[str(host.serial.parent / name)] for name in names)
+    assert first == f"{names[0][:34]}...{names[0][-35:]}"
+    assert second == f"...{names[1][-69:]}"
+    assert len(set(rows.values())) == len(rows) == 4  # the radios and TCP
+    assert max(len(first), len(second)) == 72
 
 
 def test_a_name_the_radio_cut_too_long_is_kept_as_found(host: Host) -> None:

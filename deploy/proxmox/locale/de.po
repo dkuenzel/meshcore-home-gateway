@@ -275,8 +275,8 @@ msgstr "Mit radio.profile.manage = observe meldet der Dienst nur, was abweicht:"
 msgid "a radio over TCP needs radio.tcp_unauthenticated = true; for USB, install a new container"
 msgstr "ein Funkgerät über TCP braucht radio.tcp_unauthenticated = true; für USB installiere einen neuen Container"
 
-msgid "all settings: container, network, topics, Home Assistant"
-msgstr "alle Einstellungen: Container, Netzwerk, Topics, Home Assistant"
+msgid "advanced (all settings): container, network, topics, Home Assistant"
+msgstr "erweitert (alle Einstellungen): Container, Netzwerk, Topics, Home Assistant"
 
 #, python-brace-format
 msgid "answers file line {line}: expected key=value"
@@ -417,6 +417,9 @@ msgstr "Erstellen von Container {ctid} fehlgeschlagen (siehe oben)"
 msgid "creating the service user failed"
 msgstr "Anlegen des Dienstbenutzers fehlgeschlagen"
 
+msgid "default (recommended): asks only for the radio, the broker and the targets"
+msgstr "Standard (empfohlen): fragt nur nach Funkgerät, Broker und Zielen"
+
 msgid "disk size and memory must be whole numbers"
 msgstr "Datenträgergröße und Arbeitsspeicher müssen ganze Zahlen sein"
 
@@ -529,9 +532,6 @@ msgstr "Funkgerät mit WLAN-Firmware (TCP, keine Authentifizierung)"
 #, python-brace-format
 msgid "radio.profile.name: 1 to 31 bytes, got '{name}'"
 msgstr "radio.profile.name: 1 bis 31 Bytes, erhalten: '{name}'"
-
-msgid "recommended: asks only for the radio, the broker and the targets"
-msgstr "empfohlen: fragt nur nach Funkgerät, Broker und Zielen"
 
 msgid "run as root on the Proxmox host"
 msgstr "als root auf dem Proxmox-Host ausführen"
