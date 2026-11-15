@@ -1848,19 +1848,25 @@ msgstr "Einem Dashboard einer anderen Version können neue Karten fehlen, oder e
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "A device not heard for over a day does not count: the card lists it as not heard, with the time it was last heard."
-msgstr "Ein Gerät, das seit über einem Tag nicht gehört wurde, zählt nicht: Die Karte führt es als nicht gehört, mit der Zeit, zu der es zuletzt gehört wurde."
+msgid "A device not heard for over a day, no advert, no message, no answer, is listed as not heard: most likely it broadcasts nothing now, and it is no problem. The line under it says that its adverts carried its position until it was last heard; the time beside it says when that was. It may be switched off, out of range, or flashed again with a new key; once it is heard again, the gateway reads its next advert."
+msgstr "Ein Gerät, das seit über einem Tag nicht gehört wurde, kein Advert, keine Nachricht, keine Antwort, steht als nicht gehört in der Liste: Sehr wahrscheinlich sendet es jetzt nichts, und es ist kein Problem. Die Zeile darunter sagt, dass seine Adverts seine Position enthielten, bis es zuletzt gehört wurde; die Zeit daneben sagt, wann das war. Es kann ausgeschaltet sein, außer Reichweite oder mit einem neuen Schlüssel neu geflasht; sobald es wieder gehört wird, liest das Gateway sein nächstes Advert."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "A device not heard for over a day, no advert, no message, no answer, is listed as not heard: while it is silent it broadcasts nothing, and it is no problem. The line under it says that its adverts carried its position until it was last heard, and when that was. It may be switched off, out of range, or flashed again with a new key; once it is heard again, the gateway reads its next advert."
-msgstr "Ein Gerät, das seit über einem Tag nicht gehört wurde, kein Advert, keine Nachricht, keine Antwort, steht als nicht gehört in der Liste: Solange es still ist, sendet es nichts, und es ist kein Problem. Die Zeile darunter sagt, dass seine Adverts seine Position enthielten, bis es zuletzt gehört wurde, und wann das war. Es kann ausgeschaltet sein, außer Reichweite oder mit einem neuen Schlüssel neu geflasht; sobald es wieder gehört wird, liest das Gateway sein nächstes Advert."
+msgid "A device not heard for over a day, while the gateway has run for over a day, does not count: the card lists it as not heard, with the time it was last heard."
+msgstr "Ein Gerät, das seit über einem Tag nicht gehört wurde, während das Gateway seit über einem Tag läuft, zählt nicht: Die Karte führt es als nicht gehört, mit der Zeit, zu der es zuletzt gehört wurde."
+
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "A device not listed here: its adverts carry its position"
+msgstr "Ein hier nicht aufgeführtes Gerät: Seine Adverts enthalten seine Position"
 
 #. in blue, for information: the devices listed under it were not heard for over a day, so the position in their last adverts is no problem now
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "A device that is not heard broadcasts nothing. When it is heard again, the gateway reads its next advert."
-msgstr "Ein Gerät, das nicht gehört wird, sendet nichts. Sobald es wieder gehört wird, liest das Gateway sein nächstes Advert."
+msgid "A device the gateway has not heard for that long most likely broadcasts nothing now. When it is heard again, the gateway reads its next advert."
+msgstr "Ein Gerät, das das Gateway so lange nicht gehört hat, sendet jetzt sehr wahrscheinlich nichts. Sobald es wieder gehört wird, liest das Gateway sein nächstes Advert."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -2658,6 +2664,11 @@ msgstr "Feb"
 msgctxt "dashboard"
 msgid "Firmware"
 msgstr "Firmware"
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "For a day after the gateway starts, every device counts, as the gateway did not hear what was sent while it was stopped. An advert this home's radio took but did not pass on to the gateway, as can happen over a network link, does not count as heard: if a device listed as not heard is on, send an advert from it near this home's radio."
+msgstr "Einen Tag lang nach dem Start des Gateways zählt jedes Gerät, denn das Gateway hat nicht gehört, was gesendet wurde, während es gestoppt war. Ein Advert, das das Funkgerät dieses Zuhauses empfangen, aber nicht an das Gateway weitergegeben hat, wie es über eine Netzwerkverbindung vorkommen kann, zählt nicht als gehört: Ist ein Gerät, das als nicht gehört in der Liste steht, eingeschaltet, sende in der Nähe des Funkgeräts dieses Zuhauses ein Advert von ihm."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -5396,7 +5407,7 @@ msgctxt "dashboard"
 msgid "an old command again"
 msgstr "Wiederholung eines alten Befehls"
 
-#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices; days is a whole number, 2 or more
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -5648,7 +5659,7 @@ msgctxt "dashboard"
 msgid "heard for the first time"
 msgstr "zum ersten Mal gehört"
 
-#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices; days is a whole number, 2 or more
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
 #. heard is a time, such as 10:31 or yesterday 10:31
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -5687,13 +5698,13 @@ msgctxt "dashboard"
 msgid "it starts within the hour"
 msgstr "Start innerhalb der nächsten Stunde"
 
-#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices; days is a whole number, 2 or more
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "its adverts carried its position until then"
 msgstr "seine Adverts enthielten bis dahin seine Position"
 
-#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices; days is a whole number, 2 or more
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "its adverts carry its position"
@@ -5901,13 +5912,13 @@ msgctxt "dashboard"
 msgid "not asked: look-alike"
 msgstr "nicht abgefragt: ähnlicher Schlüssel"
 
-#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices; days is a whole number, 2 or more
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
 msgid "not heard for a day"
 msgstr "seit einem Tag nicht gehört"
 
-#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices; days is a whole number, 2 or more
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
@@ -6192,7 +6203,7 @@ msgctxt "dashboard"
 msgid "shown again"
 msgstr "wieder angezeigt"
 
-#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices; days is a whole number, 2 or more
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
 #. since is a time, such as 10:31 or yesterday 10:31
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -6499,6 +6510,13 @@ msgstr "{mhz} MHz"
 msgctxt "dashboard"
 msgid "{mins} min"
 msgstr "{mins} min"
+
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "{more} devices not listed here: their adverts carry their position"
+msgstr "{more} hier nicht aufgeführte Geräte: Ihre Adverts enthalten ihre Position"
 
 #. names are the names of contacts, or the first digits of their keys
 #: src/meshcore_home_gateway/dashboard.yaml

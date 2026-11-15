@@ -188,15 +188,20 @@ radio's record holds a position, so Position in adverts is on until an advert wi
 checked"), and at debug level when it changes nothing. The dashboard's card on *Overview* says
 what to do: make sure in the MeshCore app that sharing the location in adverts is off, then send
 an advert near this home's radio; the sensor goes off once the gateway has checked an advert
-without a position. A companion not heard for over a day (its *Last heard*: no advert, message
-or answer) broadcasts nothing while it is silent, so the dashboard lists it as not heard, with
-the time it was last heard, and leaves it out of the problem; the sensor stays as it is, and its
-next advert is checked again (#168). That advert does not clear the radio's record: the firmware keeps the old
+without a position. That advert does not clear the radio's record: the firmware keeps the old
 position until an advert carries a new one or an app writes the record. So while the record holds
 it, every advert the gateway misses, such as one made during the next update or restart, turns
 the sensor on again, until the gateway checks the next advert without a position; the card's fold
-says that it can come back. The lasting fix, and the one for a companion that cannot advert near
-the radio: remove its contact and add it again from the gateway
+says that it can come back. A companion not heard for over a day (its *Last heard*: no advert,
+message or answer) most likely broadcasts nothing now, so the dashboard lists it as not heard,
+with the time it was last heard, and leaves it out of the problem; the sensor stays as it is
+until the gateway checks the companion's next advert (#168). This holds only while the gateway
+has run for over a day: it did not hear what came while it was stopped, so after a start each
+listed companion counts for a day. An advert the radio took whose report did not reach the
+gateway, such as one dropped over TCP or taken while the link to the radio was down, does not
+move *Last heard*; until the companion is heard again, the dashboard takes it for silent. The
+lasting fix, and the one for a companion that cannot advert near the radio: remove its contact
+and add it again from the gateway
 ([home-assistant.md](home-assistant.md#adding-and-removing-contacts)), whose add writes no
 position into the record (`protocol/codec.py`, `new_contact`), so the sensor stays off until an
 advert carries one. A protected contact (a target or a command sender) cannot be removed.

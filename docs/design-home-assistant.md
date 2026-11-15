@@ -142,35 +142,42 @@ their way, a draft and its *Send* for each chat and the configuration
 ([§6.7](#67-home-assistant)), and the dashboard needs Home Assistant 2026.10 or later
 ([ADR 0031](decisions/0031-household-chat-problems-and-settings-on-the-generated-dashboard.md)). No setting was added for it.
 
-* **Views:** 2.0 had four tabs, *Overview*, *Messages*, *Contacts* and *Map*. Since 2.1 there
-  are three tabs: *Overview* (a status line in a colour that names the first problem, a card for
-  each problem while it exists that says who and what to do, never the problem again, the latest
-  chats, where everyone is), *Chats* (every chat with
-  its newest message, and all messages as one thread) and *Contacts* (the contacts by their
-  devices, the sensors' readings, each switch *Ask for position and battery*, *Add or remove*
-  with each contact's *Remove*, which asks first, the nodes heard nearby). Since 2.2 *Let
-  someone add this home* has, under the QR code, *Advert to radios nearby* with *Send* and the
-  line that says what became of the last advert for 10 minutes: its purpose is the QR code's, a
-  neighbour adding this home, so it stands where a household member looks for that
-  ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)). The other pages have
-  no tab (`subview: true`): a page for each chat, *Map* (the contacts' trackers with 24 hours of
-  traces), *Gateway* (health, the radio, its settings, the latest event of each kind),
-  *Settings* (the configuration document, read only) and *Help*. A row of links under
+* **Views:** 2.0 had four tabs, *Overview*, *Messages*, *Contacts* and *Map*. Since 2.1 there are
+  three tabs: *Overview* (a status line in a colour that names the first problem, a card for each
+  problem while it exists, with what to do, the latest chats, where everyone is), *Chats* (every
+  chat with its newest message, and all messages as one thread) and *Contacts* (the contacts by
+  their devices, the sensors' readings, each switch *Ask for position and battery*,
+  *Add or remove* with each contact's *Remove*, which asks first, the nodes heard nearby). Since
+  2.2 *Let someone add this home* has, under the QR code, *Advert to radios nearby* with *Send*
+  and the line that says what became of the last advert for 10 minutes: its purpose is the QR
+  code's, a neighbour adding this home, so it stands where a household member looks for that
+  ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)). The other
+  pages have no tab (`subview: true`): a page for each chat, *Map* (the contacts' trackers with
+  24 hours of traces), *Gateway* (health, the radio, its settings, the latest event of each
+  kind), *Settings* (the configuration document, read only) and *Help*. A row of links under
   *Overview*'s status line opens *Map*, *Gateway*, *Settings* and *Help*, the map first: its
   other links, under *Where everyone is*, come below everything on a phone, and with them the map
-  seemed gone (2.1.1). All are sections views, which reflow on a phone, so there is one variant; cards show by conditions on states and on
-  templates, which the frontend evaluates since Home Assistant 2026.10.
+  seemed gone (2.1.1). All are sections views, which reflow on a phone, so there is one variant;
+  cards show by conditions on states and on templates, which the frontend evaluates since Home
+  Assistant 2026.10.
 * **A companion no longer heard** (#168, 2.2.1): a companion's state takes precedence over older
   facts about it. In 2.2.1 the dashboard decides it alone, from each companion's *Last heard*:
-  more than a day old is silent. A silent companion leaves the problem *a position broadcast to
-  everyone*, since it broadcasts nothing while silent; the card lists it as not heard for so
-  many days, since when, with the fact that its adverts carried its position until then, muted.
-  With only silent companions the card is a blue note. The status line and the card decide it
-  by the same lines, which a test compares. One the gateway's list names without a device, one
-  never heard and one beyond the list count as heard: the list errs to warn (ADR 0025). The
-  advert's own time is not in Home Assistant, so the time shown is when the companion was last
-  heard: its newest advert is no newer. The gateway's companion state, with the advert's time and
-  the same rule on every card, follows in a minor version.
+  more than a day old is silent, once the gateway has run for over a day (the state of its
+  *Configuration*, its start). The gateway did not hear what came while it was stopped, so after
+  a start every listed companion counts for a day, and while the start is unknown, always. A
+  silent companion leaves the problem *a position broadcast to everyone*, since most likely it
+  broadcasts nothing now; the card of that problem, which since 2.2.1 names who and what to do,
+  not the problem again, lists it as not heard for so many days, since when, with the fact that
+  its adverts carried its position until then, muted. With only silent companions the card is a
+  blue note. The status line and the card decide it by the same lines, which a test compares.
+  One the gateway's list names without a device, one never heard and one beyond the list count
+  as heard: the list errs to warn (ADR 0025). The advert's own time is not in Home Assistant, so
+  the time shown is when the companion was last heard: its newest advert is no newer. The limit:
+  an advert the radio took whose report did not reach the gateway, such as one dropped over TCP
+  or taken while the link to the radio was down, does not move *Last heard*, so the dashboard
+  takes the companion for silent until it is heard again; the card's fold says to send an
+  advert from a device listed as not heard that is on. The gateway's companion state, with the
+  advert's time and the same rule on every card, follows in a minor version.
 * **Writing:** 2.0 offered the guide's script *Mesh message* (`script.mesh_message`) as a form
   in a tile, with a hint while the script was missing. Since 2.1 each chat page ends in the
   gateway's draft of that chat, the text entity *Write to …*, and its button *Send*: the gateway

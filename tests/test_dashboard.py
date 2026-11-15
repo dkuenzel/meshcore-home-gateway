@@ -3224,19 +3224,21 @@ def test_help_says_what_the_gateway_goes_by_for_a_position_broadcast_to_everyone
     """The second place that states the warning as certain (owner feedback on 2.1.0): Help's
     words for Overview's first line say, as the card does, that the gateway goes by the position
     the radio remembers until it has read the device's newest advert; and that a device not
-    heard for a day does not count (#168)."""
+    heard for a day, while the gateway has run for a day, does not count (#168)."""
     said = " ".join(rules.texts(view_of("help")))
     assert (
         "<li><b>a position broadcast to everyone</b>: A person's device tells everyone in range "
         "where it is. Until the gateway has read the device's newest advert, it goes by the "
-        "position this home's radio still remembers for it. A device not heard for over a day "
-        "does not count: the card lists it as not heard, with the time it was last heard.</li>"
+        "position this home's radio still remembers for it. A device not heard for over a day, "
+        "while the gateway has run for over a day, does not count: the card lists it as not "
+        "heard, with the time it was last heard.</li>"
     ) in said
 
 
 SILENT_FROM = (
-    "{#- who is silent: not heard for a day, by its Last heard; the same lines in the status line "
-    "and in the card of a position broadcast to everyone (#168) -#}"
+    "{#- who is silent: not heard for a day, by its Last heard, while the gateway has run for a "
+    "day; the same lines in the status line and in the card of a position broadcast to everyone "
+    "(#168) -#}"
 )
 
 
@@ -3252,9 +3254,12 @@ def test_the_status_line_and_its_card_tell_a_silent_companion_alike() -> None:
     """#168: a companion not heard for a day leaves the problem a position broadcast to
     everyone; the status line and its card decide it by the same lines. From the gateway's list
     of companions whose adverts carry their position, each one's Last heard, found by its
-    device's serial number; older than a day is silent. One never heard, one without a device
-    and one beyond the list count as heard: the list errs to warn (ADR 0025). The status line no
-    longer takes the gateway's binary sensor alone for the problem."""
+    device's serial number; older than a day is silent, but only while the gateway's start
+    (its Configuration) is older than a day too: it did not hear what came while it was stopped,
+    so after a start every listed companion has a day to be heard. One never heard, one without
+    a device, one beyond the list and any while the start is unknown count as heard: the list
+    errs to warn (ADR 0025). The status line no longer takes the gateway's binary sensor alone
+    for the problem."""
     cards = list(_cards(shipped()))
     (status,) = [c for c in cards if "{%- macro problem(v) -%}" in c]
     (advert,) = [c for c in cards if c[0] == "{#- problem: advert_position -#}"]
@@ -3265,6 +3270,12 @@ def test_the_status_line_and_its_card_tell_a_silent_companion_alike() -> None:
     assert "select('match', 'sensor\\\\.\\\\w+_last_heard(_\\\\d+)?$')" in block
     assert "device_attr(d, 'serial_number') == k" in block
     assert "state_attr(e, 'total')" in block
+    start = "{%- set start = states('sensor.@gw@_configuration') | as_datetime(default=none) -%}"
+    assert start in lines
+    assert (
+        "{%- if t is not none and start is not none and clock - t > timedelta(days=1) and clock "
+        "- start > timedelta(days=1) -%}"
+    ) in block
     whole = "\n".join(status)
     assert "is_state('binary_sensor.@gw@_advert_position', 'on') -%}{%- set ns.yellow" not in whole
     assert "q.heard or beyond > 0 -%}{%- set ns.yellow = ns.yellow + ['advert_position']" in whole

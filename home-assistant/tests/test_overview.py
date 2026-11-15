@@ -390,13 +390,27 @@ COMES_BACK = (
     "It can come back after an update or a restart, as long as this home's radio remembers the "
     "old position."
 )
-# a device not heard for a day broadcasts nothing: silent, with its age, and no problem (#168)
+# a device not heard for a day most likely broadcasts nothing: silent, with its age, and no
+# problem (#168); the time is beside the line, not in it
 SILENT = (
     "A device not heard for over a day, no advert, no message, no answer, is listed as not "
-    "heard: while it is silent it broadcasts nothing, and it is no problem. The line under it "
-    "says that its adverts carried its position until it was last heard, and when that was. It "
-    "may be switched off, out of range, or flashed again with a new key; once it is heard again, "
-    "the gateway reads its next advert."
+    "heard: most likely it broadcasts nothing now, and it is no problem. The line under it says "
+    "that its adverts carried its position until it was last heard; the time beside it says when "
+    "that was. It may be switched off, out of range, or flashed again with a new key; once it is "
+    "heard again, the gateway reads its next advert."
+)
+# what the gateway cannot hear: what came while it was stopped, so every device counts for a
+# day after its start; an advert whose report the radio dropped, which an advert from it settles
+UNHEARD = (
+    "For a day after the gateway starts, every device counts, as the gateway did not hear what "
+    "was sent while it was stopped. An advert this home's radio took but did not pass on to the "
+    "gateway, as can happen over a network link, does not count as heard: if a device listed as "
+    "not heard is on, send an advert from it near this home's radio."
+)
+# the blue note over silent devices only
+QUIET = (
+    "A device the gateway has not heard for that long most likely broadcasts nothing now. When "
+    "it is heard again, the gateway reads its next advert."
 )
 
 
@@ -435,7 +449,7 @@ async def test_the_advert_position_card_says_what_the_gateway_goes_by(
     lines = lines[:1] + lines[2:]
     paragraphs = "".join(
         f"<p>{' '.join(said(config, text) for text in texts)}</p>"
-        for texts in ((NOT_NEEDED,), (GOES_BY,), (GOES, COMES_BACK), (SILENT,))
+        for texts in ((NOT_NEEDED,), (GOES_BY,), (GOES, COMES_BACK), (SILENT,), (UNHEARD,))
     )
     summary = said(config, "What this means")
     assert lines[1:] == [f"<details><summary>{summary}</summary>{paragraphs}</details>"]
@@ -460,7 +474,11 @@ async def test_a_companion_not_heard_for_a_day_is_silent_and_leaves_the_advert_p
     With only silent companions the card is a blue note, which the status line counts. The
     status line names the problem once; the card names who and what to do, never the problem
     again. A companion heard again counts again; one never heard, or one beyond the gateway's
-    list, counts too (the gateway's list errs to warn, ADR 0025)."""
+    list, counts too (the gateway's list errs to warn, ADR 0025). The gateway did not hear what
+    came while it was stopped: for a day after its start (its Configuration), and while its
+    start is unknown, every listed companion counts, however old its Last heard, as the radio
+    may have taken its newest advert meanwhile. Devices beyond the list, with no listed device
+    heard, have a row of their own, not "and 1 more" after nothing."""
     config = speaking(language, monkeypatch)
     broker, mesh = Broker(), household(ALICE_NODE, Node(BOB, "Bob", COMPANION))
     contacts_of(config, tmp_path, broker).update(mesh)
@@ -486,13 +504,30 @@ async def test_a_companion_not_heard_for_a_day_is_silent_and_leaves_the_advert_p
     assert alice_at is not None
     both = index(advert_carries_position=[BOB, ALICE], advert_carries_position_total=2)
     await fire(hass, topics.contacts, both, retain=True)
+    bob = said(config, "heard {heard}", heard=d9(config, bob_at, now))
+    alice_heard = said(config, "heard {heard}", heard=d9(config, alice_at, now))
+    settings = shown_settings(config)
+    for started in (None, now - 3600):  # start unknown, then an hour ago: Alice counts, as heard
+        if started is not None:  # the gateway was stopped for 3 days: an update, a host outage
+            await fire(hass, topics.config, config_document(started, [], settings))
+        assert first(render(hass, status))[:2] == (
+            "warning",
+            said(config, "Needs a look: {first}.", first=problem),
+        ), started
+        lines = render(hass, advert).split("\n")
+        assert first(lines[0]) == ("warning", said(config, "What to do:"), said(config, ON_EACH))
+        assert lines[1] == (
+            f'<table role="presentation" width="100%"><tr><td><b>Bob</b></td><td>{carry}</td>'
+            f'<td align="right"><small>{bob}</small></td></tr><tr><td><b>Alice</b></td>'
+            f'<td>{carry}</td><td align="right"><small>{alice_heard}</small></td></tr></table>'
+        ), started
+    await fire(hass, topics.config, config_document(now - 2 * 86400, [], settings))
     assert first(render(hass, status))[:2] == (
         "warning",
         said(config, "Needs a look: {first}.", first=problem),
     )
     lines = render(hass, advert).split("\n")
     assert first(lines[0]) == ("warning", said(config, "What to do:"), said(config, ON_EACH))
-    bob = said(config, "heard {heard}", heard=d9(config, bob_at, now))
     alice = said(config, "since {since}", since=d9(config, alice_at, now))
     silent = said(config, "not heard for {days} days", days="3")
     assert lines[1] == (  # heard first; the silent one muted under them, with its age
@@ -512,12 +547,7 @@ async def test_a_companion_not_heard_for_a_day_is_silent_and_leaves_the_advert_p
     assert after[2].endswith(said(config, "One note below."))
     lines = render(hass, advert).split("\n")
     verdict = said(config, "Not heard for over a day.")
-    quiet = said(
-        config,
-        "A device that is not heard broadcasts nothing. When it is heard again, the gateway "
-        "reads its next advert.",
-    )
-    assert first(lines[0]) == ("info", verdict, quiet)
+    assert first(lines[0]) == ("info", verdict, said(config, QUIET))
     assert said(config, "not heard for a day") in lines[1]
     assert said(config, "not heard for {days} days", days="3") in lines[1]
     assert carry not in lines[1]
@@ -533,7 +563,24 @@ async def test_a_companion_not_heard_for_a_day_is_silent_and_leaves_the_advert_p
     beyond = index(advert_carries_position=[BOB, ALICE], advert_carries_position_total=3)
     await fire(hass, topics.contacts, beyond)  # one beyond the list: its heard time unknown
     assert first(render(hass, status))[0] == "warning"
-    assert said(config, "and {more} more", more="1") in render(hass, advert)
+    lines = render(hass, advert).split("\n")  # no device named above it: a row of its own
+    assert first(lines[0])[0] == "warning"
+    one = said(config, "A device not listed here: its adverts carry its position")
+    assert lines[1].startswith(
+        f'<table role="presentation" width="100%"><tr><td colspan="3">{one}</td></tr>'
+        "<tr><td><b>Bob</b></td>"
+    )
+    assert said(config, "and {more} more", more="1") not in lines[1]
+    beyond = index(advert_carries_position=[BOB, ALICE], advert_carries_position_total=4)
+    await fire(hass, topics.contacts, beyond)
+    two = said(
+        config, "{more} devices not listed here: their adverts carry their position", more="2"
+    )
+    assert f'<td colspan="3">{two}</td>' in render(hass, advert)
+    await heard(ALICE, 60)  # after a device heard, the rest is "and 2 more"
+    lines = render(hass, advert).split("\n")
+    assert f'<td colspan="3">{said(config, "and {more} more", more="2")}</td>' in lines[1]
+    assert two not in lines[1]
     await fire(hass, topics.contacts, index())
     shows_nothing(hass, advert)
     assert first(render(hass, status))[:2] == ("success", said(config, "All fine."))
