@@ -77,14 +77,21 @@ broker. The code keeps them data everywhere they go, and new code follows the sa
   terminal; message texts only at debug level.
 * **Terminals:** the command line prints them through `_safe_text` or `_json_text`.
 * **Home Assistant:** Markdown cards print every value through the macro `m()`, a message's
-  text through `mt()` (Translations, below); nothing from the mesh becomes an entity ID, a unique
-  ID or an event type.
+  text through `mt()` (Translations, below). Nothing from the mesh becomes a unique ID or an event
+  type; a contact's entity IDs carry a slug of its name as it first appeared (letters, digits and
+  `_`, at most 32), never the name itself. Device names, attributes and event attributes carry
+  names and texts as they are published (MQTT, below), and Home Assistant's own pages show them:
+  as text, except that its more-info dialog makes a link of an attribute that starts with `http`
+  ([platform notes](platform-notes.md#home-assistant-dashboards)).
 * **MQTT:** JSON only; texts are passed on as received (`docs/mqtt-api.md`: consumers treat them
   as plain data, never as markup), or with `[messages] clean_received` without control and
-  direction characters, as outgoing texts are; commands are judged on the text as received. The
-  names of contacts and heard nodes are cleaned where they enter (`core.text.clean_name`: the
-  observer's records and restored rows, the inbox's sender, a removal's result), so that every
-  document, event and front end has the same name.
+  direction characters, as outgoing texts are; commands are judged on the text as received. With
+  `clean_received`, the names of contacts and heard nodes are cleaned where they enter too
+  (`core.text.clean_name`: the observer's records and restored rows, the inbox's sender, a
+  removal's result), so that every document, event and front end has the same name; without it
+  they stay as the radio gave them, and only the sinks above keep them inert. `clean_received`
+  removes neither invisible characters such as zero-width spaces nor Unicode tag characters
+  (#179).
 
 ### Adding a protocol message
 

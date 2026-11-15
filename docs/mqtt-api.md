@@ -210,7 +210,11 @@ takes them from the radio: in `sender_name`, `command` events, `refused_commands
 `pending`, the contacts' documents, `nodes`, the `node`, `contact` and `telemetry` events, the
 device names in Home Assistant and Homie (#137). Messages the history kept before keep their
 names. Without it, a contact's name stays as its adverts gave it; the command line prints such
-characters escaped in JSON and as spaces in lists and CSV (#114).
+characters escaped in JSON and as spaces in lists and CSV (#114). Turning it on is recommended:
+a right-to-left override in a name can make it read as another, and Home Assistant shows device
+names, attributes and events as they come
+([names and texts from the mesh](home-assistant.md#names-and-texts-from-the-mesh)). It removes
+no invisible characters such as zero-width spaces or Unicode tag characters.
 
 ```json
 {"event_type": "contact", "text": "status please", "text_type": "plain",

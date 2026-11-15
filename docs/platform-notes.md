@@ -11,7 +11,8 @@ Linux](#debian-systemd-and-linux), [Python](#python), [GNU gettext](#gnu-gettext
 [GitHub](#github), [whiptail](#whiptail),
 [Mosquitto](#mosquitto), [Home Assistant Mosquitto add-on](#home-assistant-mosquitto-add-on),
 [paho-mqtt](#paho-mqtt), [Home Assistant MQTT](#home-assistant-mqtt), [Home Assistant
-dashboards](#home-assistant-dashboards), [openHAB Homie binding](#openhab-homie-binding),
+dashboards](#home-assistant-dashboards), [Home Assistant companion
+app](#home-assistant-companion-app), [openHAB Homie binding](#openhab-homie-binding),
 [MeshCore companion firmware](#meshcore-companion-firmware).
 
 <!-- index of the facts -->
@@ -185,6 +186,7 @@ One line per fact, by section.
 * Home Assistant's MQTT integration speaks MQTT 3.1, 3.1.1 and 5, and connects with 5 unless its broker options say otherwise.
 * paho keeps a QoS 1 publish made while it is disconnected and sends it after the reconnect, while Home Assistant raises on the publish's result: the user sees an error for a message that still goes out later. A QoS 0 publish is not kept.
 * A broker passes the messages of one client on to a subscriber in the order it received them only for the same topic and QoS; messages on two topics may arrive in another order.
+* Home Assistant exposes a new entity to its conversation agent by default when it is a switch (or of another listed domain), a binary sensor of a listed class (door, motion, presence …) or a sensor of temperature, humidity, CO, CO₂, PM, VOC or air quality, unless it has an entity category or is hidden.
 
 **[Home Assistant dashboards](#home-assistant-dashboards)**
 
@@ -211,6 +213,11 @@ One line per fact, by section.
 * A view without `icon` shows its title alone in the tab bar; one with `icon` shows the icon alone, the title only as its tooltip, unless `show_icon_and_title: true`; a subview gets no tab.
 * A section of a sections view hides while all its cards are hidden; since frontend `20261028.4` (Home Assistant 2026.11) while all its cards, badges and sections are.
 * On Home Assistant 2026.10 the first load of a YAML dashboard whose file was written again while Home Assistant ran can report `this._layoutElement.setConfig is not a function`; the page still shows its cards. Frontend `20261028.4` (2026.11) does not.
+* The more-info dialog shows a string attribute that starts with `http` and parses as an `http:` or `https:` address as a link, which opens in a new tab (`target="_blank"`, `rel="noopener noreferrer"`); every other string stays text.
+
+**[Home Assistant companion app](#home-assistant-companion-app)**
+
+* The companion app interprets a notification's `message`: Android renders some HTML tags in it, and a `message` that is exactly a command word, such as `request_location_update`, `clear_badge`, `command_screen_on` or `command_update_sensors`, makes the phone carry out the command instead of showing a notification.
 
 **[openHAB Homie binding](#openhab-homie-binding)**
 
@@ -1726,6 +1733,21 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   the history holds, so a swap of the two loses the message for one render and never shows it
   twice. *Check:* `make ha-test`.
 
+* **Home Assistant exposes a new entity to its conversation agent by default when it is a switch
+  (or of another listed domain), a binary sensor of a listed class (door, motion, presence …) or a
+  sensor of temperature, humidity, CO, CO₂, PM, VOC or air quality, unless it has an entity
+  category or is hidden.** An agent backed by a language model gets the names of the exposed
+  entities. *Verified:* read only, Home Assistant 2026.11.0,
+  `homeassistant/components/homeassistant/exposed_entities.py` lines 32-69 (the domains and
+  classes, and `conversation` exposing new entities by default) and 329-360
+  (`_is_default_exposed`); not tried with an agent. *Here:* a contact's *Telemetry* switch is a
+  configuration entity and its *MCU temperature* diagnostic, so neither is exposed; the reading
+  sensors of temperature and humidity (`sensor.mesh_alice_ch2_temperature`) have no category and
+  are, named after the contact's device, whose name its owner chose. The guide says how to keep
+  them out ([names and texts from the mesh](home-assistant.md#names-and-texts-from-the-mesh)).
+  *Check:* the file above, or the *Expose* tab of the voice assistant settings after a companion's
+  first reading of temperature.
+
 ## Home Assistant dashboards
 
 * **A Markdown card parses what its template puts out as Markdown, after the template's own
@@ -2070,6 +2092,35 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   '.\{45\}(this\._ignoreNextUpdateEvent=!0)' hass_frontend/frontend_latest/*.js` in the
   `home-assistant-frontend` wheel shows `this.lovelace&&"yaml"===this.lovelace.mode&&` before
   it in `20260930.4` and `"yaml"===a&&` in `20261028.4`.
+
+* **The more-info dialog shows a string attribute that starts with `http` and parses as an
+  `http:` or `https:` address as a link, which opens in a new tab (`target="_blank"`,
+  `rel="noopener noreferrer"`); every other string stays text.** `new URL()` decides, so
+  `https://example.org/ read this` is a link too. *Verified:* read only, not run in a browser:
+  frontend `20261028.4` (Home Assistant 2026.11.0) and `20261028.5` (2026.11.1),
+  `src/components/ha-attribute-value.ts` lines 46-67, the same in both, which
+  `src/dialogs/more-info/ha-more-info-details.ts` (lines 266-269) uses for every attribute.
+  *Here:* the payloads are an interface and stay as they are; the guide says that a message's
+  `text` and `sender_name` and a *New node*'s `name` can become links, and what to do
+  ([names and texts from the mesh](home-assistant.md#names-and-texts-from-the-mesh)); the
+  generated dashboard prints values in Markdown cards as text. *Check:* the file above at the
+  frontend's tag, the branch `attributeValue.startsWith("http")`.
+
+## Home Assistant companion app
+
+* **The companion app interprets a notification's `message`: Android renders some HTML tags in
+  it, and a `message` that is exactly a command word, such as `request_location_update`,
+  `clear_badge`, `command_screen_on` or `command_update_sensors`, makes the phone carry out the
+  command instead of showing a notification.** *Verified:* read only, the app's documentation on
+  `master` (read 2026-11-15): `docs/notifications/basic.md`, *Notification Message HTML
+  Formatting*, and `docs/notifications/commands.md`, the tables of commands for iOS and Android;
+  not tried on a phone. *Here:* no example of the guide forwards a mesh text to a phone without
+  the recipe in its examples, whose fixed start keeps the message from being a command word and
+  which replaces `&` and `<` ([names and texts from the
+  mesh](home-assistant.md#names-and-texts-from-the-mesh)); the recipe's template, rendered in
+  Home Assistant 2026.11.0's template engine with `None`, `[1, 2]`, `1.10`, a command word and
+  HTML as texts, keeps each a text. *Check:* the two documents above in
+  `home-assistant/companion.home-assistant`.
 
 ## openHAB Homie binding
 

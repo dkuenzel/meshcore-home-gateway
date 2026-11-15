@@ -125,8 +125,25 @@ at most every 10 minutes ([advert nearby](mqtt-api.md#advert-nearby-advertsend-a
 wrote). **Trusted:** the templates. **Not trusted:** names and texts from the mesh, which are
 data: never markup, never templates ([text from the mesh](development.md#text-from-the-mesh-and-the-bus)).
 
-**Controls:** cards escape mesh text; device names of the same name carry key digits; labels show
-key digits.
+**Controls:** cards escape mesh text and show it as text, never as a link; device names of the
+same name carry key digits; labels show key digits; with `[messages] clean_received`, recommended,
+names and texts lose control and direction characters where they enter
+([configuration.md](configuration.md#messages)).
+
+**Remains:** Home Assistant's own pages and its apps show what the gateway publishes, and the
+gateway does not control how ([what reaches Home Assistant](home-assistant.md#names-and-texts-from-the-mesh)):
+
+* its more-info dialog makes a link of an attribute that starts with `http`: a message's `text`
+  and `sender_name`, and with `heard_nodes = "full"`, the default, the name any radio in range
+  gives itself on *New node*;
+* with `clean_received = false`, the default, a right-to-left override in a contact's name can
+  make its device name read as another contact's, without the key digits of a taken name;
+  Homie's `$name` carries every such character raw, and the JSON documents the C1 controls and
+  direction characters, to whatever reads them;
+* invisible characters, Unicode tag characters among them, pass even `clean_received`; a person
+  does not see them, a language model behind Assist reads them;
+* an automation that forwards a mesh text to a phone hands it to the companion app, which renders
+  HTML in a message and acts on a message that is one of its command words.
 
 ### B5: Home Assistant and its users
 
@@ -137,6 +154,11 @@ household. **Not trusted:** that every user should act on the radio.
 advert nearby*, which every user may press while it is on), targets that can be hidden; the
 guide explains Home Assistant's user model
 ([shared households](home-assistant.md#shared-households)).
+
+**Remains:** Home Assistant exposes some new entities to its conversation agent by default, among
+them the temperature and humidity sensors of companions' telemetry, named after the contacts'
+devices; an agent backed by a language model reads those names, which their owners chose. The
+guide says how to keep them out ([names and texts from the mesh](home-assistant.md#names-and-texts-from-the-mesh)).
 
 ### B6: the service, the container and the host
 

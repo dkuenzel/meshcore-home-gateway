@@ -628,6 +628,44 @@ and shows a person instead of a tracker that is the person's current source.
 
 An entities card shows an attribute, such as the text of the last message, without YAML.
 
+### Names and texts from the mesh
+
+Message texts and names come from other people: anyone in range names their radio as they like,
+anyone with a channel's key writes on it, and a contact renames itself with each advert. Home
+Assistant shows them as text, with these exceptions:
+
+* **Links in the more-info dialog.** An attribute that starts with `http` and reads as a web
+  address is shown as a link, which opens in a new tab when clicked: the `text` and `sender_name`
+  of *Message* and of a contact's *Message*, and, with `[contacts] heard_nodes = "full"`, the
+  default, the `name` of *New node*, which any radio in range chooses
+  ([platform notes](platform-notes.md#home-assistant-dashboards)). Nothing loads until it is
+  clicked, and the link shows the address it opens. Do not follow a link from the mesh unless
+  you know who sent it. The generated dashboard shows texts and names as text, never as links.
+  Channels that are not targets are not published (`[messages] publish_channels = "targets"`,
+  the default), and `heard_nodes = "keys"` keeps strangers' names out of Home Assistant
+  ([configuration.md](configuration.md#contacts)).
+* **Characters that change how a name reads.** With `[messages] clean_received = false`, the
+  default, names and texts keep control and direction characters: a right-to-left override can
+  make a contact's device name read as another contact's, without the key digits that mark a
+  name another device has. Set `clean_received = true`: the gateway then drops them from texts
+  and names where they enter ([configuration.md](configuration.md#messages)). Invisible
+  characters, such as zero-width spaces and Unicode tag characters, stay even then.
+* **Notifications to a phone.** An automation that passes a mesh text or name to the companion
+  app hands it to an app that interprets its message: on Android it renders HTML tags in it, and
+  a message that is exactly one of its command words, such as `request_location_update` or
+  `command_screen_on`, makes the phone act instead of showing it
+  ([platform notes](platform-notes.md#home-assistant-companion-app)). Use the recipe in
+  [Examples](#examples), which keeps the text a text.
+* **Assist and language models.** Home Assistant exposes some new entities to its conversation
+  agent by default: switches, and sensors of temperature, humidity and a few more classes, unless
+  they have an entity category ([platform notes](platform-notes.md#home-assistant-mqtt)). Of the
+  gateway's entities, those are the temperature and humidity sensors that a companion's
+  telemetry adds (such as `sensor.mesh_alice_ch2_temperature`), named after the contact's device,
+  whose name its owner chose. An agent backed by a language model reads those names, also
+  characters a person does not see. Unless the household asks Assist for them, take them out on
+  the *Expose* tab of Home Assistant's voice assistant settings, and switch off exposing new
+  entities there if contacts come and go.
+
 ## First steps
 
 Once the gateway runs, its device is under *Settings → Devices & services → MQTT*, named after
@@ -1085,6 +1123,37 @@ mode: queued
 
 Do not report a failed delivery over the mesh to the same target: when the radio cannot reach it,
 the report fails too and uses airtime.
+
+Forward a direct message to a phone with the companion app (write your phone's notify action):
+
+```yaml
+alias: Phone notice of a mesh message
+triggers:
+  - trigger: event.received
+    target:
+      entity_id: event.meshcore_home_gateway_radio1_message
+    options:
+      event_type: [contact]
+actions:
+  - action: notify.mobile_app_my_phone
+    data: >-
+      {% set a = trigger.to_state.attributes %}
+      {% set who = (a.sender_name or a.sender_prefix or '?') | string %}
+      {% set text = (a.text or '') | string %}
+      {{ {'title': 'Mesh message',
+          'message': ('Mesh · ' ~ who ~ ': ' ~ text)
+                     | replace('&', '&amp;') | replace('<', '&lt;')} }}
+mode: queued
+```
+
+The name and the text are someone else's ([names and texts from the
+mesh](#names-and-texts-from-the-mesh)), so the recipe keeps them inert. The fixed start means the
+message is never one of the app's command words; `&` and `<` replaced, Android shows HTML tags
+as typed instead of rendering them; one template for the whole `data` keeps a text such as
+`None`, `[1, 2]` or `1.10` a text ([platform notes](platform-notes.md#home-assistant-mqtt)). The title is
+fixed: keep names and texts out of `title` and out of the keys the app acts on, such as `url`,
+`clickAction`, `image` and `icon_url`. A channel's messages come from anyone with its key: for
+them, add `channel` to `event_type` only for a channel of the household's own.
 
 Send a message to a contact target and wait until it is confirmed, as a script (paste it in the
 script editor, *Edit in YAML*). It sends through the target's notify entity, takes the `id` of
