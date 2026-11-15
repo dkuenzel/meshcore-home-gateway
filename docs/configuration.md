@@ -169,7 +169,7 @@ suffix of a direct message too, and duplicates are judged on the text without it
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `budget_s_per_hour` | `36` | seconds of transmission per hour for the gateway's messages (1 % of the hour), 0.001–3600; telemetry has its own lanes (`[telemetry]`) |
-| `burst_s` | `10` | seconds that may be spent at once, 5–3600 (a long packet at SF 8 / 62.5 kHz takes about 2 s) |
+| `burst_s` | `10` | seconds that may be spent at once, 5–3600 (a long message takes 2.1 s at EU/UK Narrow; slower presets need more: [Radio presets](#radio-presets)) |
 
 The airtime the gateway counts over any interval *T* stays below
 `burst_s + budget_s_per_hour × T / 3600`. The count is exact for direct sends and for flooded
@@ -182,6 +182,58 @@ The radio's own traffic (acknowledgements it sends, adverts) is not counted; in 
 869.40–869.65 MHz the device limit is 10 % of every hour. The radio has its own limiter, the
 *airtime factor*, which the firmware sets to 50 % and the managed profile to 10 % in that band
 (`[radio.profile]`, protocol.md section 7).
+
+## Radio presets
+
+How long a packet takes on air depends on the radio's preset: its bandwidth, spreading factor
+(SF) and coding rate (CR). Two rules of the gateway depend on it:
+
+* A message that needs more airtime than `[airtime] burst_s` fails at once
+  (`exceeds_airtime_burst`): the budget could never pay it.
+* An advert sent on request goes only while the budget still holds one long message beside it,
+  so that an alert after the advert goes out at once
+  ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)). Where the
+  advert and a long message do not fit into `burst_s` together, no advert can go
+  (`advert` refused with `airtime_budget`, also with a full budget).
+
+At each connect the gateway computes both at the radio's settings, with the radio's name as it
+is, and warns in its log when `burst_s` is too small: "a long direct message takes … s", and "an
+advert nearby and a long direct message take … s …; set burst_s to N", N the burst that holds
+both, rounded up. `meshcore-home-gateway probe` prints the same on its line `burst`, against
+the `burst_s` of the file `--config` names, or the default without one. `check-config` does not
+read the radio and cannot say it.
+
+The table gives the times for some presets: a long message is 160 bytes, flooded, with the path
+packet the radio sends back after its acknowledgement; the advert carries a name of 31 bytes,
+the longest (a shorter name takes a little less). The last column says what the default
+`burst_s = 10` lets through, and the `burst_s` that holds both. `tests/test_docs.py` computes
+every number with the gateway's own functions (`core/airtime.py`), so the table follows the
+code.
+
+| Preset | A long message | The advert | Both | With `burst_s = 10` |
+| --- | --- | --- | --- | --- |
+| 62.5 kHz, SF 7, CR 4/5 | 0.82 s | 0.49 s | 1.31 s | both fit |
+| 62.5 kHz, SF 7, CR 4/8 | 1.20 s | 0.73 s | 1.93 s | both fit |
+| 62.5 kHz, SF 8, CR 4/8 (EU/UK Narrow) | 2.13 s | 1.30 s | 3.43 s | both fit |
+| 250 kHz, SF 11, CR 4/5 | 2.06 s | 1.26 s | 3.32 s | both fit |
+| 62.5 kHz, SF 9, CR 4/8 | 3.61 s | 2.20 s | 5.81 s | both fit |
+| 62.5 kHz, SF 10, CR 4/5 | 5.35 s | 3.25 s | 8.60 s | both fit |
+| 62.5 kHz, SF 10, CR 4/6 | 6.23 s | 3.81 s | 10.04 s | no advert; `burst_s = 11` |
+| 62.5 kHz, SF 10, CR 4/8 | 8.00 s | 4.92 s | 12.92 s | no advert; `burst_s = 13` |
+| 125 kHz, SF 11, CR 4/8 | 7.22 s | 4.40 s | 11.61 s | no advert; `burst_s = 12` |
+| 125 kHz, SF 12, CR 4/5 | 9.06 s | 5.35 s | 14.41 s | no advert; `burst_s = 15` |
+| 125 kHz, SF 12, CR 4/8 | 13.39 s | 8.00 s | 21.39 s | no long message, no advert; `burst_s = 22` |
+| 62.5 kHz, SF 11, CR 4/5 | 9.72 s | 5.84 s | 15.56 s | no advert; `burst_s = 16` |
+| 62.5 kHz, SF 11, CR 4/8 | 14.43 s | 8.79 s | 23.22 s | no long message, no advert; `burst_s = 24` |
+| 62.5 kHz, SF 12, CR 4/5 | 18.12 s | 10.70 s | 28.82 s | no long message, no advert; `burst_s = 29` |
+| 62.5 kHz, SF 12, CR 4/8 | 26.77 s | 16.01 s | 42.78 s | no long message, no advert; `burst_s = 43` |
+
+`burst_s` shapes only the short peaks of what the gateway asks the radio to send: over any time
+*T* it sends at most `burst_s + budget_s_per_hour × T / 3600` ([`[airtime]`](#airtime)). A
+larger burst lets a slow preset send an alert of 160 bytes and an advert at all; it does not
+raise the hourly budget. The radio's own limiter, the airtime factor that the managed profile
+sets to 10 % in the band 869.40–869.65 MHz, stays the bound of what the radio sends
+([`[radio.profile]`](#radioprofile)).
 
 ## `[commands]`
 

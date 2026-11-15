@@ -22,6 +22,7 @@ import contextlib
 import heapq
 import itertools
 import logging
+import math
 import secrets
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
@@ -30,6 +31,7 @@ from typing import Any, TypeVar
 from meshcore_home_gateway.config import Config
 from meshcore_home_gateway.core.airtime import (
     LoRaParams,
+    advert_reserve_s,
     channel_message_bytes,
     direct_attempt_airtime_s,
     shortest_acknowledgement_s,
@@ -987,7 +989,7 @@ class Delivery:
 
     def check_radio(self, session: RadioPort) -> None:
         """At a connect: warn about targets the radio does not know and a burst that is too
-        small."""
+        small, for a long message or for an advert beside one (airtime_free, #181)."""
         info = session.info
         if info is not None:
             longest = direct_attempt_airtime_s(MAX_TEXT_BYTES, 0, True, info.lora)
@@ -998,6 +1000,16 @@ class Delivery:
                     "than airtime.burst_s (%.1f s): such messages fail (exceeds_airtime_burst)",
                     longest,
                     self.budget.capacity_s,
+                )
+            both = advert_reserve_s(len(info.name.encode("utf-8")), MAX_TEXT_BYTES, info.lora)
+            if both > self.budget.capacity_s:
+                log.warning(
+                    "an advert nearby and a long direct message take %.1f s of airtime at the "
+                    "radio's settings, more than airtime.burst_s (%.1f s): no advert nearby can "
+                    "go (refused: airtime_budget); set burst_s to %d",
+                    both,
+                    self.budget.capacity_s,
+                    math.ceil(both),
                 )
         for target in self._targets.values():
             if target.kind is MessageKind.CHANNEL and target.channel_index not in session.channels:

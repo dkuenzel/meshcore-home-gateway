@@ -8,6 +8,7 @@ import asyncio
 import dataclasses
 import json
 import logging
+import math
 import re
 import time
 from pathlib import Path
@@ -477,6 +478,80 @@ def test_at_a_slow_preset_where_both_do_not_fit_the_advert_is_refused(
     with caplog.at_level(logging.INFO):
         scenario(main)
     assert "for airtime" not in caplog.text
+
+
+SF10 = meshcore_lora(62_500, 10, 8)
+SF10_BOTH_S = time_on_air_s(self_advert_bytes(len(b"Bridge")), SF10) + direct_attempt_airtime_s(
+    MAX_TEXT_BYTES, 0, True, SF10
+)  # 4.13 s and 8.00 s
+
+
+def burst_warnings(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [
+        r.getMessage() for r in caplog.records if "an advert nearby and a long" in r.getMessage()
+    ]
+
+
+def test_the_connect_names_the_burst_an_advert_beside_a_long_message_needs(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """#181: at SF 10 the advert of the radio's name and a long message take 12.1 s together,
+    more than the default burst of 10 s, so no advert can ever go: the connect says so and names
+    the burst that holds both, rounded up. With that burst the warning stays away, the advert
+    goes, and a long alert after it waits for no airtime."""
+    needed = math.ceil(SF10_BOTH_S)
+    assert needed == 13
+
+    async def main(burst: str) -> None:
+        radio = EmulatedRadio(contacts=[ALICE], spreading_factor=10)
+        alerts = make_config(messages='alert_targets = ["alice"]', airtime=burst)
+        async with running(alerts, radio, tmp_path / (burst or "default")) as (_b, bus, _n):
+            ask(bus)
+            event = await outcome(bus)
+            bus.send("alice", ALERT)
+            await bus.wait_for("/delivery", lambda d: d["event_type"] == "sent")
+            want = ("refused", "airtime_budget") if not burst else ("sent", None)
+            assert (event["event_type"], event["reason"]) == want
+
+    with caplog.at_level(logging.INFO):
+        scenario(lambda: main(""))
+    assert burst_warnings(caplog) == [
+        (
+            f"an advert nearby and a long direct message take {SF10_BOTH_S:.1f} s of airtime at "
+            "the radio's settings, more than airtime.burst_s (10.0 s): no advert nearby can go "
+            f"(refused: airtime_budget); set burst_s to {needed}"
+        )
+    ]
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        scenario(lambda: main(f"burst_s = {needed}"))
+    assert burst_warnings(caplog) == []
+    assert "for airtime" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("spreading_factor", "burst", "warned"),
+    [(8, "", False), (10, "burst_s = 12", True), (10, "burst_s = 12.2", False), (12, "", True)],
+)
+def test_the_burst_warning_follows_the_preset_and_the_burst(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    spreading_factor: int,
+    burst: str,
+    warned: bool,
+) -> None:
+    """None at EU/UK Narrow (3.2 s with the radio's name); at SF 10 the line lies between 12 and
+    12.2 s; at SF 12, where a long message alone exceeds the burst, it comes beside that
+    warning, which names no burst."""
+    radio = EmulatedRadio(spreading_factor=spreading_factor)
+
+    async def main() -> None:
+        async with running(config(airtime=burst), radio, tmp_path):
+            pass
+
+    with caplog.at_level(logging.INFO):
+        scenario(main)
+    assert len(burst_warnings(caplog)) == (1 if warned else 0)
 
 
 def test_an_advert_longer_than_the_burst_is_refused(tmp_path: Path) -> None:

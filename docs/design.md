@@ -458,7 +458,9 @@ sequenceDiagram
    waits until the budget allows it; if the wait would exceed the remaining time to live, the
    message expires. A packet longer than `burst_s` could never be sent: it fails at once
    (`exceeds_airtime_burst`), and the bridge warns at connect if the radio's settings make long
-   messages that slow.
+   messages that slow, or if its advert and a long message beside it do not fit into `burst_s`
+   together, which no advert on request could then pass (ADR 0033); that warning names the
+   `burst_s` that holds both ([Radio presets](configuration.md#radio-presets)).
 7. **Send and confirm.** Channel messages are final at `sent`. Direct messages wait for the
    acknowledgement: 1.2 times the radio's estimate from `SENT`, bounded to 5..60 s, like the
    MeshCore Python client. Without an acknowledgement the bridge retries with the **same

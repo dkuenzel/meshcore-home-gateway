@@ -486,6 +486,51 @@ def test_probe_leaves_an_unreadable_state_file_alone(
     assert not (tmp_path / "state.json.corrupt").exists()
 
 
+FIT = "burst      an advert nearby ({}) and a long message ({}) fit into airtime.burst_s ({})"
+ADVERT_ONLY = (
+    "burst      an advert nearby (4.1 s) and a long message (8.0 s) take more than "
+    "airtime.burst_s (10 s): no advert nearby can go; set burst_s to 13"
+)
+NEITHER = (
+    "burst      a long message (26.8 s) takes more than airtime.burst_s (10 s): long messages "
+    "fail and no advert nearby can go; set burst_s to 41"
+)
+
+
+@pytest.mark.parametrize(
+    ("spreading_factor", "burst", "line"),
+    [
+        (8, None, FIT.format("1.1 s", "2.1 s", "10 s")),
+        (10, None, ADVERT_ONLY),
+        (10, 13, FIT.format("4.1 s", "8.0 s", "13 s")),
+        (12, None, NEITHER),
+    ],
+)
+def test_probe_says_whether_an_advert_and_a_long_message_fit_the_burst(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    spreading_factor: int,
+    burst: int | None,
+    line: str,
+) -> None:
+    """#181: the airtimes at the radio's settings, with its name, against airtime.burst_s of the
+    configuration (without one its default), and the burst that holds both, as the connect warns."""
+    radio = EmulatedRadio(spreading_factor=spreading_factor)
+    config = []
+    if burst is not None:
+        written = tmp_path / "config.toml"
+        text = EXAMPLE.read_text(encoding="utf-8").replace("burst_s = 10", f"burst_s = {burst}")
+        written.write_text(text, encoding="utf-8")
+        config = ["--config", str(written)]
+    with TcpRadioServer(radio) as server:
+        address = f"127.0.0.1:{server.port}"
+        state = ["--state-dir", str(tmp_path)]
+        assert main(["probe", "--tcp", address, *config, *state]) == EX_OK
+        assert f"\n{line}\n" in capsys.readouterr().out
+        assert main(["probe", "--tcp", address, "--json", *config, *state]) == EX_OK
+        assert "burst" not in capsys.readouterr().out  # text for people only, no new key
+
+
 def test_probe_refuses_a_bad_configuration(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:

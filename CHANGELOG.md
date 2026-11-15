@@ -8,6 +8,16 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+### Fixed
+
+- At a slow radio preset, where the radio's advert and a long message do not fit into
+  `[airtime] burst_s` together, an advert sent on request was refused every time
+  (`airtime_budget`) and nothing said why. Each connect now warns in the log and names the
+  `burst_s` that holds both; `probe` prints both times on air on its line `burst`, against the
+  configuration's `burst_s`. The new section *Radio presets* of
+  [configuration.md](docs/configuration.md#radio-presets) gives the times and the `burst_s` for
+  common presets, also where a long message alone exceeds the default (#181).
+
 ## [2.2.0] - 2026-11-16
 
 The radio sends its advert to the radios nearby on request, also from a button in Home

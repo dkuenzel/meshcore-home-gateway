@@ -1027,6 +1027,36 @@ msgstr "beim nächsten Verbinden als Favorit hinzugefügt"
 msgid "airtime    factor {factor:g}: the radio sends at most {duty:.3g} %"
 msgstr "Sendezeit   Faktor {factor:g}: das Funkgerät sendet höchstens {duty:.3g} %"
 
+#. a line of probe's report, its value in the column of the other lines: whether
+#. the radio's advert, sent on request, and a long message (160 bytes, flooded) fit into the
+#. setting airtime.burst_s together, at the radio's settings; {advert} and {message} are their
+#. times on air in seconds, {burst} the setting, {needed} the setting that would hold both. Without
+#. room for both, the gateway sends no advert; a long message beyond the burst fails
+#: src/meshcore_home_gateway/cli/probe.py
+#, python-brace-format
+msgid "burst      a long message ({message:.1f} s) takes more than airtime.burst_s ({burst:g} s): long messages fail and no advert nearby can go; set burst_s to {needed}"
+msgstr "Burst       eine lange Nachricht ({message:.1f} s) braucht mehr als airtime.burst_s ({burst:g} s): lange Nachrichten schlagen fehl, und kein Advert in der Nähe kann gesendet werden; burst_s auf {needed} setzen"
+
+#. a line of probe's report, its value in the column of the other lines: whether
+#. the radio's advert, sent on request, and a long message (160 bytes, flooded) fit into the
+#. setting airtime.burst_s together, at the radio's settings; {advert} and {message} are their
+#. times on air in seconds, {burst} the setting, {needed} the setting that would hold both. Without
+#. room for both, the gateway sends no advert; a long message beyond the burst fails
+#: src/meshcore_home_gateway/cli/probe.py
+#, python-brace-format
+msgid "burst      an advert nearby ({advert:.1f} s) and a long message ({message:.1f} s) fit into airtime.burst_s ({burst:g} s)"
+msgstr "Burst       ein Advert in der Nähe ({advert:.1f} s) und eine lange Nachricht ({message:.1f} s) passen zusammen in airtime.burst_s ({burst:g} s)"
+
+#. a line of probe's report, its value in the column of the other lines: whether
+#. the radio's advert, sent on request, and a long message (160 bytes, flooded) fit into the
+#. setting airtime.burst_s together, at the radio's settings; {advert} and {message} are their
+#. times on air in seconds, {burst} the setting, {needed} the setting that would hold both. Without
+#. room for both, the gateway sends no advert; a long message beyond the burst fails
+#: src/meshcore_home_gateway/cli/probe.py
+#, python-brace-format
+msgid "burst      an advert nearby ({advert:.1f} s) and a long message ({message:.1f} s) take more than airtime.burst_s ({burst:g} s): no advert nearby can go; set burst_s to {needed}"
+msgstr "Burst       ein Advert in der Nähe ({advert:.1f} s) und eine lange Nachricht ({message:.1f} s) brauchen zusammen mehr als airtime.burst_s ({burst:g} s): kein Advert in der Nähe kann gesendet werden; burst_s auf {needed} setzen"
+
 #. what the gateway does about a setting of the radio that differs from the
 #. managed profile, in brackets after the setting's line
 #: src/meshcore_home_gateway/cli/probe.py

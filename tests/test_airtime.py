@@ -246,3 +246,17 @@ def test_this_radios_advert_is_103_bytes_and_its_name() -> None:
     assert airtime.self_advert_bytes(31) == 134
     assert airtime.self_advert_bytes(40) == 134  # the firmware cuts the name
     assert time_on_air_s(115, meshcore_lora(62_500, 8, 8)) == pytest.approx(1.164, abs=0.001)
+
+
+def test_an_advert_on_request_needs_a_long_message_beside_it() -> None:
+    """ADR 0033, #181: the budget pays the advert only while one flooded long message still fits
+    beside it, so the burst must hold both. At EU/UK Narrow, with the longest name, 1.30 s and
+    2.13 s; at 125 kHz, SF 12, CR 4/5 5.35 s and 9.06 s, more than the default burst of 10 s."""
+    eu, slow = meshcore_lora(62_500, 8, 8), meshcore_lora(125_000, 12, 5)
+    for p in (eu, slow):
+        advert = time_on_air_s(airtime.self_advert_bytes(31), p)
+        long_message = direct_attempt_airtime_s(160, 0, True, p)
+        assert airtime.advert_reserve_s(31, 160, p) == pytest.approx(advert + long_message)
+    assert airtime.advert_reserve_s(31, 160, eu) == pytest.approx(3.43, abs=0.005)
+    assert airtime.advert_reserve_s(31, 160, slow) == pytest.approx(14.41, abs=0.005)
+    assert airtime.advert_reserve_s(6, 160, slow) < airtime.advert_reserve_s(31, 160, slow)
