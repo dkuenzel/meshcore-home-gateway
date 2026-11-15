@@ -180,7 +180,7 @@ the bus.
 | [`docs/home-assistant.md`](docs/home-assistant.md) | Entities, discovery, example automations |
 | [`docs/configuration.md`](docs/configuration.md) | Every setting with default and meaning |
 | [`docs/companions.md`](docs/companions.md) | Setting up the household's companions for telemetry |
-| [`docs/deployment.md`](docs/deployment.md) | Proxmox installer, manual installation, updates, operations |
+| [`docs/deployment.md`](docs/deployment.md) | Proxmox installer, manual installation, updates, operations; [what the gateway does by itself, and what is left to you](docs/deployment.md#what-the-gateway-does-by-itself-and-what-is-left-to-you) |
 | [`docs/protocol.md`](docs/protocol.md) | The companion protocol subset, with firmware sources |
 | [`docs/testing.md`](docs/testing.md) | Test suites and the release check |
 | [`docs/platform-notes.md`](docs/platform-notes.md) | What we verified about Proxmox VE, whiptail, Mosquitto, Home Assistant and the firmware, with the evidence |

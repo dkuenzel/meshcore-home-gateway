@@ -745,6 +745,83 @@ updates wait for.
   its own: [`contrib/mqtt2prometheus`](../contrib/mqtt2prometheus/README.md) has configurations
   for mqtt2prometheus that read `state`, `stats` and the contacts' documents.
 
+### What the gateway does by itself, and what is left to you
+
+The gateway keeps running without the household. Some steps stay with people on purpose: they
+grant a right, give consent, delete data, or touch the radio's identity. A few others are left
+to the administrator for now.
+
+**By itself:**
+
+* **The radio's clock** follows the host's: moved forward at connect and every minute, and set
+  back by a restart of the radio when it is a minute to an hour ahead
+  ([`[radio]`](configuration.md#radio)).
+* **The radio's profile** is compared at every connect and set back where the radio drifted; the
+  contact targets and command senders stay on the radio as favourites
+  ([`[radio.profile]`](configuration.md#radioprofile)).
+* **Asking for position and battery:** the companions the household includes, and the contact
+  targets and command senders, are asked on a schedule, in airtime lanes of their own; their
+  values expire when they stop answering ([`[telemetry]`](configuration.md#telemetry)).
+* **Retries and reconnects:** a direct message is sent again until it is acknowledged, at most
+  `max_attempts` times, and flooded after `flood_after` unacknowledged attempts
+  ([`[messages]`](configuration.md#messages)). The radio and the broker are reconnected without a
+  restart, systemd restarts a crashed or hung service, and a stop keeps the queue for the next
+  start ([Operations](#4-operations)).
+* **Warnings** go to the log, to `state` and to Home Assistant (*Gateway degraded*, and the
+  problems on the dashboard's *Overview*); `doctor` checks what is easily missed. At every connect
+  the log says when `[airtime] burst_s` cannot hold an alert and an advert at the radio's preset
+  ([Radio presets](configuration.md#radio-presets)).
+* **Cleanup:** the history ages out by its limits ([`[history]`](configuration.md#history)); a
+  draft unchanged for 15 minutes is emptied
+  ([Writing and sending](home-assistant.md#writing-and-sending)); a retained document that
+  another client overwrites is put back ([Securing the broker](mqtt-api.md#securing-the-broker));
+  the entities come back after Home Assistant restarts
+  ([How discovery behaves](home-assistant.md#how-discovery-behaves)); and the installer's
+  container installs Debian's security updates every day (above).
+
+**Left to you:**
+
+* **Rights at the broker.** The gateway holds none. The broker's owner gives it a user and, with
+  commands, an ACL ([Securing the broker](mqtt-api.md#securing-the-broker)); Home Assistant needs
+  its MQTT integration once ([add it](https://my.home-assistant.io/redirect/config_flow_start/?domain=mqtt)).
+  With Home Assistant's Mosquitto add-on, a Home Assistant user, by its login name, can be the
+  gateway's user ([users](https://my.home-assistant.io/redirect/users/)). With an ACL, the
+  add-on's documentation says that Home Assistant expects its users `homeassistant` and `addons`
+  to read and write every topic, and asks for `topic readwrite #` for both
+  ([Access Control Lists](https://github.com/home-assistant/addons/blob/master/mosquitto/DOCS.md#access-control-lists-acls),
+  read on 2026-11-15). The lines the example ACL gives Home Assistant's user, and those a
+  release adds, then matter for another broker, or for a Home Assistant that logs in with a user
+  of its own.
+* **Rights in Home Assistant and over the mesh.** What Home Assistant's users may change
+  (`[homeassistant] controls`, `radio_controls`), who may command (`[commands] senders` and
+  `words`, chosen at installation, changed with `--reconfigure`), and each sender's code secret
+  (`commands enrol` and `commands revoke` in the container, then a restart)
+  ([`[commands]`](configuration.md#commands)). Neither Home Assistant nor the mesh can change
+  them.
+* **Consent.** A person allows the gateway to ask for their position on their own device, in the
+  MeshCore app; the gateway can neither read nor set that
+  ([companions.md](companions.md#on-each-companion)). Whom it asks is the household's switch
+  *Telemetry* on each companion
+  ([Telemetry](home-assistant.md#telemetry-of-the-households-companions)).
+* **Deleting.** Removing a contact keeps its chat and the history of it;
+  `contacts telemetry --forget KEY off` deletes its readings and its positions from telemetry at
+  once ([what the gateway keeps](privacy.md)). Home Assistant keeps a record of its own
+  ([Privacy](home-assistant.md#privacy)).
+* **The radio's identity, firmware and settings.** The gateway never replaces or exports the
+  radio's key and never flashes firmware: a factory reset gives the radio a new key, which every
+  companion must add again, and firmware goes on by cable ([Boards](#boards)). The preset, the
+  transmit power and the channels are set with MeshCore's tools, by the rules for your band
+  ([below](#changing-the-radios-settings), [Local rules](configuration.md#local-rules)). After
+  the radio was plugged in again, restart the container
+  ([What the script does](#what-the-script-does)).
+* **Updates.** `--update` runs on the Proxmox host
+  ([Update, reconfigure, remove](#update-reconfigure-remove)); a new major version names its
+  steps in the changelog. After an update whose changelog says so (each minor and major version),
+  after a new target and after contacts got a device, make the dashboard again and paste it into
+  Home Assistant ([Dashboard](home-assistant.md#dashboard)). After Debian updated Python or
+  paho-mqtt, restart the service (above). The dashboard and the update come back with releases;
+  #169 (the dashboard) and #185 (fewer manual steps) track taking them off the administrator.
+
 ### Changing the radio's settings
 
 The gateway writes only what its managed profile names ([`[radio.profile]`](configuration.md#radioprofile));
