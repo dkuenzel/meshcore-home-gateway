@@ -760,10 +760,12 @@ python3 -m venv /root/meshcore-cli                         # an environment of i
 systemctl start meshcore-home-gateway
 ```
 
-A radio over TCP is reached the same way from any computer in its network
-(`meshcli -t <address> -p 5000 infos`), also with the service stopped: else the gateway takes the
-link back within a second. This page was written against meshcore-cli 1.6.10 from its source;
-the project does not test it.
+A radio over TCP is reached the same way from the gateway's container, the only host that should
+reach it ([`[radio]`](configuration.md#radio)), with
+`/root/meshcore-cli/bin/meshcli -t <address> -p 5000 infos`. Stop the service first here too:
+else the gateway takes the link back within a second. Another computer that reaches the radio's
+port could read its private key, so do not open the radio's network to one for this. This page
+was written against meshcore-cli 1.6.10 from its source; the project does not test it.
 
 * **Where it comes from.** meshcore-cli is not in Debian 13. It comes from PyPI with MeshCore's
   Python library `meshcore` and their dependencies (`bleak`, `prompt_toolkit`, `requests`,
