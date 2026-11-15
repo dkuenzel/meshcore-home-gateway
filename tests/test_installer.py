@@ -39,6 +39,7 @@ import pytest
 
 from meshcore_home_gateway import __version__
 from meshcore_home_gateway.config import Config, parse_config, render_config
+from tests import dialog_texts
 
 ROOT = Path(__file__).resolve().parent.parent
 BASH = shutil.which("bash") or "/bin/bash"
@@ -634,7 +635,7 @@ def test_radio_over_tcp_needs_no_device(host: Host) -> None:
     assert config.radio.tcp_unauthenticated is True
     # the summary says what was chosen (OPS-010), in place of the note on re-plugging a USB radio
     assert (
-        "The radio is reached over TCP (192.0.2.30:5001) without authentication: whoever "
+        "The radio is reached over TCP without authentication (192.0.2.30:5001): whoever "
         "reaches it can control it and read its private key."
     ) in result.stderr
     assert "re-plugging" not in result.stderr
@@ -881,7 +882,7 @@ def test_an_ipv6_radio_address_reaches_probe_in_brackets(host: Host) -> None:
     assert result.returncode == 0, result.stderr
     assert any("probe --tcp [2001:db8::30]:5001 --list channels" in c for c in host.inside())
     assert host.config().radio.host == "2001:db8::30"
-    assert "The radio is reached over TCP ([2001:db8::30]:5001) without" in result.stderr
+    assert "over TCP without authentication ([2001:db8::30]:5001): whoever" in result.stderr
 
 
 def other_container(host: Host, ctid: str, line: str) -> None:
@@ -1173,6 +1174,38 @@ def test_a_refused_login_offers_the_broker_settings_again(host: Host) -> None:
     assert host.config().mqtt.password == "right"
     assert len([c for c in host.inside() if "--broker" in c]) == 2
     assert "login accepted" in result.stderr
+
+
+def test_a_refused_login_asks_first_and_logs_the_whole_reason(host: Host) -> None:
+    """The question comes before the program's message, so that a message longer than the box
+    shows cuts no question; the message is logged before the box as well (#190)."""
+    dialog = [
+        "default",
+        str(host.serial),
+        "broker.example.org",
+        "no",
+        "bridge",
+        "wrong",
+        "yes",
+        "yes",  # the login failed: enter the broker settings again
+        "broker.example.org",
+        "no",
+        "1883",
+        "bridge",
+        "right",
+        "1",
+        "",
+        "",
+    ]
+    result = run_installer(host, dialog=dialog, env={"BROKER_ANSWERS": "1 0"})
+    assert result.returncode == 0, result.stderr
+    (question,) = [c for c in host.dialogs() if any("The broker login failed" in a for a in c)]
+    text = question[question.index("--") + 1]
+    assert text.startswith("The broker login failed. Enter the broker settings again? (No: ")
+    assert text.endswith("\n\nbroker refused the connection: Not authorized")
+    assert question[-2:] == ["24", "78"]
+    warning = "warning: the broker login failed: broker refused the connection: Not authorized"
+    assert warning in result.stderr
 
 
 def test_a_refused_login_can_be_kept(host: Host) -> None:
@@ -2728,8 +2761,70 @@ def test_the_plan_is_logged_and_shown_line_by_line(host: Host) -> None:
     assert result.returncode == 0, result.stderr
     plan = "At its next connect the service sets the radio:\n  manual_add: false -> true\n"
     assert "meshcore-home-gateway: " + plan.replace("\n", "\n  ") + "\n" in result.stderr
-    boxes = [c[-3] for c in host.calls("whiptail") if "--msgbox" in c and c[-2:] == ["20", "78"]]
-    assert boxes == [plan]
+    boxes = [c for c in host.calls("whiptail") if any("sets the radio" in a for a in c)]
+    assert [box[-3] for box in boxes] == [plan]
+    assert boxes[0][-2:] == ["24", "78"]
+
+
+@pytest.mark.parametrize(
+    ("contacts", "scrolls"),
+    [(dialog_texts.PLAN_CONTACTS, False), (dialog_texts.PLAN_CONTACTS + 1, True)],
+)
+def test_a_plan_longer_than_its_box_scrolls(host: Host, contacts: int, scrolls: bool) -> None:
+    """Up to PLAN_CONTACTS contacts the plan's box holds every line in each language
+    (tests/test_dialog_texts.py); with more, its text scrolls rather than being cut (#190)."""
+    plan = "name\\tGateway\\ntested\\tyes\\nwrites\\tyes\\n" + "".join(
+        f"contact\\t{number:064x}\\tadd\\tHandheld {number}\\n" for number in range(contacts)
+    )
+    dialog = [
+        "default",
+        str(host.serial),
+        "broker.example.org",
+        "no",
+        "bridge",
+        "pw",
+        "yes",
+        "1",
+        "",
+        "",
+    ]
+    result = run_installer(host, dialog=dialog, env={"PROBE_PLAN": plan})
+    assert result.returncode == 0, result.stderr
+    (box,) = [c for c in host.calls("whiptail") if any("service sets the radio" in a for a in c)]
+    assert box[-2:] == ["24", "78"]
+    assert ("--scrolltext" in box) is scrolls
+
+
+def test_the_menus_show_their_items_and_shorten_a_long_device_name(host: Host) -> None:
+    """A menu shows its items without their tags (--notags), which are the answers' values; a
+    device's name longer than 72 columns, as a CP2102N's with its serial number, keeps its start
+    and its end, since whiptail would run it over the box's border (#190)."""
+    long = "usb-Example_Vendor_USB_to_UART_Bridge_Controller_" + "0123456789abcdef" * 2
+    long += "-if00-port0"
+    (host.serial.parent / long).write_text("", encoding="utf-8")
+    dialog = [
+        "default",
+        str(host.serial),
+        "broker.example.org",
+        "no",
+        "bridge",
+        "pw",
+        "yes",
+        "1",
+        "",
+        "",
+    ]
+    result = run_installer(host, dialog=dialog)
+    assert result.returncode == 0, result.stderr
+    menus = [c for c in host.calls("whiptail") if "--menu" in c]
+    assert len(menus) == 2  # the setup and the radio
+    assert all("--notags" in menu for menu in menus)
+    radio = menus[1]
+    start = radio.index("--menu") + 6  # --menu -- TEXT HEIGHT WIDTH LIST-HEIGHT
+    rows = dict(zip(radio[start::2], radio[start + 1 :: 2], strict=True))
+    assert rows[str(host.serial)] == host.serial.name
+    assert rows[str(host.serial.parent / long)] == f"{long[:34]}...{long[-35:]}"
+    assert rows["tcp"] == "radio with WiFi firmware (TCP, no authentication)"
 
 
 def test_a_name_the_radio_cut_too_long_is_kept_as_found(host: Host) -> None:

@@ -46,6 +46,10 @@ STATE_DIR=/var/lib/meshcore-home-gateway   # the service's state (StateDirectory
 STAGE=/root/meshcore-home-gateway-src      # the program before its installation, in the container
 ANSWERS_FILE=/root/meshcore-home-gateway-answers
 JOURNALD_CONF=/etc/systemd/journald.conf.d/meshcore-home-gateway.conf   # the journal's limit
+# whiptail cuts what does not fit its box without a mark (tests/test_dialog_texts.py): a menu item
+# runs over the box's border beyond 72 columns; the plan's box holds this many contacts
+ITEM_COLUMNS=72
+PLAN_CONTACTS=4
 # pct exec passes the host's environment into the container; commands start from a clean one
 CT_ENV=(env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8)
 
@@ -55,7 +59,7 @@ ct.gateway ct.template_storage radio.choice targets.channels targets.contacts "
 # --- language packs: written by `make translations` from deploy/proxmox/locale/*.po; do not edit
 L10N_ORDER=(en de)
 declare -A L10N_NAME=([en]=English [de]=Deutsch)
-declare -A L10N_SHA256=([de]=24c6d9f292b06bfe82d2ef3b8ec08af79f977a50f125ff220bbfa74075574ef0)
+declare -A L10N_SHA256=([de]=ae5ed578f3ebd15464d4966de6cb07753bdece9a1fdd5b50095382c96f97a339)
 # --- end of language packs
 L10N_MENU=()   # code, name, code, name, ...: the items of the language menus
 for code in "${L10N_ORDER[@]}"; do L10N_MENU+=("$code" "${L10N_NAME[$code]}"); done
@@ -216,9 +220,9 @@ show_dialog() {  # show_dialog KIND TEXT DEFAULT [CHOICE ...]: a dialog, whateve
       else
         result=false
       fi ;;
-    menu)
-      result=$(whiptail --title "$TITLE" --default-item "$default" --menu -- "$text" 20 78 10 \
-        "$@" 3>&1 1>&2 2>&3) ;;
+    menu)  # the items alone: a tag (the answer's value) would take half of each row
+      result=$(whiptail --title "$TITLE" --notags --default-item "$default" --menu -- "$text" \
+        20 78 10 "$@" 3>&1 1>&2 2>&3) ;;
     checklist)
       result=$(whiptail --title "$TITLE" --separate-output --checklist -- "$text" 20 78 10 \
         "$@" 3>&1 1>&2 2>&3 | paste -sd, -) ;;
@@ -531,14 +535,12 @@ check_broker() {  # check_broker CTID: log in as the service will, before the ra
         ask_broker_again
         continue ;;
     esac
+    # the program's message may be longer than the box shows: logged first, and after the question
+    log "warning: the broker login failed: $reason"
     # Translators: {reason} is the program's message, in this language too.
-    if (( ! INTERACTIVE )) || ! whiptail --title "$TITLE" --yesno -- "$(t 'The broker login failed:
+    if (( ! INTERACTIVE )) || ! whiptail --title "$TITLE" --yesno -- "$(t 'The broker login failed. Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes the settings later.)
 
-{reason}
-
-Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes the settings later.)' \
-        reason "$reason")" 20 78 >&2; then
-      log "warning: the broker login failed: $reason"
+{reason}' reason "$reason")" 24 78 >&2; then
       log "the service keeps trying; change the broker settings with --reconfigure $ctid"
       BROKER_LOGIN=failed
       return 0
@@ -896,10 +898,14 @@ limit_journal() {  # limit_journal CTID: the journal keeps at most 100 MB of the
 
 ask_radio() {
   local -a choices=()
-  local path radio
+  local path name radio
   shopt -s nullglob
   for path in "$SERIAL_DIR"/*; do
-    choices+=("$path" "$(basename -- "$path")")
+    name=$(basename -- "$path")
+    if (( ${#name} > ITEM_COLUMNS )); then   # its start and its end: the vendor, the serial number
+      name="${name:0:ITEM_COLUMNS/2-2}...${name: -(ITEM_COLUMNS/2-1)}"
+    fi
+    choices+=("$path" "$name")
   done
   shopt -u nullglob
   # Translators: security text (docs/translations.md): translate all of it, add nothing.
@@ -1296,7 +1302,12 @@ choose_profile() {  # the radio's name, and what the managed profile changes (AD
   # each line of the plan ends in a line break, which $(...) dropped
   log "${plan//$'\n'/$'\n'  }"$'\n  '
   if (( INTERACTIVE )); then
-    whiptail --title "$TITLE" --msgbox -- "$(plan_text t "$lines")"$'\n' 20 78 >&2 || true
+    local -a scroll=()
+    if (( $(grep -c '^contact' <<<"$lines" || true) > PLAN_CONTACTS )); then
+      scroll=(--scrolltext)   # with more contacts its text scrolls: nothing cut, Tab reaches Ok
+    fi
+    whiptail --title "$TITLE" "${scroll[@]}" --msgbox -- "$(plan_text t "$lines")"$'\n' 24 78 \
+      >&2 || true
   fi
 }
 
@@ -1505,7 +1516,7 @@ After re-plugging the radio: {command}' command "pct reboot $ctid")
   else
     probe_args   # the address as probe takes it: an IPv6 address in brackets
     # Translators: security text (docs/translations.md): translate all of it, add nothing.
-    text+=$'\n\n'$($say 'The radio is reached over TCP ({address}) without authentication: whoever reaches it can control it and read its private key.' \
+    text+=$'\n\n'$($say 'The radio is reached over TCP without authentication ({address}): whoever reaches it can control it and read its private key.' \
       address "${PROBE[1]}")
   fi
   printf '%s' "$text"

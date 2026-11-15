@@ -52,11 +52,21 @@ format, the command line and Home Assistant discovery are public interfaces
 - The installer cut off a text longer than its box without a mark. In German, the question before
   a radio over TCP without authentication ended at "TCP trotzdem verwenden": the question with
   `tcp_unauthenticated = true` and what *Nein* does were not shown. Its yes/no boxes of 12 rows
-  now have 14 and show 8 lines instead of 6. In German, the final message could also lose
-  the end of its warning about a radio over TCP when the login and the self-test took two lines
-  each; three of its results are shorter now. A new test wraps every text of every dialog in
-  every language as whiptail does, with the longest realistic values, and fails when one needs
-  more lines than its box shows (#190).
+  now have 14 and show 8 lines instead of 6. After a refused login, the program's message with
+  its warnings and hint pushed the question whether to enter the broker settings again out of
+  its box; the question now comes first, in a box of 24 rows, and the message is also logged.
+  The radio menu cut its item "radio with WiFi firmware (TCP, no authentication)" after "no aut"
+  as soon as a serial device was there, and the device's path and name to 37 columns: the menus
+  now show their items without their tags, and a device's name longer than 72 characters keeps
+  its start and its end. The plan for the radio's settings lost contacts beyond three; its box
+  has 24 rows and scrolls with more than four. In German, the final message could lose the end
+  of its warning about a radio over TCP, when the login and the self-test took two lines each or
+  the radio's IPv6 address was written out in full; three of its results are shorter, and the
+  address stands at the end of the warning's first clause, where an address of up to 75
+  characters with its port cuts nothing. A new test wraps every text of every dialog in every
+  language as whiptail does, with the longest realistic values and the program's messages in
+  that language, lays out the rows of every menu, and fails when a text needs more lines than
+  its box shows or a menu cuts a row (#190).
 - The dashboard stated one region's rule as a fact: *Gateway*'s fold *What the graph shows* and
   the row *Airtime budget* on *Settings* said that the law allows a radio only a share of each
   hour, and *Settings* spoke of settings that protect the law. The gateway restricts no radio

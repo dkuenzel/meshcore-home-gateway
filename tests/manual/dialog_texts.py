@@ -10,7 +10,10 @@ screen and compares it with the model, line by line:
    it, and nothing after it;
 2. the same text in the dialog's own box on a terminal of 80 x 24: the lines the model says the
    box shows, and nothing after them;
-3. the measured cases of `tests/test_dialog_texts.py` (MEASURED), which pin the model's corners.
+3. the measured cases of `tests/test_dialog_texts.py` (MEASURED), which pin the model's corners;
+4. every menu's rows in every language, with the widest of their values, on a terminal of
+   80 x 24, and the measured rows (MEASURED_ROWS): which tags and items whiptail shows whole,
+   inside the box's border, against the ones the model says it cuts.
 
     .venv/bin/python -I tests/manual/dialog_texts.py [--jobs N] [--report FILE]
 
@@ -37,7 +40,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / "src"), str(ROOT)]
 
 from tests import dialog_texts as model  # noqa: E402
-from tests.test_dialog_texts import MEASURED  # noqa: E402
+from tests.test_dialog_texts import MEASURED, MEASURED_ROWS  # noqa: E402
 
 SOCKET = f"mhg-dialog-texts-{os.getpid()}"
 TITLE = "meshcore-home-gateway"
@@ -56,13 +59,17 @@ def tmux(*args: str) -> str:
     ).stdout
 
 
-def screen(box: model.Box, text: str, columns: int, rows: int) -> list[str]:
-    """The terminal's rows once whiptail has drawn `box` with `text` and waits for a key."""
+def screen(
+    box: model.Box, text: str, columns: int, rows: int, items: Sequence[str] = ()
+) -> list[str]:
+    """The terminal's rows once whiptail has drawn `box` with `text` (and a menu's `items`, tag
+    and item in turn) and waits for a key."""
     kind = ["--scrolltext"] if box.scroll else []
     kind += ["--fb"] if box.full_buttons else []
+    kind += [] if box.tags else ["--notags"]
     args = ["--title", TITLE, *kind, f"--{box.kind}", "--", text, str(box.height), str(box.width)]
     if box.kind in LIST_ITEMS:
-        args += [str(box.list_height), *LIST_ITEMS[box.kind]]
+        args += [str(box.list_height), *(items or LIST_ITEMS[box.kind])]
     command = shlex.join(["env", "LC_ALL=C.UTF-8", "whiptail", *args])
     session = f"s{next(_names)}"
     tmux("new-session", "-d", "-s", session, "-x", str(columns), "-y", str(rows), command)
@@ -112,7 +119,9 @@ def check(language: str, dialog: model.Dialog, text: str) -> Result:
     box = dialog.box
     needed = len(box.layout(text))
     taller = box.height + max(needed + 1 - box.lines, 0)
-    tall = model.Box(box.kind, taller, box.width, box.list_height, box.scroll, box.full_buttons)
+    tall = model.Box(
+        box.kind, taller, box.width, box.list_height, box.scroll, box.full_buttons, box.tags
+    )
     whole, _ = shows(tall, text, max(80, box.width + 2), taller + 2, needed)
     boxed, shown = shows(box, text, 80, 24, min(needed, box.lines))
     return Result(
@@ -139,13 +148,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         (language, dialog, text)
         for language, catalog in model.catalogs().items()
         for dialog in model.dialogs()
-        for text in dialog.text.render(model.translator(catalog))
+        for text in dialog.text.render(model.translator(catalog, language))
     ]
+    menus = [
+        (f"{language} {dialog.where()}", dialog.box, widest_rows(dialog, catalog, language))
+        for language, catalog in model.catalogs().items()
+        for dialog in model.dialogs()
+        if dialog.rows
+    ]
+    menus += [(f"measured {n}", box, list(rows)) for n, (box, rows, _) in enumerate(MEASURED_ROWS)]
     started = time.monotonic()
     try:
         with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
             results = list(pool.map(lambda task: check(*task), tasks))
             measured = list(pool.map(lambda case: measure(*case), MEASURED))
+            measured += list(pool.map(lambda menu: compare_rows(*menu), menus))
     finally:
         subprocess.run(  # noqa: S603 - our server
             ["tmux", "-L", SOCKET, "kill-server"],  # noqa: S607
@@ -153,7 +170,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             check=False,
         )
     report = summary(results, measured, (version.stdout or version.stderr).strip())
-    report += f"\n{len(tasks) * 2 + len(MEASURED)} runs of whiptail in "
+    report += f"\n{len(tasks) * 2 + len(MEASURED) + len(menus)} runs of whiptail in "
     report += f"{time.monotonic() - started:.0f} s.\n"
     print(report)
     if args.report:
@@ -168,6 +185,38 @@ def measure(box: model.Box, text: str, expected: Sequence[str]) -> tuple[bool, s
     count = len(expected)
     ok = shown[:count] == list(expected) and (len(shown) == count or not shown[count])
     return ok, f"{box.describe()} {text[:40]!r}: {'agrees' if ok else shown}"
+
+
+def widest_rows(
+    dialog: model.Dialog, catalog: model.Catalog, language: str
+) -> list[tuple[str, str]]:
+    """A menu's rows in a language, each with the widest of its values."""
+    translate = model.translator(catalog, language)
+    return [
+        (
+            max(tag.render(translate), key=model.text_width),
+            max(item.render(translate), key=model.text_width),
+        )
+        for tag, item in dialog.rows
+    ]
+
+
+def compare_rows(where: str, box: model.Box, rows: Sequence[tuple[str, str]]) -> tuple[bool, str]:
+    """Which of a menu's tags (shown only with tags) and items whiptail shows whole inside the
+    box's border, against the ones the model cuts: the rows the list shows before it scrolls."""
+    lines = screen(box, "Menu", 80, 24, [part for row in rows for part in row])
+    top = next(index for index, line in enumerate(lines) if "┌" in line)
+    bottom = next(index for index, line in enumerate(lines) if "└" in line)
+    left, right = lines[top].index("┌"), lines[top].index("┐")
+    inside = [
+        line[left + 1 : right] for line in lines[top + 1 : bottom] if line[right : right + 1] == "│"
+    ]
+    visible = rows[: box.list_height]
+    parts = [tag for tag, _ in visible] if box.tags else []
+    parts += [item for _, item in visible]
+    shown_cut = [part for part in parts if not any(part in line for line in inside)]
+    ok = shown_cut == [part for part in box.cut_items(rows) if part in parts]
+    return ok, f"{where} {box.describe()}: {'agrees' if ok else f'whiptail cuts {shown_cut}'}"
 
 
 def summary(results: Sequence[Result], measured: Sequence[tuple[bool, str]], version: str) -> str:

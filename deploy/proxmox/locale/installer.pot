@@ -188,11 +188,9 @@ msgstr ""
 #. {reason} is the program's message, in this language too.
 #, python-brace-format
 msgid ""
-"The broker login failed:\n"
+"The broker login failed. Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes the settings later.)\n"
 "\n"
-"{reason}\n"
-"\n"
-"Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes the settings later.)"
+"{reason}"
 msgstr ""
 
 #. {reason} is the program's message, in this language too.
@@ -211,7 +209,7 @@ msgstr ""
 
 #. security text (docs/translations.md): translate all of it, add nothing.
 #, python-brace-format
-msgid "The radio is reached over TCP ({address}) without authentication: whoever reaches it can control it and read its private key."
+msgid "The radio is reached over TCP without authentication ({address}): whoever reaches it can control it and read its private key."
 msgstr ""
 
 #. security text (docs/translations.md): translate all of it, add nothing.

@@ -6,15 +6,18 @@ deploy/proxmox/meshcore-home-gateway-lxc.sh with its box and its text in every l
 compares the model with the real whiptail. The model follows newt 0.52.24 (tag `r0-52-24`):
 `whiptail.c` cleanNewlines() and the box less 2 lines and columns (`:542`, `:555-556`),
 `textbox.c` expandTabs() and doReflow() (`:141-276`), and the text area of each kind of box in
-`dialogboxes.c` (`:90-113`, `:203`, `:318`, `:464`, `:561`). The installer runs whiptail under
-`LC_ALL=C.UTF-8`, whose wcwidth() and iswspace() it copies.
+`dialogboxes.c` (`:90-113`, `:203`, `:318`, `:464`, `:561`), and how a menu lays out its rows
+(`:329-367`). The installer runs whiptail under `LC_ALL=C.UTF-8`, whose wcwidth() and iswspace()
+it copies.
 
 A dialog's text is read from the script with the parser of tools/i18n.py: the msgid of each
 `t` call, and what fills its {name} fields. A field's value is a text where the script gives
 one (a literal, another `t` call, a variable set from texts in the same function); otherwise it
-is the worst case named in FIELD_VALUES, or in EMBEDDED for a value inside a longer word. The
-final message and the plan for the radio are put together as the script does (COMPOSED). Every
-combination of the alternatives is a candidate: the box must hold the longest.
+is the worst case named in FIELD_VALUES, or in EMBEDDED for a value inside a longer word, or in
+DIALOG_VALUES for one dialog's field. The final message and the plan for the radio are put
+together as the script does (COMPOSED). Every combination of the alternatives is a candidate:
+the box must hold the longest. A menu's rows are its tag and item words, or LIST_ROWS for an
+array the script fills.
 """
 
 from __future__ import annotations
@@ -30,10 +33,23 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Final, NamedTuple
 
+from meshcore_home_gateway import i18n
 from meshcore_home_gateway.catalog import read_po
+from meshcore_home_gateway.config import parse_config
+from meshcore_home_gateway.config_checks import start_warnings
+from meshcore_home_gateway.texts import Text
 
 ROOT: Final = Path(__file__).resolve().parent.parent
 SCRIPT: Final = ROOT / "deploy" / "proxmox" / "meshcore-home-gateway-lxc.sh"
+_SCRIPT_TEXT: Final = SCRIPT.read_text(encoding="utf-8")
+
+
+def _constant(name: str) -> str:
+    """A constant set once at the top of the installer (`NAME=value`)."""
+    found = re.search(rf"^{name}=(\S+)", _SCRIPT_TEXT, re.MULTILINE)
+    if found is None:
+        raise ValueError(f"the installer sets no {name}")
+    return found[1]
 
 
 def _load_tool() -> ModuleType:
@@ -140,6 +156,7 @@ def reflow(text: str, width: int) -> list[str]:
     return lines
 
 
+TERMINAL_COLUMNS: Final = 80  # the smallest terminal the installer takes (80 x 24)
 KINDS: Final = frozenset({"msgbox", "yesno", "infobox", "inputbox", "passwordbox", "menu"}) | {
     "checklist",
     "radiolist",
@@ -159,6 +176,7 @@ class Box:
     list_height: int = 0
     scroll: bool = False
     full_buttons: bool = False
+    tags: bool = True  # False with --notags: a list shows its items only
 
     def __post_init__(self) -> None:
         if self.kind not in KINDS:
@@ -189,19 +207,71 @@ class Box:
             cleaned = clean_newlines(cleaned)
         return reflow(expand_tabs(cleaned), self.text_width)
 
+    def cut_items(self, rows: Sequence[tuple[str, str]]) -> list[str]:
+        """The tags and items of a menu's rows that it does not show whole in a terminal of
+        TERMINAL_COLUMNS (dialogboxes.c dialogMenu, `:329-367`). The list is lineWidth wide,
+        min(widest tag + widest item + 1, columns - 6), 2 more when it scrolls, and centred in
+        the window. With tags, both columns are shortened in turn until a row fits it, without
+        a mark; with --notags each item is written whole, and the list is as wide as its widest:
+        one wider than the window takes every row over the box's border (a scrolling list's bar
+        takes 3 columns of it)."""
+        scroll = len(rows) > self.list_height
+        bar = 2 if scroll else 0
+        texts = [text for _, text in rows]
+        widest = max(map(text_width, texts), default=0)
+        cap = TERMINAL_COLUMNS - 6
+        if not self.tags:
+            line = min(widest + bar + 1, cap)
+            room = self.width - 2 - (self.width - 2 - line) // 2 - (3 if scroll else 0)
+            return texts if widest > room else []
+        tag_widest = max((text_width(tag) for tag, _ in rows), default=0)
+        line = min(tag_widest + widest + bar + 1, cap)
+        tag_room, room = tag_widest + 1, widest
+        while room + tag_room + bar > line:
+            if room >= tag_room and room > 0:
+                room -= 1
+            elif tag_room > 0:
+                tag_room -= 1
+            else:
+                break
+        cut = [tag for tag, _ in rows if text_width(tag) > tag_room]
+        return cut + [text for text in texts if text_width(text) > room]
+
     def describe(self) -> str:
         extra = f" {self.list_height}" if self.kind in {"menu", "checklist", "radiolist"} else ""
         flags = (" --scrolltext" if self.scroll else "") + (" --fb" if self.full_buttons else "")
+        flags += "" if self.tags else " --notags"
         return f"--{self.kind}{flags} {self.height} {self.width}{extra}"
 
 
 # --- texts ------------------------------------------------------------------------------------
 
 
+Catalog = Mapping[str, str]  # msgid -> its translation; English is the empty catalog
+
+
+@dataclass(frozen=True, eq=False)
+class Language:
+    """A language of the dialogs: called with a msgid, the installer's t (the translation, else
+    the msgid: `${L10N[$msgid]-$msgid}`). The program runs with LANGUAGE set to the same code
+    (CT_ENV), so what it prints comes from its own catalog in that language (`program`)."""
+
+    code: str
+    catalog: Catalog
+
+    def __call__(self, msgid: str) -> str:
+        return self.catalog.get(msgid, msgid)
+
+    @property
+    def program(self) -> i18n.Translator:
+        """The program's translator for this language; English where it has none."""
+        return i18n.translator(self.code) if self.code in i18n.LANGUAGES else i18n.ENGLISH
+
+
 class Expr:
     """What a dialog shows: rendered into every candidate text, in one language."""
 
-    def render(self, translate: Callable[[str], str]) -> list[str]:
+    def render(self, translate: Language) -> list[str]:
         raise NotImplementedError
 
     def msgids(self) -> Iterator[str]:
@@ -214,7 +284,7 @@ class Lit(Expr):
 
     text: str
 
-    def render(self, translate: Callable[[str], str]) -> list[str]:
+    def render(self, translate: Language) -> list[str]:
         return [self.text]
 
 
@@ -225,7 +295,7 @@ class Msg(Expr):
     msgid: str
     values: tuple[tuple[str, Expr], ...] = ()
 
-    def render(self, translate: Callable[[str], str]) -> list[str]:
+    def render(self, translate: Language) -> list[str]:
         template = translate(self.msgid)
         names = [name for name, _ in self.values]
         choices = [value.render(translate) for _, value in self.values]
@@ -245,7 +315,7 @@ class Cat(Expr):
 
     parts: tuple[Expr, ...]
 
-    def render(self, translate: Callable[[str], str]) -> list[str]:
+    def render(self, translate: Language) -> list[str]:
         return _unique(["".join(p) for p in _product([x.render(translate) for x in self.parts])])
 
     def msgids(self) -> Iterator[str]:
@@ -259,7 +329,7 @@ class Alt(Expr):
 
     options: tuple[Expr, ...]
 
-    def render(self, translate: Callable[[str], str]) -> list[str]:
+    def render(self, translate: Language) -> list[str]:
         return _unique([text for option in self.options for text in option.render(translate)])
 
     def msgids(self) -> Iterator[str]:
@@ -273,11 +343,22 @@ class Output(Expr):
 
     inner: Expr
 
-    def render(self, translate: Callable[[str], str]) -> list[str]:
+    def render(self, translate: Language) -> list[str]:
         return _unique([text.rstrip("\n") for text in self.inner.render(translate)])
 
     def msgids(self) -> Iterator[str]:
         yield from self.inner.msgids()
+
+
+@dataclass(frozen=True)
+class Program(Expr):
+    """What the program prints, in the dialogs' language: `texts` gives every candidate with the
+    program's own translator (`Language.program`)."""
+
+    texts: Callable[[i18n.Translator], Sequence[str]]
+
+    def render(self, translate: Language) -> list[str]:
+        return _unique(list(self.texts(translate.program)))
 
 
 _FIELD: Final = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")  # what the installer's _fill fills
@@ -309,9 +390,6 @@ def one_of(options: Sequence[Expr]) -> Expr:
     return unique[0] if len(unique) == 1 else Alt(tuple(unique))
 
 
-Catalog = Mapping[str, str]  # msgid -> its translation; English is the empty catalog
-
-
 def catalogs() -> dict[str, Catalog]:
     """English and every language of the installer, each catalog as `make translations` writes it:
     a language added later is in it as soon as its catalog is."""
@@ -327,17 +405,26 @@ def catalogs() -> dict[str, Catalog]:
     return found
 
 
-def translator(catalog: Catalog) -> Callable[[str], str]:
-    """The installer's t: the translation, else the msgid (`${L10N[$msgid]-$msgid}`)."""
-    return lambda msgid: catalog.get(msgid, msgid)
+def translator(catalog: Catalog, code: str = "en") -> Language:
+    """The language `code` of the dialogs, its installer texts from `catalog`."""
+    return Language(code, catalog)
 
 
 # --- worst cases ------------------------------------------------------------------------------
 
 
 class Worst(NamedTuple):
+    """A worst case and why; `also` names other forms of the same value, each a candidate."""
+
     value: str
     why: str
+    also: tuple[str, ...] = ()
+
+    def values(self) -> tuple[str, ...]:
+        return (self.value, *self.also)
+
+    def expr(self) -> Expr:
+        return one_of([Lit(value) for value in self.values()])
 
 
 # A field's value where the script does not give a text: the longest realistic value, or a
@@ -345,7 +432,9 @@ class Worst(NamedTuple):
 # longest meaning is taken.
 FIELD_VALUES: Final[Mapping[str, Worst]] = {
     "address": Worst(
-        "[2001:db8:1234:5678::1]:5000", "an IPv6 address and the port, as probe takes it"
+        "[2001:0db8:85a3:1234:5678:8a2e:0370:7334]:5000",
+        "an IPv6 address written out in full, eight groups of four digits (as SLAAC gives under "
+        "a provider's prefix), and the port, as probe takes it",
     ),
     "bridge": Worst("vmbr0", "Proxmox VE's default bridge"),
     "ctid": Worst("1000", "a container ID of four digits (Proxmox VE offers the next from 100)"),
@@ -394,8 +483,9 @@ FIELD_VALUES: Final[Mapping[str, Worst]] = {
 }
 
 # the installer's releases, from its own constant (REPOSITORY=owner/name)
-_REPOSITORY = re.search(r"^REPOSITORY=(\S+)$", SCRIPT.read_text(encoding="utf-8"), re.MULTILINE)
-RELEASES: Final = f"https://github.com/{_REPOSITORY[1] if _REPOSITORY else ''}/releases"
+RELEASES: Final = f"https://github.com/{_constant('REPOSITORY')}/releases"
+_RUN: Final = 'bash -c "$(wget -qO- {address})" --'  # invocation(): how to run it again
+_RAW: Final = f"https://raw.githubusercontent.com/{_constant('REPOSITORY')}/main/deploy/proxmox"
 
 # An expansion inside a longer word (`"pct exec $ctid -- ..."`), by its text in the script.
 EMBEDDED: Final[Mapping[str, Worst]] = {
@@ -404,8 +494,96 @@ EMBEDDED: Final[Mapping[str, Worst]] = {
     "${CT[ip]}": Worst("192.0.2.200/24", "an IPv4 address with its prefix"),
     "${L10N_NAME[$lang]}": Worst("N" * 24, "a language's name of 24 letters"),
     "$(invocation)": Worst(
-        f'bash -c "$(wget -qO- {RELEASES}/download/v2.10.10rc10/meshcore-home-gateway-lxc.sh)" --',
-        "a pre-release's installer, the longest a release gives (invocation(); --ref is longer)",
+        _RUN.format(address=f"{RELEASES}/download/v2.10.10rc10/meshcore-home-gateway-lxc.sh"),
+        "each form invocation() gives: a pre-release's installer, the latest release's, main's "
+        "(--ref main) and a checkout's script at a path of 120 characters; not --ref with "
+        "another ref, which adds its name (docs/platform-notes.md, whiptail)",
+        (
+            _RUN.format(address=f"{RELEASES}/latest/download/meshcore-home-gateway-lxc.sh"),
+            _RUN.format(address=f"{_RAW}/meshcore-home-gateway-lxc.sh"),
+            "/root/" + "c" * 70 + "/deploy/proxmox/meshcore-home-gateway-lxc.sh",
+        ),
+    ),
+}
+
+
+# check_broker's {reason} after a failed login: what `check-config --broker` wrote to standard
+# error (`2>&1 >/dev/null`, "meshcore-home-gateway: " removed), in the dialogs' language
+# (cli/config_cmd.py _check_config): a warning per start warning, the error with who logged in,
+# and after a refusal a hint. For each way the installer secures the connection: with or without
+# a user name and TLS (the broker is not on the container: no `local` exemption).
+_BROKER: Final = "mqtt.home.example.org"  # FIELD_VALUES["host"]
+_TLS_FAILED: Final = (  # what Python's ssl module says when the broker's certificate is unknown
+    "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer "
+    "certificate (_ssl.c:1032)"
+)
+_GUIDE: Final = "docs/deployment.md, troubleshooting"
+
+
+def _login_failures(tr: i18n.Translator) -> list[str]:
+    texts = []
+    for user, tls in itertools.product(("", "meshcore-home-gateway"), (False, True)):
+        mqtt = f'node_id = "gw"\nhost = "{_BROKER}"\ntls = {"true" if tls else "false"}\n'
+        if user:
+            mqtt += f'username = "{user}"\npassword = "secret"\n'
+        config = parse_config(
+            f'[radio]\ntransport = "serial"\ndevice = "/dev/ttyACM0"\n[mqtt]\n{mqtt}'
+        )
+        warnings = [tr.text("warning: {detail}", detail=w) for w in start_warnings(config)]
+        login = (
+            tr.text("user {user!r} with a password", user=user) if user else tr.text("no user name")
+        )
+        port = config.mqtt.port
+        refused = Text("broker refused the connection: {reason}", reason="Not authorized")
+        protocol = Text(
+            "broker refused the connection: {reason}", reason="Unsupported protocol version"
+        )
+        detail = _TLS_FAILED if tls else "[Errno 111] Connection refused"
+        failures = [
+            (refused, Text(_MOSQUITTO, command="systemctl reload mosquitto", guide=_GUIDE)),
+            (protocol, Text(_PROTOCOL, protocol=config.mqtt.protocol, guide=_GUIDE)),
+            (Text(_UNREACHABLE, host=_BROKER, port=port, detail=detail), None),
+            (Text("broker did not answer"), None),
+        ]
+        for error, hint in failures:
+            lines = [*warnings, tr.text("{detail} ({login})", detail=error, login=login)]
+            texts.append("\n".join([*lines, tr.render(hint)] if hint else lines))
+    return texts
+
+
+_MOSQUITTO: Final = (
+    "brokers such as Mosquitto refuse a wrong password, an unknown user and missing credentials "
+    "alike; a standalone Mosquitto knows a user added with mosquitto_passwd only after "
+    "'{command}' ({guide})"
+)
+_PROTOCOL: Final = (
+    "the broker does not speak MQTT {protocol}; set protocol in [mqtt] to the version it speaks "
+    "({guide})"
+)
+_UNREACHABLE: Final = "cannot connect to the broker {host}:{port}: {detail}"
+
+LOGIN_FAILED: Final = (
+    "The broker login failed. Enter the broker settings again? (No: continue; the service keeps "
+    "trying, --reconfigure fixes the settings later.)\n\n{reason}"
+)
+# A field whose value depends on the dialog: the msgid of the dialog's text and the field's name
+DIALOG_VALUES: Final[Mapping[tuple[str, str], Expr]] = {
+    (LOGIN_FAILED, "reason"): Program(_login_failures),
+}
+
+# A device's row in the radio menu: its by-id path and its name, which the installer shortens to
+# 72 characters, keeping its start and its end (ask_radio). A USB serial converter whose serial
+# number has 32 hex digits, as a CP2102N's has, gives a name of about 100.
+_LONG_NAME: Final = (
+    "usb-Example_Vendor_USB_to_UART_Bridge_Controller_0123456789abcdef0123456789abcdef-if00-port0"
+)
+DEVICE_NAME: Final = f"{_LONG_NAME[:34]}...{_LONG_NAME[-35:]}"
+# The rows of a menu that the script fills into an array: (tag, item) each.
+LIST_ROWS: Final[Mapping[str, tuple[tuple[Expr, Expr], ...]]] = {
+    "L10N_MENU": ((Lit("xx"), Lit(EMBEDDED["${L10N_NAME[$lang]}"].value)),),
+    "choices": (
+        (Lit(FIELD_VALUES["device"].value), Lit(DEVICE_NAME)),
+        (Lit("tcp"), Msg("radio with WiFi firmware (TCP, no authentication)")),
     ),
 }
 
@@ -419,13 +597,23 @@ class DialogError(ValueError):
 
 @dataclass(frozen=True)
 class Dialog:
+    """A dialog: its box, its text and, for a menu, its rows (tag, item). A checklist's rows are
+    the radio's channels and contacts, no texts of the installer: not read."""
+
     line: int
     function: str
     box: Box
     text: Expr
+    rows: tuple[tuple[Expr, Expr], ...] = ()
 
     def where(self) -> str:
         return f"line {self.line} ({self.function or 'top level'})"
+
+    def msgids(self) -> Iterator[str]:
+        yield from self.text.msgids()
+        for tag, item in self.rows:
+            yield from tag.msgids()
+            yield from item.msgids()
 
 
 # The installer's own dialog functions: where they take the kind (its index, or the kind itself)
@@ -449,7 +637,7 @@ _WITH_VALUE: Final = frozenset(
     | {"--yes-button", "--no-button", "--ok-button", "--cancel-button"}
 )
 _FLAGS: Final = frozenset(
-    {"--defaultno", "--separate-output", "--nocancel", "--noitem", "--notags", "--topleft"}
+    {"--defaultno", "--separate-output", "--nocancel", "--noitem", "--topleft"}
 )
 _ASSIGNED: Final = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)(\[[^]]*\])?(\+?)=(.*)", re.DOTALL)
 _DECLARING: Final = frozenset({"local", "declare", "readonly", "export"})
@@ -495,7 +683,7 @@ class Script:
         head = command.head()
         words = command.words[head + 1 :]
         where = f"{self.name}:{command.words[head].line}"
-        kind, scroll, full, index = "", False, False, 0
+        kind, scroll, full, tags, index = "", False, False, True, 0
         while index < len(words):
             text = words[index].text
             if text == "--":
@@ -506,6 +694,8 @@ class Script:
                 scroll = True
             elif text in {"--fb", "--fullbuttons"}:
                 full = True
+            elif text == "--notags":
+                tags = False
             elif text.removeprefix("--") in KINDS:
                 kind = text.removeprefix("--")
             elif text not in _FLAGS and not text.startswith('"${'):
@@ -518,7 +708,7 @@ class Script:
         if len(sizes) < (3 if listed else 2) or any(not w.text.isdigit() for w in sizes):
             raise DialogError(f"{where}: the size of the box is not written as numbers")
         numbers = [int(word.text) for word in sizes]
-        box = Box(kind, numbers[0], numbers[1], numbers[2] if listed else 0, scroll, full)
+        box = Box(kind, numbers[0], numbers[1], numbers[2] if listed else 0, scroll, full, tags)
         return box, words[index + 1]
 
     def show_dialog_boxes(self) -> dict[str, Box]:
@@ -572,8 +762,28 @@ class Script:
                 if len(arguments) <= at:
                     raise DialogError(f"{self.name}:{line}: {name} without a text")
                 text = self.text_of(arguments[at], context)
-                found.append(Dialog(line, command.function, boxes[KIND_OPTIONS[kind]], text))
+                rows = self._rows(arguments[at + 2 :], context) if kind == "menu" else ()
+                found.append(Dialog(line, command.function, boxes[KIND_OPTIONS[kind]], text, rows))
         return found
+
+    def _rows(self, words: Sequence[Any], context: _Context) -> tuple[tuple[Expr, Expr], ...]:
+        """A menu's rows: tag and item words in pairs, or an array the script fills (LIST_ROWS)."""
+        rows: list[tuple[Expr, Expr]] = []
+        pending: list[Expr] = []
+        for word in words:
+            array = re.fullmatch(r'"\$\{([A-Za-z_][A-Za-z0-9_]*)\[@\]\}"', word.text)
+            if array is not None:
+                if pending or array[1] not in LIST_ROWS:
+                    raise DialogError(f"{self.name}:{word.line}: no rows for {word.text}")
+                rows += LIST_ROWS[array[1]]
+                continue
+            pending.append(self.text_of(word, context))
+            if len(pending) == 2:
+                rows.append((pending[0], pending[1]))
+                pending = []
+        if pending or not rows:
+            raise DialogError(f"{self.name}: a menu without rows in pairs")
+        return tuple(rows)
 
     def text_of(self, word: Any, context: _Context) -> Expr:
         """What a word that is a dialog's text shows."""
@@ -595,7 +805,7 @@ class Script:
             )
             if expr is not None:
                 return expr
-            return None if fallback is None else Lit(fallback.value)
+            return None if fallback is None else fallback.expr()
         found: list[Expr] = []
         for kind, inner in parts:
             if kind == "lit":
@@ -608,7 +818,7 @@ class Script:
                 key = f"$({inner})" if kind == "cmd" else inner
                 if key not in EMBEDDED:
                     raise DialogError(f"{self.name}: no worst case for {key} in {text[:60]}")
-                expr = Lit(EMBEDDED[key].value)
+                expr = EMBEDDED[key].expr()
             found.append(expr)
         if all(isinstance(part, Lit) for part in found):
             return Lit("".join(part.text for part in found if isinstance(part, Lit)))
@@ -640,9 +850,12 @@ class Script:
         if arguments and arguments[0].text == '"$@"' and context.caller is not None:
             arguments, context = context.caller
         msgid = _literal(arguments, 0)
-        values = []
+        values: list[tuple[str, Expr]] = []
         for index in range(1, len(arguments) - 1, 2):
             name = _literal(arguments, index)
+            if (msgid, name) in DIALOG_VALUES:
+                values.append((name, DIALOG_VALUES[msgid, name]))
+                continue
             value = self._word(arguments[index + 1].text, context, FIELD_VALUES.get(name))
             if value is None:
                 raise DialogError(f"{self.name}: no worst case for {{{name}}} in {msgid[:60]!r}")
@@ -885,8 +1098,11 @@ PLAN_SETTINGS: Final = (
     ("airtime_factor_milli", "0", "9000"),
     ("name", '"' + "r" * 31 + '"', '"' + "g" * 31 + '"'),  # the most bytes a name takes
 )
-PLAN_CONTACTS: Final = 3  # e.g. two targets and a command sender
-PLAN_CONTACT: Final = "0123456789ab Handheld of a neighbour"  # the start of its key, its name
+# the contacts the plan lists, each with the start of its key and a name of 31 bytes, the most
+# the radio stores: up to PLAN_CONTACTS the plan's box holds them (the installer's constant of the
+# same name); with more, the box scrolls
+PLAN_CONTACTS: Final = 4
+PLAN_CONTACT: Final = "0123456789ab " + "Handheld of a neighbour 0001xyz"
 
 
 def _plan(script: Script) -> Expr:
@@ -984,12 +1200,35 @@ class Overflow:
         )
 
 
+def cut_items(found: Sequence[Dialog], languages: Mapping[str, Catalog]) -> list[str]:
+    """Every tag and item of a menu, in a language, that its box does not show whole: each row
+    with the widest of its candidates (Box.cut_items)."""
+    result = []
+    for language, catalog in languages.items():
+        translate = translator(catalog, language)
+        for dialog in found:
+            if not dialog.rows:
+                continue
+            rows = [
+                (
+                    max(tag.render(translate), key=text_width),
+                    max(item.render(translate), key=text_width),
+                )
+                for tag, item in dialog.rows
+            ]
+            result += [
+                f"{language}: {dialog.where()}: whiptail {dialog.box.describe()} cuts {cut!r}"
+                for cut in dialog.box.cut_items(rows)
+            ]
+    return result
+
+
 def overflows(found: Sequence[Dialog], languages: Mapping[str, Catalog]) -> list[Overflow]:
     """Every dialog whose text, in a language, needs more lines than its box shows: the longest
     of its candidates. A text that scrolls (--scrolltext) is exempt."""
     result = []
     for language, catalog in languages.items():
-        translate = translator(catalog)
+        translate = translator(catalog, language)
         for dialog in found:
             if dialog.box.scroll:
                 continue

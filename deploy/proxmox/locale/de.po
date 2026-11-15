@@ -200,17 +200,13 @@ msgstr "Die Verbindung zum Broker hat {what}: Jeder Client, der den Broker errei
 #. {reason} is the program's message, in this language too.
 #, python-brace-format
 msgid ""
-"The broker login failed:\n"
+"The broker login failed. Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes the settings later.)\n"
 "\n"
-"{reason}\n"
-"\n"
-"Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes the settings later.)"
+"{reason}"
 msgstr ""
-"Die Anmeldung am Broker ist fehlgeschlagen:\n"
+"Die Anmeldung am Broker ist fehlgeschlagen. Die Broker-Einstellungen erneut eingeben? (Nein: weiter; der Dienst versucht es weiter, --reconfigure korrigiert die Einstellungen später.)\n"
 "\n"
-"{reason}\n"
-"\n"
-"Die Broker-Einstellungen erneut eingeben? (Nein: weiter; der Dienst versucht es weiter, --reconfigure korrigiert die Einstellungen später.)"
+"{reason}"
 
 #. {reason} is the program's message, in this language too.
 #, python-brace-format
@@ -233,8 +229,8 @@ msgstr ""
 
 #. security text (docs/translations.md): translate all of it, add nothing.
 #, python-brace-format
-msgid "The radio is reached over TCP ({address}) without authentication: whoever reaches it can control it and read its private key."
-msgstr "Das Funkgerät wird über TCP ({address}) ohne Authentifizierung erreicht: Wer es erreicht, kann es steuern und seinen privaten Schlüssel lesen."
+msgid "The radio is reached over TCP without authentication ({address}): whoever reaches it can control it and read its private key."
+msgstr "Das Funkgerät wird über TCP ohne Authentifizierung erreicht ({address}): Wer es erreicht, kann es steuern und seinen privaten Schlüssel lesen."
 
 #. security text (docs/translations.md): translate all of it, add nothing.
 msgid "The radio's TCP interface has no authentication: anyone who reaches it can control the radio and read its private key, which decrypts every direct message of the radio, also earlier ones recorded from the air. Use it only in a network that only the gateway reaches, never the household's WiFi. Use TCP anyway (tcp_unauthenticated = true)? No: choose the radio again."

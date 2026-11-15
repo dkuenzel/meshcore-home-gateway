@@ -42,6 +42,22 @@ _TCP_DE_LINES = (
     "nie im WLAN des Haushalts. TCP trotzdem verwenden",
 )
 _ROW = ("aaaa bbbb cccc dddd eeee ffff",)
+# the German question after a refused login without a user name and TLS, with what the program
+# printed (2.2.1): its question first, then the warnings, the error and the hint
+_LOGIN_DE = (
+    "Die Anmeldung am Broker ist fehlgeschlagen. Die Broker-Einstellungen erneut eingeben? "
+    "(Nein: weiter; der Dienst versucht es weiter, --reconfigure korrigiert die Einstellungen "
+    "später.)\n\nWarnung: MQTT ohne Benutzernamen: sofern der Broker Clients ohne Benutzernamen "
+    "nicht abweist, kann jeder Client, der ihn erreicht, die Topics des Gateways lesen und "
+    "beschreiben (docs/mqtt-api.md, Securing the broker; insecure = true akzeptiert das)\n"
+    "Warnung: MQTT ohne TLS: das Passwort, die Nachrichten, die Positionen und die "
+    "Befehlsereignisse gehen unverschlüsselt durchs Netzwerk (insecure = true akzeptiert das)\n"
+    "der Broker hat die Verbindung abgelehnt: Not authorized (kein Benutzername)\n"
+    "Broker wie Mosquitto lehnen ein falsches Passwort, einen unbekannten Benutzer und fehlende "
+    "Zugangsdaten gleichermaßen ab; ein eigenständiger Mosquitto kennt einen mit mosquitto_passwd "
+    "hinzugefügten Benutzer erst nach 'systemctl reload mosquitto' (docs/deployment.md, "
+    "troubleshooting)"
+)
 
 # What whiptail 0.52.24-2ubuntu2 showed in a terminal of 80 columns (2026-11-15): each box, its
 # text and the rows of its text area, up to the first row without text.
@@ -63,6 +79,29 @@ MEASURED: Final[Sequence[tuple[Box, str, tuple[str, ...]]]] = (
         Box("yesno", 14, 72),
         _TCP_DE_2_2_0,
         (*_TCP_DE_LINES, "(tcp_unauthenticated = true)? Nein: Funkgerät erneut wählen."),
+    ),
+    (
+        Box("yesno", 24, 78),
+        _LOGIN_DE,
+        (
+            "Die Anmeldung am Broker ist fehlgeschlagen. Die Broker-Einstellungen",
+            "erneut eingeben? (Nein: weiter; der Dienst versucht es weiter,",
+            "--reconfigure korrigiert die Einstellungen später.)",
+            "",
+            "Warnung: MQTT ohne Benutzernamen: sofern der Broker Clients ohne",
+            "Benutzernamen nicht abweist, kann jeder Client, der ihn erreicht, die",
+            "Topics des Gateways lesen und beschreiben (docs/mqtt-api.md, Securing the",
+            "broker; insecure = true akzeptiert das)",
+            "Warnung: MQTT ohne TLS: das Passwort, die Nachrichten, die Positionen und",
+            "die Befehlsereignisse gehen unverschlüsselt durchs Netzwerk (insecure =",
+            "true akzeptiert das)",
+            "der Broker hat die Verbindung abgelehnt: Not authorized (kein",
+            "Benutzername)",
+            "Broker wie Mosquitto lehnen ein falsches Passwort, einen unbekannten",
+            "Benutzer und fehlende Zugangsdaten gleichermaßen ab; ein eigenständiger",
+            "Mosquitto kennt einen mit mosquitto_passwd hinzugefügten Benutzer erst",
+            "nach 'systemctl reload mosquitto' (docs/deployment.md, troubleshooting)",
+        ),
     ),
     # the lines each kind of box shows, of a text of 30 lines
     (Box("msgbox", 12, 40), _LINES, tuple("123456")),
@@ -185,21 +224,16 @@ def test_every_dialog_of_the_installer_is_read(dialogs: list[model.Dialog]) -> N
     ]
     assert len(dialogs) == len(calls) - len(plumbing) - len(cancelled)
     assert len(dialogs) > 100
-    shown = {msgid for dialog in dialogs for msgid in dialog.text.msgids()}
+    shown = {msgid for dialog in dialogs for msgid in dialog.msgids()}
     template = model.tool.installer_template(model.tool.Project(model.ROOT))
     texts = {entry.msgid for entry in template if entry.msgctxt is None}
     assert texts - shown == NO_DIALOG_TEXT
+    assert shown <= texts  # the model names no text the installer no longer has
 
 
-# the installer's texts that are no dialog's text: the items of its menus, what die shows no box
-# for, and the fallback of the final message that no run reaches (model.SUMMARY_RESULTS)
-NO_DIALOG_TEXT: Final = {
-    "recommended: asks only for the radio, the broker and the targets",
-    "all settings: container, network, topics, Home Assistant",
-    "radio with WiFi firmware (TCP, no authentication)",
-    "cancelled",
-    "login not checked",
-}
+# the installer's texts that are in no dialog: what die shows no box for, and the fallback of the
+# final message that no run reaches (model.SUMMARY_RESULTS)
+NO_DIALOG_TEXT: Final = {"cancelled", "login not checked"}
 
 
 def test_the_boxes_fit_the_smallest_terminal_the_installer_takes(
@@ -211,11 +245,42 @@ def test_the_boxes_fit_the_smallest_terminal_the_installer_takes(
 
 
 def test_the_worst_cases_are_used(dialogs: list[model.Dialog]) -> None:
-    """Each worst case stands for a value of the script; none is left over from an older one."""
+    """Each worst case stands for a value of the script, each of its forms too; none is left over
+    from an older one. So are the values of a dialog's own fields and the rows of the menus."""
     texts = [text for d in dialogs for text in d.text.render(model.translator({}))]
     worst = {**model.FIELD_VALUES, **model.EMBEDDED}
-    unused = {key for key, case in worst.items() if not any(case.value in t for t in texts)}
+    unused = {
+        (key, value)
+        for key, case in worst.items()
+        for value in case.values()
+        if not any(value in text for text in texts)
+    }
     assert not unused
+    msgids = {msgid for dialog in dialogs for msgid in dialog.text.msgids()}
+    assert {msgid for msgid, _ in model.DIALOG_VALUES} <= msgids
+    rows = {row for dialog in dialogs for row in dialog.rows}
+    assert {row for rows_ in model.LIST_ROWS.values() for row in rows_} <= rows
+
+
+def test_a_failed_login_shows_what_the_program_printed() -> None:
+    """check_broker's {reason} is the program's standard error in the dialogs' language: the start
+    warnings, the error with who logged in, the hint after a refusal (#190)."""
+    german = model.translator(LANGUAGES["de"], "de")
+    reasons = model.DIALOG_VALUES[model.LOGIN_FAILED, "reason"].render(german)
+    (anonymous,) = [r for r in reasons if "Not authorized (kein Benutzername)" in r and "TLS" in r]
+    assert anonymous.split("\n")[0].startswith("Warnung: MQTT ohne Benutzernamen: ")
+    assert anonymous.split("\n")[1].startswith("Warnung: MQTT ohne TLS: ")
+    assert anonymous.split("\n")[3].startswith("Broker wie Mosquitto ")
+    assert model._fill(german(model.LOGIN_FAILED), {"reason": anonymous}) == _LOGIN_DE  # measured
+    english = model.DIALOG_VALUES[model.LOGIN_FAILED, "reason"].render(model.translator({}))
+    assert "broker refused the connection: Not authorized (no user name)" in english[0]
+
+
+def test_the_plan_holds_as_many_contacts_as_the_installer_lets_it() -> None:
+    """Up to the installer's PLAN_CONTACTS the plan's box shows every contact; with more it
+    scrolls (#190)."""
+    assert int(model._constant("PLAN_CONTACTS")) == model.PLAN_CONTACTS
+    assert len(model.PLAN_CONTACT.split(" ", 1)[1].encode()) == 31  # the most a name takes
 
 
 LANGUAGES: Final = model.catalogs()
@@ -227,6 +292,54 @@ def test_every_text_fits_its_box(dialogs: list[model.Dialog], language: str) -> 
     box shows (#190). A language added later is checked as soon as its catalog is there."""
     found = model.overflows(dialogs, {language: LANGUAGES[language]})
     assert not found, "\n".join(str(overflow) for overflow in found)
+
+
+@pytest.mark.parametrize("language", list(LANGUAGES))
+def test_every_menu_item_shows_whole(dialogs: list[model.Dialog], language: str) -> None:
+    """Every row of every menu shows whole in a terminal of 80 columns: whiptail shortens a tag
+    and an item without a mark, also the security item of the radio menu (#190)."""
+    found = model.cut_items(dialogs, {language: LANGUAGES[language]})
+    assert not found, "\n".join(found)
+
+
+_TCP_ITEM = "radio with WiFi firmware (TCP, no authentication)"
+_TCP_ITEM_DE = "Funkgerät mit WLAN-Firmware (TCP, keine Authentifizierung)"
+_BY_ID = "/dev/serial/by-id/usb-Example_USB_Single_Serial_0123456789-if00"
+# What whiptail 0.52.24-2ubuntu2 cut of a menu's rows in a terminal of 80 x 24 (2026-11-15).
+MEASURED_ROWS: Final[Sequence[tuple[Box, tuple[tuple[str, str], ...], tuple[str, ...]]]] = (
+    # with tags, both columns get 37 of the 74: the device's tag and name, and the security item
+    (
+        Box("menu", 20, 78, 10),
+        ((_BY_ID, _BY_ID.rsplit("/", 1)[1]), ("tcp", _TCP_ITEM)),
+        (_BY_ID, _BY_ID.rsplit("/", 1)[1], _TCP_ITEM),
+    ),
+    # without tags each item is written whole: 75 columns fit; with 76 the list is wider than
+    # the window, and every row runs over the box's border
+    (Box("menu", 20, 78, 10, tags=False), (("d", "x" * 75), ("tcp", _TCP_ITEM_DE)), ()),
+    (
+        Box("menu", 20, 78, 10, tags=False),
+        (("d", "x" * 76), ("tcp", _TCP_ITEM)),
+        ("x" * 76, _TCP_ITEM),
+    ),
+    # a list longer than its height scrolls, and its bar takes 3 columns: 72 fit, 73 do not
+    (
+        Box("menu", 20, 78, 10, tags=False),
+        (*((f"d{n}", f"{n}" + "x" * 71) for n in range(10)), ("tcp", _TCP_ITEM)),
+        (),
+    ),
+    (
+        Box("menu", 20, 78, 10, tags=False),
+        (*((f"d{n}", f"{n}" + "x" * 72) for n in range(10)), ("tcp", _TCP_ITEM)),
+        (*(f"{n}" + "x" * 72 for n in range(10)), _TCP_ITEM),
+    ),
+)
+
+
+@pytest.mark.parametrize(("box", "rows", "cut"), MEASURED_ROWS)
+def test_the_model_cuts_the_rows_whiptail_cut(
+    box: Box, rows: tuple[tuple[str, str], ...], cut: tuple[str, ...]
+) -> None:
+    assert tuple(box.cut_items(rows)) == cut
 
 
 def test_a_text_too_long_for_its_box_is_found(dialogs: list[model.Dialog]) -> None:
