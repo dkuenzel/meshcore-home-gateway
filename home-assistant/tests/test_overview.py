@@ -24,7 +24,7 @@ from meshcore_home_gateway.config import Config, parse_config
 from meshcore_home_gateway.config_view import shown_settings
 from meshcore_home_gateway.core.mesh import Node
 from meshcore_home_gateway.mqtt.topics import Topics
-from meshcore_home_gateway.views import config_document, iso
+from meshcore_home_gateway.views import config_document, contact_document, iso
 from test_contact_devices import ALICE, ALICE_NODE, COMPANION, HILL_NODE, Broker
 from test_dashboard import (
     BOB,
@@ -34,6 +34,7 @@ from test_dashboard import (
     card,
     cards,
     contacts_of,
+    d9,
     deliver,
     documented,
     form_findings,
@@ -315,9 +316,11 @@ async def test_each_problem_card_shows_while_its_problem_exists(  # noqa: PLR091
     await fire(
         hass, topics.contacts, index(advert_carries_position=many, advert_carries_position_total=5)
     )
-    assert (await shown("advert_position"))[1] == (
-        "Bob, Alice, c4c4c4c4 and 2 more broadcast their position to everyone in range."
-    )
+    assert (await shown("advert_position"))[1:] == ("What to do:", ON_EACH)
+    rows = render(hass, found["advert_position"]).split("\n")[1]
+    for name in ("Bob", "Alice", "c4c4c4c4", "d6d6d6d6"):  # no heard time known: each counts
+        assert f"<tr><td><b>{name}</b></td><td>its adverts carry its position</td>" in rows
+    assert '<tr><td colspan="3">and 1 more</td></tr>' in rows
     await fire(hass, topics.contacts, index())
     await fire(hass, topics.settings, {"status": "drift"}, retain=True)
     kind, verdict, after = await shown("profile")
@@ -365,10 +368,11 @@ async def test_each_problem_card_shows_while_its_problem_exists(  # noqa: PLR091
     assert problems(caplog) == []
 
 
-# the advert-position card: what to do, and what the gateway goes by (owner feedback on 2.1.0)
-CHECK_SHARING = (
-    "On that device, make sure in the MeshCore app that sharing the location in adverts is off, "
-    "then send an advert near this home's radio."
+# the advert-position card: what to do, and what the gateway goes by (owner feedback on 2.1.0);
+# the status line names the problem, the card who and what to do, never the problem again (#168)
+ON_EACH = (
+    "On each device whose adverts carry its position, make sure in the MeshCore app that sharing "
+    "the location in adverts is off, then send an advert near this home's radio."
 )
 NOT_NEEDED = (
     "The household's map does not need it: the gateway asks for positions privately (Ask for "
@@ -385,6 +389,14 @@ GOES = "The card goes once the gateway has read an advert without a position."
 COMES_BACK = (
     "It can come back after an update or a restart, as long as this home's radio remembers the "
     "old position."
+)
+# a device not heard for a day broadcasts nothing: silent, with its age, and no problem (#168)
+SILENT = (
+    "A device not heard for over a day, no advert, no message, no answer, is listed as not "
+    "heard: while it is silent it broadcasts nothing, and it is no problem. The line under it "
+    "says that its adverts carried its position until it was last heard, and when that was. It "
+    "may be switched off, out of range, or flashed again with a new key; once it is heard again, "
+    "the gateway reads its next advert."
 )
 
 
@@ -413,14 +425,119 @@ async def test_the_advert_position_card_says_what_the_gateway_goes_by(
         hass, topics.contacts, index(advert_carries_position=[BOB], advert_carries_position_total=1)
     )
     lines = render(hass, advert).split("\n")
-    verdict = said(config, "{names} broadcast their position to everyone in range.", names="Bob")
-    assert first(lines[0]) == ("warning", verdict, said(config, CHECK_SHARING))
+    verdict = said(config, "What to do:")
+    assert first(lines[0]) == ("warning", verdict, said(config, ON_EACH))
+    carry = said(config, "its adverts carry its position")
+    assert lines[1] == (  # Bob was never heard: no time
+        f'<table role="presentation" width="100%"><tr><td><b>Bob</b></td><td>{carry}</td>'
+        '<td align="right"><small></small></td></tr></table>'
+    )
+    lines = lines[:1] + lines[2:]
     paragraphs = "".join(
         f"<p>{' '.join(said(config, text) for text in texts)}</p>"
-        for texts in ((NOT_NEEDED,), (GOES_BY,), (GOES, COMES_BACK))
+        for texts in ((NOT_NEEDED,), (GOES_BY,), (GOES, COMES_BACK), (SILENT,))
     )
     summary = said(config, "What this means")
     assert lines[1:] == [f"<details><summary>{summary}</summary>{paragraphs}</details>"]
+    assert problems(caplog) == []
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+async def test_a_companion_not_heard_for_a_day_is_silent_and_leaves_the_advert_problem(  # noqa: PLR0915 - step by step
+    hass: HomeAssistant,
+    mqtt: Any,
+    hass_ws_client: Any,
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    language: str,
+) -> None:
+    """#168: a companion that is no longer heard says so, and that takes precedence over the
+    position in its last advert. Not heard for 24 h (its *Last heard*), it leaves the Overview
+    problem *a position broadcast to everyone*: silent, it broadcasts nothing. Its row says how
+    long it has not been heard and since when; the advert fact stays under it, muted and dated.
+    With only silent companions the card is a blue note, which the status line counts. The
+    status line names the problem once; the card names who and what to do, never the problem
+    again. A companion heard again counts again; one never heard, or one beyond the gateway's
+    list, counts too (the gateway's list errs to warn, ADR 0025)."""
+    config = speaking(language, monkeypatch)
+    broker, mesh = Broker(), household(ALICE_NODE, Node(BOB, "Bob", COMPANION))
+    contacts_of(config, tmp_path, broker).update(mesh)
+    loaded = await made(hass, hass_ws_client, config, tmp_path)
+    topics = await gateway(hass, config)
+    await deliver(hass, config, broker, mesh)
+    await fire(hass, topics.state, health(), retain=True)
+    status, advert = card(loaded, STATUS), problem_cards(loaded)["advert_position"]
+    now = time.time()
+
+    async def heard(key: str, ago: float | None) -> float | None:
+        at = None if ago is None else now - ago
+        document = contact_document(mesh.contacts[key], telemetry_state="answering")
+        await fire(hass, topics.contact(key), document | {"heard_at": iso(at) if at else None})
+        return at
+
+    problem = said(config, "a position broadcast to everyone")
+    carry = said(config, "its adverts carry its position")
+    carried = said(config, "its adverts carried its position until then")
+    bob_at = await heard(BOB, 2 * 60)
+    alice_at = await heard(ALICE, 3 * 86400 + 3600)
+    assert bob_at is not None
+    assert alice_at is not None
+    both = index(advert_carries_position=[BOB, ALICE], advert_carries_position_total=2)
+    await fire(hass, topics.contacts, both, retain=True)
+    assert first(render(hass, status))[:2] == (
+        "warning",
+        said(config, "Needs a look: {first}.", first=problem),
+    )
+    lines = render(hass, advert).split("\n")
+    assert first(lines[0]) == ("warning", said(config, "What to do:"), said(config, ON_EACH))
+    bob = said(config, "heard {heard}", heard=d9(config, bob_at, now))
+    alice = said(config, "since {since}", since=d9(config, alice_at, now))
+    silent = said(config, "not heard for {days} days", days="3")
+    assert lines[1] == (  # heard first; the silent one muted under them, with its age
+        f'<table role="presentation" width="100%"><tr><td><b>Bob</b></td><td>{carry}</td>'
+        f'<td align="right"><small>{bob}</small></td></tr><tr><td><b>Alice</b></td>'
+        f'<td>{silent}<br><small>{carried}</small></td><td align="right"><small>{alice}</small>'
+        "</td></tr></table>"
+    )
+    for line in lines:  # one cause, one message: the card does not say the problem again
+        assert problem not in line
+        assert "broadcast their position" not in line
+    assert lines[-1].startswith("<details><summary>")
+
+    await heard(BOB, 86400 + 60)  # Bob silent too: no problem, a blue note the status counts
+    after = first(render(hass, status))
+    assert after[:2] == ("success", said(config, "All fine."))
+    assert after[2].endswith(said(config, "One note below."))
+    lines = render(hass, advert).split("\n")
+    verdict = said(config, "Not heard for over a day.")
+    quiet = said(
+        config,
+        "A device that is not heard broadcasts nothing. When it is heard again, the gateway "
+        "reads its next advert.",
+    )
+    assert first(lines[0]) == ("info", verdict, quiet)
+    assert said(config, "not heard for a day") in lines[1]
+    assert said(config, "not heard for {days} days", days="3") in lines[1]
+    assert carry not in lines[1]
+    assert lines[1].count(carried) == 2
+
+    await heard(ALICE, 60)  # heard again: it counts again
+    assert first(render(hass, status))[0] == "warning"
+    assert first(render(hass, advert))[0] == "warning"
+    await heard(ALICE, None)  # never heard: the gateway's list errs to warn
+    assert first(render(hass, status))[0] == "warning"
+    await heard(ALICE, 2 * 86400)
+    assert first(render(hass, status))[0] == "success"
+    beyond = index(advert_carries_position=[BOB, ALICE], advert_carries_position_total=3)
+    await fire(hass, topics.contacts, beyond)  # one beyond the list: its heard time unknown
+    assert first(render(hass, status))[0] == "warning"
+    assert said(config, "and {more} more", more="1") in render(hass, advert)
+    await fire(hass, topics.contacts, index())
+    shows_nothing(hass, advert)
+    assert first(render(hass, status))[:2] == ("success", said(config, "All fine."))
+    assert listening(hass, loaded) == []
     assert problems(caplog) == []
 
 

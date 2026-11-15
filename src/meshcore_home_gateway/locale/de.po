@@ -1848,6 +1848,22 @@ msgstr "Einem Dashboard einer anderen Version können neue Karten fehlen, oder e
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "A device not heard for over a day does not count: the card lists it as not heard, with the time it was last heard."
+msgstr "Ein Gerät, das seit über einem Tag nicht gehört wurde, zählt nicht: Die Karte führt es als nicht gehört, mit der Zeit, zu der es zuletzt gehört wurde."
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "A device not heard for over a day, no advert, no message, no answer, is listed as not heard: while it is silent it broadcasts nothing, and it is no problem. The line under it says that its adverts carried its position until it was last heard, and when that was. It may be switched off, out of range, or flashed again with a new key; once it is heard again, the gateway reads its next advert."
+msgstr "Ein Gerät, das seit über einem Tag nicht gehört wurde, kein Advert, keine Nachricht, keine Antwort, steht als nicht gehört in der Liste: Solange es still ist, sendet es nichts, und es ist kein Problem. Die Zeile darunter sagt, dass seine Adverts seine Position enthielten, bis es zuletzt gehört wurde, und wann das war. Es kann ausgeschaltet sein, außer Reichweite oder mit einem neuen Schlüssel neu geflasht; sobald es wieder gehört wird, liest das Gateway sein nächstes Advert."
+
+#. in blue, for information: the devices listed under it were not heard for over a day, so the position in their last adverts is no problem now
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "A device that is not heard broadcasts nothing. When it is heard again, the gateway reads its next advert."
+msgstr "Ein Gerät, das nicht gehört wird, sendet nichts. Sobald es wieder gehört wird, liest das Gateway sein nächstes Advert."
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "A device whose position is not current has no marker, only its line, whose last dot is where it was last, until that is more than 24 hours ago."
 msgstr "Ein Gerät, dessen Position nicht aktuell ist, hat keine Markierung, nur seine Linie, deren letzter Punkt zeigt, wo es zuletzt war, bis das mehr als 24 Stunden her ist."
 
@@ -3362,6 +3378,12 @@ msgctxt "dashboard"
 msgid "Not asked: the radio has no way to it now. A message or an advert from it brings it back."
 msgstr "Nicht abgefragt: Das Funkgerät hat gerade keinen Weg dorthin. Eine Nachricht oder ein Advert des Geräts ändert das wieder."
 
+#. in blue, for information: the devices listed under it were not heard for over a day, so the position in their last adverts is no problem now
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Not heard for over a day."
+msgstr "Seit über einem Tag nicht gehört."
+
 #. names are contacts' names, separated by commas
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -3480,18 +3502,18 @@ msgctxt "dashboard"
 msgid "On Gateway: the radio's airtime over the last 24 hours."
 msgstr "Unter Gateway: die Sendezeit des Funkgeräts in den letzten 24 Stunden."
 
+#. the card of a position broadcast to everyone: the first line of Overview names the problem, this card what to do; the devices are listed under it
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "On each device whose adverts carry its position, make sure in the MeshCore app that sharing the location in adverts is off, then send an advert near this home's radio."
+msgstr "Stelle auf jedem Gerät, dessen Adverts (Ankündigungen) seine Position enthalten, in der MeshCore-App sicher, dass das Teilen des Standorts in Adverts aus ist, und sende dann in der Nähe des Funkgeräts dieses Zuhauses ein Advert."
+
 #. the text of a message on its way from this home: the gateway took it and has not sent it, or waits for its confirmation
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
 msgid "On its way: {text}"
 msgstr "Unterwegs: {text}"
-
-#. names are the names of contacts, or the first digits of their keys
-#: src/meshcore_home_gateway/dashboard.yaml
-msgctxt "dashboard"
-msgid "On that device, make sure in the MeshCore app that sharing the location in adverts is off, then send an advert near this home's radio."
-msgstr "Stelle auf diesem Gerät in der MeshCore-App sicher, dass das Teilen des Standorts in Adverts (Ankündigungen) aus ist, und sende dann in der Nähe des Funkgeräts dieses Zuhauses ein Advert."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -4980,6 +5002,12 @@ msgctxt "dashboard"
 msgid "What this view is for"
 msgstr "Wofür diese Ansicht ist"
 
+#. the card of a position broadcast to everyone: the first line of Overview names the problem, this card what to do; the devices are listed under it
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "What to do:"
+msgstr "Was zu tun ist:"
+
 #. the help on writing. Return (↵) is the keyboard's key: the word the phone keyboards of your language show, with the sign ↵, and the same word as in the name beside the Send button (Return, then Send); Send and Write to {name} as their labels are translated. name is the chat's title; minutes, room, window and seconds are whole numbers
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -5368,6 +5396,7 @@ msgctxt "dashboard"
 msgid "an old command again"
 msgstr "Wiederholung eines alten Befehls"
 
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices; days is a whole number, 2 or more
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -5619,6 +5648,7 @@ msgctxt "dashboard"
 msgid "heard for the first time"
 msgstr "zum ersten Mal gehört"
 
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices; days is a whole number, 2 or more
 #. heard is a time, such as 10:31 or yesterday 10:31
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -5656,6 +5686,18 @@ msgstr "ungültige Anfrage"
 msgctxt "dashboard"
 msgid "it starts within the hour"
 msgstr "Start innerhalb der nächsten Stunde"
+
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices; days is a whole number, 2 or more
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "its adverts carried its position until then"
+msgstr "seine Adverts enthielten bis dahin seine Position"
+
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices; days is a whole number, 2 or more
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "its adverts carry its position"
+msgstr "seine Adverts enthalten seine Position"
 
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -5858,6 +5900,19 @@ msgstr "noch nicht abgefragt"
 msgctxt "dashboard"
 msgid "not asked: look-alike"
 msgstr "nicht abgefragt: ähnlicher Schlüssel"
+
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices; days is a whole number, 2 or more
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "not heard for a day"
+msgstr "seit einem Tag nicht gehört"
+
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices; days is a whole number, 2 or more
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "not heard for {days} days"
+msgstr "seit {days} Tagen nicht gehört"
 
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -6137,6 +6192,7 @@ msgctxt "dashboard"
 msgid "shown again"
 msgstr "wieder angezeigt"
 
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices; days is a whole number, 2 or more
 #. since is a time, such as 10:31 or yesterday 10:31
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -6448,22 +6504,8 @@ msgstr "{mins} min"
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
-msgid "{names} and {more} more broadcast their position to everyone in range."
-msgstr "Position an alle in Reichweite gesendet von: {names} und {more} weiteren."
-
-#. names are the names of contacts, or the first digits of their keys
-#: src/meshcore_home_gateway/dashboard.yaml
-#, python-brace-format
-msgctxt "dashboard"
 msgid "{names} and {more} more may control this home's radio over the air."
 msgstr "Steuerung des Funkgeräts dieses Zuhauses über Funk erlaubt für: {names} und {more} weitere."
-
-#. names are the names of contacts, or the first digits of their keys
-#: src/meshcore_home_gateway/dashboard.yaml
-#, python-brace-format
-msgctxt "dashboard"
-msgid "{names} broadcast their position to everyone in range."
-msgstr "Position an alle in Reichweite gesendet von: {names}."
 
 #. names are the names of contacts, or the first digits of their keys
 #: src/meshcore_home_gateway/dashboard.yaml

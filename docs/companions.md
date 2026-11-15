@@ -188,7 +188,10 @@ radio's record holds a position, so Position in adverts is on until an advert wi
 checked"), and at debug level when it changes nothing. The dashboard's card on *Overview* says
 what to do: make sure in the MeshCore app that sharing the location in adverts is off, then send
 an advert near this home's radio; the sensor goes off once the gateway has checked an advert
-without a position. That advert does not clear the radio's record: the firmware keeps the old
+without a position. A companion not heard for over a day (its *Last heard*: no advert, message
+or answer) broadcasts nothing while it is silent, so the dashboard lists it as not heard, with
+the time it was last heard, and leaves it out of the problem; the sensor stays as it is, and its
+next advert is checked again (#168). That advert does not clear the radio's record: the firmware keeps the old
 position until an advert carries a new one or an app writes the record. So while the record holds
 it, every advert the gateway misses, such as one made during the next update or restart, turns
 the sensor on again, until the gateway checks the next advert without a position; the card's fold

@@ -36,6 +36,13 @@ format, the command line and Home Assistant discovery are public interfaces
   distance to home, and the map got an impossible marker. Such a pair is now no position, by the
   same check that already dropped one from a telemetry answer; an advert that carries one still
   counts as carrying a position, as one with 0, 0 does (#179).
+- A companion no longer heard, such as one flashed again, kept the warning of a position
+  broadcast to everyone on *Overview* for good, and the first line and the card said the same
+  twice. A companion whose *Last heard* is more than a day old now leaves that problem: silent,
+  it broadcasts nothing. The card names who and what to do, not the problem again, and lists
+  each device with its state and when it was last heard; a silent one as not heard for so many
+  days, since when, with the fact that its adverts carried its position until then, muted. With
+  only silent devices the card is a blue note. Make the dashboard again to get it (#168).
 
 ### Security
 

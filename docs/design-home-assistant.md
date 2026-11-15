@@ -144,7 +144,8 @@ their way, a draft and its *Send* for each chat and the configuration
 
 * **Views:** 2.0 had four tabs, *Overview*, *Messages*, *Contacts* and *Map*. Since 2.1 there
   are three tabs: *Overview* (a status line in a colour that names the first problem, a card for
-  each problem while it exists, the latest chats, where everyone is), *Chats* (every chat with
+  each problem while it exists that says who and what to do, never the problem again, the latest
+  chats, where everyone is), *Chats* (every chat with
   its newest message, and all messages as one thread) and *Contacts* (the contacts by their
   devices, the sensors' readings, each switch *Ask for position and battery*, *Add or remove*
   with each contact's *Remove*, which asks first, the nodes heard nearby). Since 2.2 *Let
@@ -159,6 +160,17 @@ their way, a draft and its *Send* for each chat and the configuration
   other links, under *Where everyone is*, come below everything on a phone, and with them the map
   seemed gone (2.1.1). All are sections views, which reflow on a phone, so there is one variant; cards show by conditions on states and on
   templates, which the frontend evaluates since Home Assistant 2026.10.
+* **A companion no longer heard** (#168, 2.2.1): a companion's state takes precedence over older
+  facts about it. In 2.2.1 the dashboard decides it alone, from each companion's *Last heard*:
+  more than a day old is silent. A silent companion leaves the problem *a position broadcast to
+  everyone*, since it broadcasts nothing while silent; the card lists it as not heard for so
+  many days, since when, with the fact that its adverts carried its position until then, muted.
+  With only silent companions the card is a blue note. The status line and the card decide it
+  by the same lines, which a test compares. One the gateway's list names without a device, one
+  never heard and one beyond the list count as heard: the list errs to warn (ADR 0025). The
+  advert's own time is not in Home Assistant, so the time shown is when the companion was last
+  heard: its newest advert is no newer. The gateway's companion state, with the advert's time and
+  the same rule on every card, follows in a minor version.
 * **Writing:** 2.0 offered the guide's script *Mesh message* (`script.mesh_message`) as a form
   in a tile, with a hint while the script was missing. Since 2.1 each chat page ends in the
   gateway's draft of that chat, the text entity *Write to …*, and its button *Send*: the gateway

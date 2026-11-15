@@ -40,6 +40,21 @@ views:
               {%- set numbers = running | regex_findall('^(\\d+)\\.(\\d+)') -%}
               {%- set other = running != '' and (not numbers or (numbers[0][0] | int, numbers[0][1] | int) != (@major@, @minor@)) -%}
               {%- set link = states(radio) -%}
+              {#- who is silent: not heard for a day, by its Last heard; the same lines in the status line and in the card of a position broadcast to everyone (#168) -#}
+              {#- now(): the card renders again each minute, as the registry it reads tells no listener -#}
+              {%- set clock = now() -%}
+              {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
+              {%- set devices = [] if gw is none else integration_entities('mqtt') | select('is_device_attr', 'via_device_id', gw) | map('device_id') | unique | list -%}
+              {%- set e = 'binary_sensor.@gw@_advert_position' -%}
+              {%- set keys = (state_attr(e, 'contacts') or []) if is_state(e, 'on') else [] -%}
+              {%- set q = namespace(heard=[], silent=[]) -%}
+              {%- for k in keys -%}
+              {%- set h = namespace(at='') -%}
+              {%- for d in devices if device_attr(d, 'serial_number') == k -%}{%- for x in device_entities(d) | select('match', 'sensor\\.\\w+_last_heard(_\\d+)?$') -%}{%- set h.at = states(x) -%}{%- endfor -%}{%- endfor -%}
+              {%- set t = h.at | as_datetime(default=none) -%}
+              {%- if t is not none and clock - t > timedelta(days=1) -%}{%- set q.silent = q.silent + [dict(key=k, at=h.at)] -%}{%- else -%}{%- set q.heard = q.heard + [dict(key=k, at=h.at)] -%}{%- endif -%}
+              {%- endfor -%}
+              {%- set beyond = (([state_attr(e, 'total') | int(0), keys | count] | max) - (keys | count)) | int -%}
               {%- set ns = namespace(yellow=[], blue=0, waiting=0) -%}
               {%- for e in (state_attr('sensor.@gw@_pending_messages', 'messages') or []) if e is mapping and e.get('step') == 'queued' -%}
               {%- set t = (e.get('queued_at') or '') | as_datetime(default=none) -%}
@@ -48,7 +63,7 @@ views:
               {%- if is_state('binary_sensor.@gw@_degraded', 'on') -%}{%- set ns.yellow = ns.yellow + ['degraded'] -%}{%- endif -%}
               {%- if is_state('binary_sensor.@gw@_look_alike', 'on') -%}{%- set ns.yellow = ns.yellow + ['look_alike'] -%}{%- endif -%}
               {%- if is_state('binary_sensor.@gw@_remote_cli', 'on') -%}{%- set ns.yellow = ns.yellow + ['remote_cli'] -%}{%- endif -%}
-              {%- if is_state('binary_sensor.@gw@_advert_position', 'on') -%}{%- set ns.yellow = ns.yellow + ['advert_position'] -%}{%- endif -%}
+              {%- if q.heard or beyond > 0 -%}{%- set ns.yellow = ns.yellow + ['advert_position'] -%}{%- elif q.silent -%}{%- set ns.blue = ns.blue + 1 -%}{%- endif -%}
               {%- if states('sensor.@gw@_profile') in ['problem', 'drift'] -%}{%- set ns.yellow = ns.yellow + ['profile'] -%}{%- endif -%}
               {%- if paused and reason in ['first_start', 'radio_airtime'] -%}{%- set ns.blue = ns.blue + 1 -%}{%- elif paused and reason != 'no_radio' -%}{%- set ns.yellow = ns.yellow + ['telemetry'] -%}{%- endif -%}
               {%- if offset | abs >= 300 -%}{%- set ns.yellow = ns.yellow + ['clock'] -%}{%- endif -%}
@@ -209,23 +224,71 @@ views:
             content: |-
               {#- problem: advert_position -#}
               {%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}
+              {%- macro mon(v) -%}
+              {#- Translators: an abbreviated month name, as in 22 Oct 10:31 -#}
+              {%- if v == 1 -%}_("Jan")
+              {%- elif v == 2 -%}_("Feb")
+              {%- elif v == 3 -%}_("Mar")
+              {%- elif v == 4 -%}_("Apr")
+              {%- elif v == 5 -%}_("May")
+              {%- elif v == 6 -%}_("Jun")
+              {%- elif v == 7 -%}_("Jul")
+              {%- elif v == 8 -%}_("Aug")
+              {%- elif v == 9 -%}_("Sep")
+              {%- elif v == 10 -%}_("Oct")
+              {%- elif v == 11 -%}_("Nov")
+              {%- elif v == 12 -%}_("Dec")
+              {%- else -%}{{ m(v) }}
+              {%- endif -%}
+              {%- endmacro -%}
+              {%- macro when(v) -%}
+              {%- set t = v | as_datetime(default=none) -%}
+              {%- if t is none -%}–
+              {%- else -%}
+              {%- set t = t | as_local -%}{%- set days = ((now() | as_local).date() - t.date()).days -%}
+              {%- set time = m(t.strftime('%H:%M')) -%}{%- set day = t.day | int -%}{%- set month = mon(t.month) -%}
+              {%- if days <= 0 -%}{{ m(t.strftime('%H:%M')) }}
+              {%- elif days == 1 -%}
+              {#- Translators: the day before today and a clock time such as 23:50 -#}
+              _("yesterday {time}")
+              {%- else -%}
+              {#- Translators: an older day: the day of the month, an abbreviated month name and a clock time, as in 22 Oct 10:31 -#}
+              _("{day} {month} {time}")
+              {%- endif -%}
+              {%- endif -%}
+              {%- endmacro -%}
+              {#- who is silent: not heard for a day, by its Last heard; the same lines in the status line and in the card of a position broadcast to everyone (#168) -#}
               {#- now(): the card renders again each minute, as the registry it reads tells no listener -#}
               {%- set clock = now() -%}
               {%- set gw = device_id('binary_sensor.@gw@_radio') -%}
               {%- set devices = [] if gw is none else integration_entities('mqtt') | select('is_device_attr', 'via_device_id', gw) | map('device_id') | unique | list -%}
+              {%- set e = 'binary_sensor.@gw@_advert_position' -%}
+              {%- set keys = (state_attr(e, 'contacts') or []) if is_state(e, 'on') else [] -%}
+              {%- set q = namespace(heard=[], silent=[]) -%}
+              {%- for k in keys -%}
+              {%- set h = namespace(at='') -%}
+              {%- for d in devices if device_attr(d, 'serial_number') == k -%}{%- for x in device_entities(d) | select('match', 'sensor\\.\\w+_last_heard(_\\d+)?$') -%}{%- set h.at = states(x) -%}{%- endfor -%}{%- endfor -%}
+              {%- set t = h.at | as_datetime(default=none) -%}
+              {%- if t is not none and clock - t > timedelta(days=1) -%}{%- set q.silent = q.silent + [dict(key=k, at=h.at)] -%}{%- else -%}{%- set q.heard = q.heard + [dict(key=k, at=h.at)] -%}{%- endif -%}
+              {%- endfor -%}
+              {%- set beyond = (([state_attr(e, 'total') | int(0), keys | count] | max) - (keys | count)) | int -%}
               {%- macro who(k) -%}
               {%- set r = namespace(name=none) -%}
               {%- for d in devices if device_attr(d, 'serial_number') == k -%}{%- set r.name = device_attr(d, 'name_by_user') or device_attr(d, 'name') -%}{%- endfor -%}
               {{ m(r.name or (k | string)[:8]) }}
               {%- endmacro -%}
-              {%- macro listed(v) -%}{%- for k in v[:3] -%}{{ who(k) }}{% if not loop.last %}, {% endif %}{%- endfor -%}{%- endmacro -%}
-              {%- set e = 'binary_sensor.@gw@_advert_position' -%}
-              {%- if is_state(e, 'on') -%}
-              {%- set keys = state_attr(e, 'contacts') or [] -%}
-              {%- set names = listed(keys) -%}{%- set more = (([state_attr(e, 'total') | int(0), keys | count] | max) - ([keys | count, 3] | min)) | int -%}
-              {#- Translators: names are the names of contacts, or the first digits of their keys -#}
-              <div><ha-alert alert-type="warning"><b>{% if more > 0 %}_("{names} and {more} more broadcast their position to everyone in range."){% else %}_("{names} broadcast their position to everyone in range."){% endif %}</b> _("On that device, make sure in the MeshCore app that sharing the location in adverts is off, then send an advert near this home's radio.")</ha-alert></div>
-              <details><summary>_("What this means")</summary><p>_("The household's map does not need it: the gateway asks for positions privately (Ask for position and battery).")</p><p>_("The gateway reads each advert. Until it has read a device's newest advert, for example one sent while the gateway was stopped for an update or a restart, it goes by the position this home's radio still remembers for that device: from an older advert, or written by another app. The radio keeps that position after sharing is switched off.")</p><p>_("The card goes once the gateway has read an advert without a position.") _("It can come back after an update or a restart, as long as this home's radio remembers the old position.")</p></details>{%- endif -%}
+              {%- set more = beyond | int -%}
+              {%- if q.heard or beyond > 0 -%}
+              {#- Translators: the card of a position broadcast to everyone: the first line of Overview names the problem, this card what to do; the devices are listed under it -#}
+              <div><ha-alert alert-type="warning"><b>_("What to do:")</b> _("On each device whose adverts carry its position, make sure in the MeshCore app that sharing the location in adverts is off, then send an advert near this home's radio.")</ha-alert></div>
+              {%- elif q.silent -%}
+              {#- Translators: in blue, for information: the devices listed under it were not heard for over a day, so the position in their last adverts is no problem now -#}
+              <div><ha-alert alert-type="info"><b>_("Not heard for over a day.")</b> _("A device that is not heard broadcasts nothing. When it is heard again, the gateway reads its next advert.")</ha-alert></div>
+              {%- endif -%}
+              {%- if q.heard or q.silent or beyond > 0 %}
+              {#- Translators: a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices; days is a whole number, 2 or more #}
+              <table role="presentation" width="100%">{%- for x in q.heard -%}{%- set heard = when(x.at) -%}<tr><td><b>{{ who(x.key) }}</b></td><td>_("its adverts carry its position")</td><td align="right"><small>{% if x.at | as_datetime(default=none) is not none %}_("heard {heard}"){% endif %}</small></td></tr>{%- endfor -%}{%- if beyond > 0 -%}<tr><td colspan="3">_("and {more} more")</td></tr>{%- endif -%}{%- for x in q.silent -%}{%- set days = ((clock - (x.at | as_datetime)).total_seconds() // 86400) | int -%}{%- set since = when(x.at) -%}<tr><td><b>{{ who(x.key) }}</b></td><td>{% if days < 2 %}_("not heard for a day"){% else %}_("not heard for {days} days"){% endif %}<br><small>_("its adverts carried its position until then")</small></td><td align="right"><small>_("since {since}")</small></td></tr>{%- endfor -%}</table>
+              <details><summary>_("What this means")</summary><p>_("The household's map does not need it: the gateway asks for positions privately (Ask for position and battery).")</p><p>_("The gateway reads each advert. Until it has read a device's newest advert, for example one sent while the gateway was stopped for an update or a restart, it goes by the position this home's radio still remembers for that device: from an older advert, or written by another app. The radio keeps that position after sharing is switched off.")</p><p>_("The card goes once the gateway has read an advert without a position.") _("It can come back after an update or a restart, as long as this home's radio remembers the old position.")</p><p>_("A device not heard for over a day, no advert, no message, no answer, is listed as not heard: while it is silent it broadcasts nothing, and it is no problem. The line under it says that its adverts carried its position until it was last heard, and when that was. It may be switched off, out of range, or flashed again with a new key; once it is heard again, the gateway reads its next advert.")</p></details>{%- endif -%}
           - type: markdown
             text_only: true
             show_empty: false
@@ -2231,7 +2294,7 @@ views:
           - type: markdown
             text_only: true
             content: |-
-              <details><summary>_("When something is wrong")</summary><ul><li>_("The first line of Overview names the problem; the card below it says what to do. Tell your administrator the time and what the card says.")</li><li><b>_("a fault in the gateway")</b>: _("A part of the gateway does not work as it should. Messages still go out.")</li><li><b>_("a node imitates a contact")</b>: _("A radio nearby has a key that starts like a contact's.")</li><li><b>_("remote access to the radio")</b>: _("A contact may change this home's radio over the air.")</li><li><b>_("a position broadcast to everyone")</b>: _("A person's device tells everyone in range where it is.") _("Until the gateway has read the device's newest advert, it goes by the position this home's radio still remembers for it.")</li><li><b>_("the radio's settings")</b>: _("The radio's settings could not be set, or someone changed them.")</li><li><b>_("asking for position and battery is paused")</b>: _("The gateway asks nobody for now; the card says why.")</li><li><b>_("the radio's clock")</b>: _("The radio's clock is far off.")</li><li><b>_("the contact table is full")</b>: _("The radio cannot add a new contact.")</li><li><b>_("the dashboard and the gateway are of different versions")</b>: _("Some cards may be missing or empty until your administrator updates one of them.")</li></ul></details>
+              <details><summary>_("When something is wrong")</summary><ul><li>_("The first line of Overview names the problem; the card below it says what to do. Tell your administrator the time and what the card says.")</li><li><b>_("a fault in the gateway")</b>: _("A part of the gateway does not work as it should. Messages still go out.")</li><li><b>_("a node imitates a contact")</b>: _("A radio nearby has a key that starts like a contact's.")</li><li><b>_("remote access to the radio")</b>: _("A contact may change this home's radio over the air.")</li><li><b>_("a position broadcast to everyone")</b>: _("A person's device tells everyone in range where it is.") _("Until the gateway has read the device's newest advert, it goes by the position this home's radio still remembers for it.") _("A device not heard for over a day does not count: the card lists it as not heard, with the time it was last heard.")</li><li><b>_("the radio's settings")</b>: _("The radio's settings could not be set, or someone changed them.")</li><li><b>_("asking for position and battery is paused")</b>: _("The gateway asks nobody for now; the card says why.")</li><li><b>_("the radio's clock")</b>: _("The radio's clock is far off.")</li><li><b>_("the contact table is full")</b>: _("The radio cannot add a new contact.")</li><li><b>_("the dashboard and the gateway are of different versions")</b>: _("Some cards may be missing or empty until your administrator updates one of them.")</li></ul></details>
           - type: markdown
             text_only: true
             content: |-
