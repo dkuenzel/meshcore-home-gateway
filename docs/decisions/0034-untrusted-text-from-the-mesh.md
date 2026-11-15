@@ -92,8 +92,8 @@ users import them from there.
 | --- | --- |
 | `canonical_text(text)` | A message text as the gateway publishes and keeps it: the repertoire below. Idempotent, never longer. |
 | `canonical_name(name)` | `canonical_text` on one line: line breaks as spaces, runs of spaces as one, no space at either end. |
-| `shown(text)` | A line for a terminal, a CSV cell or a label: each control, format or separator character left is a space, except a joiner inside a sequence and the tags of a subdivision flag. |
-| `name_key(name)` | A name as it is compared with others, to mark a taken name (SEC-007). Moves here from `core/contacts.py`. |
+| `shown(text)` | A line for a terminal, a CSV cell or a label: each control, format or separator character left is a space, except a joiner inside a sequence and the tags of a valid subdivision flag. |
+| `name_key(name)` | A name as it is compared with others, to mark a taken name (SEC-007). Moves here from `core/contacts.py`. It starts with `canonical_name`, whatever the setting says (below). |
 | `csv_cell(text)` | `shown`, then the formula guard. |
 | Named classes | `DROPPED`, `LINE_BREAKS`, `KEPT_JOINERS`, `INVISIBLE`, `COPY_INVISIBLE`, `MARK_CAP`. The dashboard's `m()`, contact links (`protocol/links.py:27`) and the tests read them here. |
 
@@ -107,9 +107,13 @@ users import them from there.
 * drops the nine explicit direction formatting characters, U+202A–U+202E and U+2066–U+2069
   (UAX #9; the set of Trojan Source, CVE-2021-42574), the byte order mark U+FEFF, and the
   interlinear annotation characters U+FFF9–U+FFFB;
-* drops the tag characters U+E0000–U+E007F, except in a subdivision flag: U+1F3F4, tags, then
-  U+E007F (UTS #51, ED-14a). Tags outside a flag hide text from people, not from a language
-  model;
+* drops the tag characters U+E0000–U+E007F, except in a valid subdivision flag: U+1F3F4, then 3
+  to 6 tags that spell a subdivision ID in CLDR's form (two letters `a`–`z`, then 1 to 4 of
+  `a`–`z` and `0`–`9`), then U+E007F. UTS #51's ED-14a admits any run of tags between the base
+  and the cancel tag; only the validity of Annex C's subdivision IDs makes it a flag. Any other
+  run is dropped whole with its cancel tag, and U+1F3F4 stays a black flag. Tags hide text from
+  people, not from a language model: a free run would carry a hidden sentence (up to 38 ASCII
+  characters in 160 bytes, 4 bytes each), a valid flag at most 6 letters and digits;
 * keeps a zero-width joiner or non-joiner only between two characters that are not spaces;
 * keeps at most 30 combining marks after one base character: the bound of UAX #15's stream-safe
   format (§13);
@@ -130,11 +134,19 @@ U+FFFD. companion-v1.18.0 cuts its own name at a whole character
 
 ### Where text enters
 
-With `clean_received`, the module applies where text enters the core, at the places where
-`clean_received` applies today:
+With `clean_received`, the module applies where text enters the core: at the places where
+`clean_received` applies today, and at one it misses today, the recent messages from the history:
 
 * the radio's records and adverts (`observer.py:1089-1099`), the heard nodes restored from the
   history (`observer.py:629`) and the documents the state file kept (`observer.py:944-945`);
+* the recent messages the observer takes from the history for the retained `history` document,
+  at the start (`observer.py:224`) and when the published channels are set (`:263`): up to 50
+  (`RECENT_MESSAGES`, `:103`), which Home Assistant reads into the attributes of *Message
+  history*. Their texts take `canonical_text`, and the sender's and claimed names they carry
+  `canonical_name`, when they are published, as `_take_heard_nodes` does for heard nodes. The
+  stored rows stay as they are. Today nothing cleans these rows, so without this entry the
+  `history` document would carry the characters of messages received under 2.2 until 50 newer
+  ones pushed them out;
 * the inbox: the text, after the command is judged (`inbox.py:212-213`), the sender's name
   (`inbox.py:283-284`), and with the text the name a channel message claims;
 * the refusals the state file kept (`state.py:232-242`) and a removal's result
@@ -177,6 +189,12 @@ characters for a slug, the text room for a draft.
 `name_key` only marks (device names, `name_taken`, labels).
 
 * As today: NFKC, case folding, invisible characters left out (`core/contacts.py:178-190`).
+* New: the key starts with `canonical_name`, whatever `clean_received` says. Only the comparison
+  changes; the name that is stored and shown stays as the setting decides. A control character
+  then drops out instead of counting as a space (`_compared`, `core/contacts.py:199-205`):
+  `name_key("Al\x01ice")` gives `al ice` in 2.2 and `alice` from 2.3, so such a name now reads
+  as taken beside `Alice`, as it reads on a screen. The key compares what canonical text would
+  show, so `name_key(canonical_name(x)) == name_key(x)` holds by construction.
 * New: the UTS #39 skeleton for characters that look like Latin letters or digits. The table holds
   the 480 entries of `confusables.txt` 15.1.0 that NFKC leaves as they are, of the 1,454 whose
   prototype is made of ASCII letters and digits. 15.1.0 is the Unicode version of Python 3.13,
@@ -189,8 +207,16 @@ characters for a slug, the text room for a draft.
 * Today's table of Cyrillic and Greek letters stays for the two the skeleton does not fold to
   Latin (`κ`, `χ`), so every name marked in 2.2 stays marked.
 
-An override no longer passes: `canonical_name` removes it before a name is compared or shown, so a
-stored name displays as it compares.
+An override no longer passes, whatever the setting says:
+
+* With the default, `canonical_name` removes it where the name enters, so a stored name displays
+  as it compares.
+* With `false`, the stored name keeps it, and a screen may show its letters in another order
+  than the key compares: U+202E and `ecilA` read as `Alice` and compare as `ecila`. So a name that
+  holds an explicit direction embedding, override or isolate (U+202A–U+202E, U+2066–U+2069)
+  counts as taken, whatever its letters: its device name carries the key's 8 digits, and a heard
+  node is `name_taken`. It is only a mark; the name stays as it came, so `false` keeps its
+  meaning.
 
 ### The default
 
@@ -212,8 +238,9 @@ update treat it. This record decides only the default and what it cleans.
 
 With `false`, texts and names stay as they came, as documented
 ([mqtt-api.md](../mqtt-api.md#received-messages-received)), and the sinks still encode them.
-`name_key`, `shown`, the CSV guard and the cut sequence apply whatever the setting says. Names
-canonical whatever the setting says is a 3.0 decision, since it changes the meaning of `false`.
+`name_key` (with the mark of a name that holds a direction override), `shown`, the CSV guard and
+the cut sequence apply whatever the setting says. Names canonical whatever the setting says is a
+3.0 decision, since it changes the meaning of `false`.
 
 What the household sees after the update into 2.3:
 
@@ -222,6 +249,8 @@ What the household sees after the update into 2.3:
   key digits, unless a user renamed the device in Home Assistant. Entity IDs stay.
 * The dashboard looks as before: `m()` already dropped these characters. *Add heard node* and the
   command line show family emoji and subdivision flags whole.
+* *Message history* and the retained `history` document show the messages received before the
+  update canonical from the first start; the history's rows keep them as they came.
 * *Settings* shows *Received texts cleaned* as on, from the `config` document. Its explanation
   then says that names lose these characters too, and that emoji stay.
 
@@ -262,7 +291,7 @@ Severities as verified.
 | Finding | Severity | Closed by |
 | --- | --- | --- |
 | SEC-1: control, escape and direction characters reach Home Assistant, the documents and Homie by default; the *New node* event carries any stranger's name | low | the repertoire and the default `true` (2.3) |
-| SEC-2: `name_key` misses an override and digit-for-letter look-alikes (`A1ice`, `B0b`, `AIice`) | low | the entry removes overrides; the skeleton (2.3) |
+| SEC-2: `name_key` misses an override and digit-for-letter look-alikes (`A1ice`, `B0b`, `AIice`) | low | the entry removes overrides by default, and a name that keeps one with `false` counts as taken; the skeleton (2.3) |
 | SEC-3: positions not range-checked | low | one validator for adverts, records and telemetry (2.2.1) |
 | SEC-4: a name a channel message claims looks like a checked one | low | one "claimed" look, never a link (2.4, with #170 and #171) |
 | SEC-5: the more-info dialog links text that starts with `http` | low | documented (2.2.1); accepted |
@@ -272,7 +301,7 @@ Severities as verified.
 | SEC-9: emoji sequences broken in labels and the command line; a cut name ends in U+FFFD | info | `shown`; the decoder drops a cut sequence (2.3) |
 | SEC-10: the CSV guard misses a leading tab or CR and fullwidth signs | info | the guard after leading spaces and NFKC (2.3) |
 | SEC-11: the documentation claims more than the code does | info | corrected (2.2.1); rewritten to the module (2.3) |
-| SEC-12: Assist and its language model read names that contacts chose; tag characters hide text | info | tags dropped outside flags (2.3); the guide's note (2.2.1) |
+| SEC-12: Assist and its language model read names that contacts chose; tag characters hide text | info | tags dropped outside valid subdivision flags, which carry at most 6 letters and digits (2.3); the guide's note (2.2.1) |
 | SEC-13: combining-mark floods unbounded | info | 30 marks per base (2.3) |
 
 ### Consequences
@@ -289,7 +318,8 @@ Severities as verified.
 * Bad, because texts and names lose characters by default, and the history keeps the canonical text.
   A household that needs raw text sets `false`.
 * Bad, because the skeleton also marks names that differ but read alike, such as `Home` and
-  `Horne`. Such a device name gains 8 key digits.
+  `Horne`, and a name that differs from another only by a control character now compares equal
+  to it. Such a device name gains 8 key digits.
 * Bad, because device names change once in Home Assistant where a name held a dropped character or a
   newly folded look-alike.
 * Bad, because CI gains a package source, npm, for one check. The lock file's hashes, the skipped
@@ -304,28 +334,33 @@ over TCP the radio is not authenticated, and its records pass the same entry. B3
 documents carry canonical text by default; texts and contact links from the bus pass the same rules
 on their way to the radio. B4 Home Assistant: device names, attributes and events are canonical by
 default; the more-info dialog still links text that starts with `http`. B5 its users: the dashboard
-looks as before; Assist reads no hidden tags. B6 the container: the history and the state file keep
-canonical text by default. B7 the project: npm packages run in CI only, pinned by hash. The threat
-model's controls and remains of B4 change in the same pull request.
+looks as before; by default Assist reads no hidden tags beyond the 6 of a valid flag. B6 the
+container: the history and the state file keep canonical text by default. B7 the project: npm
+packages run in CI only, pinned by hash. The threat model's controls and remains of B4 say so in
+this pull request, marked as proposed for 2.3.
 
 ### Confirmation
 
 * `tests/hostile_corpus.py`: one corpus with neutral examples, a legitimate set (emoji sequences,
-  flags, scripts with marks, right-to-left letters), hostile sets and raw bytes, including `AIice`
-  and `None`. Every new sink's tests use it.
+  flags, scripts with marks, right-to-left letters), hostile sets and raw bytes, including `AIice`,
+  `None`, a name with a control character between its letters, and U+1F3F4 with a hidden
+  sentence in tags before U+E007F. Every new sink's tests use it.
 * `tests/test_untrusted.py`: the corpus as examples, and Hypothesis properties over `st.text()` and,
   through the decoder, `st.binary()`: idempotent; never longer; no character of `DROPPED`; a name on
   one line; every legitimate entry unchanged; joiners only between characters; at most 30 marks per
-  base; `name_key(canonical_name(x)) == name_key(x)`; the pairs that must compare equal and those
-  that must not.
+  base; no run of tags longer than 6; `name_key(canonical_name(x)) == name_key(x)`, which holds
+  because the key starts with `canonical_name`; a name with an explicit direction override,
+  embedding or isolate always taken; the pairs that must compare equal and those that must not.
 * The codec: every decoder with the raw bytes, no exception and no surrogate; a cut name leaves no
   U+FFFD.
 * End to end on the emulated radio: with the defaults every payload parses strictly and holds no
   character of `DROPPED`, Homie's `$name` included; topics stay ASCII; no log record holds a raw
-  control character; the history holds the canonical text. With `false`, texts as they came.
+  control character; the history holds the canonical text. With `false`, texts as they came. A
+  history written with `false`, then a start with `true`: the `history` document holds no
+  character of `DROPPED`, and the rows in the history are unchanged.
 * The Home Assistant contract tests, both series: the corpus as contacts with devices; the
   registry's device names hold no character of `DROPPED` and keep the legitimate emoji; `AIice`,
-  `A1ice` and `B0b` get key digits.
+  `A1ice` and `B0b` get key digits; with `false`, a name that holds U+202E gets key digits too.
 * Rule 19 of the dashboard's tests: each copy of `m()` removes the module's class.
 * The frontend's pipeline in CI, and its version test.
 * The registry's tests of [ADR 0036](0036-the-settings-registry-recommendations-and-the-update-review.md):
@@ -400,7 +435,8 @@ Sources: [threat model](../threat-model.md), B1 to B4;
 [development.md](../development.md#text-from-the-mesh-and-the-bus);
 [configuration.md](../configuration.md#messages); MeshCore companion-v1.18.0 for the firmware lines;
 Home Assistant 2026.11.0 and frontend 20261028.4; MQTT 5.0 §1.5.4; the Homie convention; UAX #9;
-UAX #15 §13; UTS #39 and `confusables.txt` 15.1.0; UTS #51; Trojan Source (CVE-2021-42574); OWASP's
+UAX #15 §13; UTS #39 and `confusables.txt` 15.1.0; UTS #51 (ED-14a, Annex C) and the
+`unicode_subdivision_id` of UTS #35 (CLDR); Trojan Source (CVE-2021-42574); OWASP's
 pages on XSS prevention, input validation and CSV injection.
 
 Revisit when:

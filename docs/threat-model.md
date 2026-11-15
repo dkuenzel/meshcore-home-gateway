@@ -126,7 +126,15 @@ wrote). **Trusted:** the templates. **Not trusted:** names and texts from the me
 data: never markup, never templates ([text from the mesh](development.md#text-from-the-mesh-and-the-bus)).
 
 **Controls:** cards escape mesh text; device names of the same name carry key digits; labels show
-key digits.
+key digits. Since 2.3 (proposed, [ADR 0034](decisions/0034-untrusted-text-from-the-mesh.md)):
+names and texts are canonical by default (`[messages] clean_received = true`), without control,
+escape or direction characters and without tags outside a valid subdivision flag; names that read
+alike, digits for letters included, compare equal by the UTS #39 skeleton; a name that holds a
+direction override counts as taken whatever the setting says.
+
+**Remains:** with `clean_received = false`, names and texts reach Home Assistant as they came,
+and the sinks' own encoding is the only control; a name then keeps its override, and only its key
+digits tell it apart. The more-info dialog makes a link of an attribute that starts with `http`.
 
 ### B5: Home Assistant and its users
 

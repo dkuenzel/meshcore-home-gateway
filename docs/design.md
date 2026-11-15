@@ -870,7 +870,8 @@ Two controls stand side by side, and neither relies on the other:
   * without C0 and C1 controls and DEL, except the line feed of a text;
   * without the nine explicit direction formatting characters (UAX #9), the byte order mark and
     the interlinear annotation characters;
-  * without tag characters, except in a subdivision flag (UTS #51);
+  * without tag characters, except in a valid subdivision flag: U+1F3F4, 3 to 6 tags that spell
+    a subdivision ID in CLDR's form, U+E007F (UTS #51); any other run of tags goes whole;
   * with a zero-width joiner only between two characters, and at most 30 combining marks after
     one base (UAX #15's stream-safe bound);
   * with line separators as line breaks, a name on one line, and runs of spaces as one.
@@ -883,11 +884,12 @@ Two controls stand side by side, and neither relies on the other:
   topics and identifiers, the macro `m()` and HTML-block placement in the dashboard's cards
   (§6.13), `shown` for the command line, labels and CSV cells, `%r` in the log, parameters in SQL.
 
-Where text enters the core: the radio's records and adverts, the heard nodes restored from the
-history and the documents the state file kept (the observer); a message's text after its command
-is judged, its sender's name and the name a channel message claims (the inbox); the refusals the
-state file kept; a removal's result. The codec stays faithful, except that a name cut inside a
-UTF-8 sequence loses that sequence instead of ending in U+FFFD.
+Where text enters the core: the radio's records and adverts, the heard nodes and the recent
+messages restored from the history (the stored rows stay as they are; what is published from them
+is canonical), and the documents the state file kept (the observer); a message's text after its
+command is judged, its sender's name and the name a channel message claims (the inbox); the
+refusals the state file kept; a removal's result. The codec stays faithful, except that a name
+cut inside a UTF-8 sequence loses that sequence instead of ending in U+FFFD.
 
 Who sent a text decides what it may do, never how it is escaped:
 
@@ -899,12 +901,16 @@ Who sent a text decides what it may do, never how it is escaped:
 | A heard node's name | its own key, which anyone can make | a label in *Add heard node*, marked when taken |
 | A name a channel message claims | nothing: anyone with the channel's secret writes any name | text; one "claimed" look and never a link on the dashboard (2.4) |
 
-**Names that identify.** `name_key` compares names as a person reads them: NFKC, case folding,
-invisible characters left out, and the UTS #39 skeleton for characters that look like Latin
-letters or digits (480 entries of `confusables.txt` 15.1.0, the Unicode version of Debian 13's
-Python). The skeleton maps a capital `I` to `l`, so the key takes the skeleton of the case-folded
-skeleton and counts `i` as `l`: `AIice`, `A1ice` and `ALICE` compare as `Alice`, `B0b` as `Bob`.
-A taken name only gains a mark (§7.2), never a refusal.
+**Names that identify.** `name_key` compares names as a person reads them. It starts with
+`canonical_name`, whatever the setting says, so a control character drops out instead of counting
+as a space, as it did up to 2.2. Then NFKC, case folding, invisible characters left out, and the
+UTS #39 skeleton for characters that look like Latin letters or digits (480 entries of
+`confusables.txt` 15.1.0, the Unicode version of Debian 13's Python). The skeleton maps a capital
+`I` to `l`, so the key takes the skeleton of the case-folded skeleton and counts `i` as `l`:
+`AIice`, `A1ice` and `ALICE` compare as `Alice`, `B0b` as `Bob`. A name that holds an explicit
+direction embedding, override or isolate counts as taken whatever its letters: with `false` it
+keeps them, and a screen may then show its letters in another order than the key compares. A
+taken name only gains a mark (§7.2), never a refusal.
 
 **The setting.** With `clean_received = false`, texts and names stay as they came, and the
 encoders at the sinks keep them inert. `name_key`, `shown`, the CSV guard and the dropped cut
@@ -946,7 +952,7 @@ boundaries and what stands in the way of each; this section is its summary.
 | --- | --- |
 | Spoofed command over the air | Commands only from direct messages, which the firmware authenticates with the key shared between sender and radio; channel messages never command (anyone with the channel secret can write any name). |
 | Look-alike contact with the same 6-byte key prefix | Permissions and targets bind full public keys. The sender must be the only contact with its prefix in the table read after the message arrived, and no other key with that prefix may have been seen on the radio in the last 24 hours, so a look-alike that came and went counts. Commands that waited in the radio before the bridge connected are rejected (§7.3). Recommended radio settings, warned about at connect: manual adding, no contact type added automatically. |
-| A node named like a contact or the gateway (anyone chooses a node's name; look-alike letters from other scripts, digits for letters, a capital I for an l; direction overrides) | Names are compared as a person reads them (NFKC, case folding, the UTS #39 skeleton of characters that look like Latin letters or digits, with a capital I and a lower-case i as an l, characters drawn as nothing left out: Unicode's default ignorables of any category, such as variation selectors and Hangul fillers, and every format character; the braille blank as a space; a name of such characters alone is one blank name); with `[messages] clean_received`, the default since 2.3, a name holds no direction override, so it displays as it compares (§6.14). Such a heard node is `name_taken` in `nodes` and the `node` event and marked in *Add heard node*; a contact named like the gateway's device or a contact added before gets a device named with its key's first 8 digits. Labels start with the key's digits, which a person compares with the node's screen (SEC-007, [ADR 0034](decisions/0034-untrusted-text-from-the-mesh.md)). |
+| A node named like a contact or the gateway (anyone chooses a node's name; look-alike letters from other scripts, digits for letters, a capital I for an l; direction overrides) | Names are compared as a person reads them (NFKC, case folding, the UTS #39 skeleton of characters that look like Latin letters or digits, with a capital I and a lower-case i as an l, characters drawn as nothing left out: Unicode's default ignorables of any category, such as variation selectors and Hangul fillers, and every format character; the braille blank as a space; a name of such characters alone is one blank name); with `[messages] clean_received`, the default since 2.3, a name holds no direction override, so it displays as it compares, and with `false` a name that holds one counts as taken (§6.14). Such a heard node is `name_taken` in `nodes` and the `node` event and marked in *Add heard node*; a contact named like the gateway's device or a contact added before gets a device named with its key's first 8 digits. Labels start with the key's digits, which a person compares with the node's screen (SEC-007, [ADR 0034](decisions/0034-untrusted-text-from-the-mesh.md)). |
 | Characters in a name or text that steer what reads it: terminal escapes, direction overrides, tags hidden from people but read by a language model | With `[messages] clean_received`, the default since 2.3, names and texts lose them where they enter, and keep emoji and every script; every sink encodes what it prints (§6.14). |
 | Replayed command packet | Sender timestamp must be newer than the last accepted one of that sender (persisted; a command refused because the broker was unreachable counts too) and within `max_age_s` of the bridge clock. Exact repeats are dropped for an hour, also those of a rejected command. |
 | Command injection into the automation system | Only configured single words become event types; arguments are data. The bridge executes nothing. Automations must treat `args` as untrusted. |
