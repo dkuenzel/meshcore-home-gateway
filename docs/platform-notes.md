@@ -802,8 +802,12 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   menu's text gets the window's height less 4, the button row and the list), `:464` (a
   checklist's less 3), `:23` and `:604-612` (the button row is 1 line, 3 with `--fb`). *Here:*
   the installer's menus and checklists are 20x78 with a list of 10 (`show_dialog()`), which
-  leaves 3 and 4 lines of text, and each of their texts is a single line; its yes/no boxes are
-  12x72 and show 6. No test compares a text's length with its box. *Check:*
+  leaves 3 and 4 lines of text, and each of their texts is a single line. `show_dialog()`'s
+  yes/no boxes are 12x72 and show 6; two others are 18x78 and 20x78 (12 and 14 lines). The
+  German question before a radio over TCP without authentication needs 7 lines in its 12x72 box
+  and is cut after "TCP trotzdem verwenden": the question and what *No* does are not shown. No
+  test compares a text's length with its box; a shorter German text and such a test are still
+  to do. *Check:*
   `whiptail --menu -- "$(seq 1 30)" 20 78 3 a A b B c C` shows 1 to 10 above the list; with
   `--fb` before `--menu`, 1 to 8.
 

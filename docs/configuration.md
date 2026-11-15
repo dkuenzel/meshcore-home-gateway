@@ -47,8 +47,9 @@ no position into its adverts, and in the EU band 869.40–869.65 MHz limits itse
 cycle (airtime factor 9). At every connect, before it reads the contact table, it compares the
 radio with this profile and writes only what differs, one command per setting; the radio rewrites
 its preferences file for each. Nothing else is ever written: frequency, bandwidth, spreading
-factor, coding rate, transmit power and the radio's keys stay as they are. The 10 % is the band's
-default, not a limit the gateway enforces ([Local rules](#local-rules)).
+factor, coding rate, transmit power and the radio's keys stay as they are. The 10 % is a default
+that `duty_cycle_percent` can change (10–100); the gateway sets no legal limit
+([Local rules](#local-rules)).
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -319,9 +320,10 @@ warns: someone may be guessing the codes. A restart does not end it. So a guess 
 most 3 in a million, and 5 guesses an hour are all there are
 ([design §7.4](design.md#74-residual-risks)). A command whose last word is no 6-digit code
 (`code_missing`) is no wrong code: it makes no guess, as chat that starts with a command word
-makes none (#176). A command that waited in the radio (a restart, an update, a re-plug) or in
-the mesh carries the code of the time it was sent: it is refused as `code_invalid` when it
-comes too late, but it does not count as a wrong code. To give one a secret (or a new one,
+and ends in no 6-digit number makes none (#176); chat that ends in one is checked as a code. A
+command that waited in the radio (a restart, an update, a re-plug) or in the mesh carries the
+code of the time it was sent: it is refused as `code_invalid` when it comes too late, but it
+does not count as a wrong code. To give one a secret (or a new one,
 which ends the old):
 
 ```sh

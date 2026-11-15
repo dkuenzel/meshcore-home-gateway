@@ -274,6 +274,7 @@ Alice, a command sender in a home with the words `status` and `gate-open`:
 | `status` | yes | refused: `code_missing` |
 | `Status of the bus?` | no | the command `status`, with `args` `of the bus?` |
 | `Status of the bus?` | yes | refused: `code_missing`; it counts toward no lock |
+| `Status of order 482913` | yes | refused: `code_invalid`, unless 482913 is her app's current code; it counts toward the lock |
 | `/status`, `status,`, `statusnow` | either | no command: a chat message |
 
 The word must stand alone and first; upper and lower case do not matter. What follows it reaches
@@ -281,7 +282,8 @@ the automation as `args`, which the automation should check. Every direct messag
 word is a command word is a command, also one meant as chat (below).
 
 **The code.** If the administrator gave you a code secret, every command of yours ends with a
-code; without one, a command needs none.
+code; without one, a command needs none, except while the administrator's codes file holds a
+secret that the gateway ignores (`code_missing` below).
 
 * The administrator runs `meshcore-home-gateway commands enrol` with your companion's key and
   shows you a QR code, or a line of text. You add it once to an authenticator app on your phone
@@ -313,7 +315,7 @@ sends when an acknowledgement got lost, is dropped without an answer.
 
 | Reason | What it means | What to do |
 | --- | --- | --- |
-| `code_missing` | no 6-digit code at the end | send it again with the current code last |
+| `code_missing` | no 6-digit code at the end; without a code secret: the administrator's codes file holds a secret that the gateway ignores | send it again with the current code last; without a code secret, tell the administrator |
 | `code_invalid` | not your current code: a wrong entry in the app, a clock that is off, or a command that waited in the mesh too long | check your phone's clock, then send it again with a new code |
 | `code_reused` | that code, or an older one, served already | wait for the next code |
 | `code_locked` | 5 wrong codes within the hour (below) | wait; tell the administrator |
@@ -328,7 +330,8 @@ five is an hour old. A restart of the gateway does not end it, and its log warns
 be guessing the codes. These count toward no lock: a message without a code (`code_missing`),
 such as chat that starts with a command word (since 2.2.1, #176); a code that served already
 (`code_reused`); a command that came late with the right code of the time it was sent (it waited
-in the mesh or in the radio); and the commands refused while the lock holds. Chat cannot lock you.
+in the mesh or in the radio); and the commands refused while the lock holds. Chat that does not
+end in a 6-digit number cannot lock you.
 
 **Keeping chat from commanding.** The gateway cannot tell a command from chat that starts with
 the same word: from a sender, "Status of the bus?" is the command `status`.
@@ -337,8 +340,12 @@ the same word: from a sender, "Status of the bus?" is the command `status`.
 * The administrator can choose words nobody starts a sentence with, such as `gate-open` instead
   of `open`, and let each automation act only on the `args` it expects
   ([configuration.md](configuration.md#commands)).
-* With a code secret, chat commands nothing: it ends in no code, is refused as `code_missing`
-  and counts toward no lock; it still shows among the refused commands.
+* With a code secret, chat commands nothing. Chat that does not end in a 6-digit number is
+  refused as `code_missing` and counts toward no lock; it still shows among the refused
+  commands.
+* With a code secret, a message that starts with a command word and ends in a 6-digit number,
+  such as "Status of order 482913", is checked as a code: a wrong one is refused as
+  `code_invalid` and counts toward the lock.
 
 ## Adding and removing contacts
 

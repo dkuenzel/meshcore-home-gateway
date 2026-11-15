@@ -9,7 +9,7 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
 * **Radio:** a MeshCore companion radio with USB firmware (or WiFi firmware for TCP), set up with
   the official app: name, radio preset, channels, contacts. Then disconnect the app; the gateway
   must be the radio's only client (protocol.md, section 1). Choose the preset and the transmit
-  power by the rules for your band: the gateway restricts neither by region or law
+  power by the rules for your band: the gateway restricts neither of them by region or law
   ([Local rules](configuration.md#local-rules)).
 * **Radio settings:** the gateway sets the radio up as an observer at its first connect: contacts
   added manually only, no telemetry for anyone, no position in adverts, and the 10 % duty cycle in
@@ -762,8 +762,8 @@ to the administrator for now.
 * **Asking for position and battery:** the companions the household includes, and the contact
   targets and command senders, are asked on a schedule, in airtime lanes of their own; their
   values expire when they stop answering ([`[telemetry]`](configuration.md#telemetry)).
-* **Retries and reconnects:** a direct message is sent again until it is acknowledged, at most
-  `max_attempts` times, and flooded after `flood_after` unacknowledged attempts
+* **Retries and reconnects:** a direct message is sent up to `max_attempts` times until it is
+  acknowledged, and flooded after `flood_after` unacknowledged attempts
   ([`[messages]`](configuration.md#messages)). The radio and the broker are reconnected without a
   restart, systemd restarts a crashed or hung service, and a stop keeps the queue for the next
   start ([Operations](#4-operations)).
@@ -789,9 +789,17 @@ to the administrator for now.
   add-on's documentation says that Home Assistant expects its users `homeassistant` and `addons`
   to read and write every topic, and asks for `topic readwrite #` for both
   ([Access Control Lists](https://github.com/home-assistant/addons/blob/master/mosquitto/DOCS.md#access-control-lists-acls),
-  read on 2026-11-15). The lines the example ACL gives Home Assistant's user, and those a
-  release adds, then matter for another broker, or for a Home Assistant that logs in with a user
-  of its own.
+  read on 2026-11-15). With that ACL, Home Assistant and every add-on that logs in as `addons`
+  can write what only the gateway should: the `command` events, which trigger the automations,
+  the other event topics and the documents
+  ([Securing the broker](mqtt-api.md#securing-the-broker); T6 and B3 in the
+  [threat model](threat-model.md#b3-the-gateway-and-the-broker)). The limits that the example
+  ACL puts on Home Assistant's user, and the lines a release adds, do not apply there; they
+  matter for another broker, or for a Home Assistant that logs in with a user of its own. What
+  remains: the gateway puts back a document that another client overwrites while it runs. A
+  code secret does not help here: it checks a command that comes over the mesh, not a `command`
+  event written to the broker. So trust every add-on that uses the broker as you trust Home
+  Assistant, or use another broker, where the example ACL applies.
 * **Rights in Home Assistant and over the mesh.** What Home Assistant's users may change
   (`[homeassistant] controls`, `radio_controls`), who may command (`[commands] senders` and
   `words`, chosen at installation, changed with `--reconfigure`), and each sender's code secret
@@ -810,17 +818,19 @@ to the administrator for now.
 * **The radio's identity, firmware and settings.** The gateway never replaces or exports the
   radio's key and never flashes firmware: a factory reset gives the radio a new key, which every
   companion must add again, and firmware goes on by cable ([Boards](#boards)). The preset, the
-  transmit power and the channels are set with MeshCore's tools, by the rules for your band
+  transmit power and the channels are set with MeshCore's tools: the preset and the transmit
+  power by the rules for your band, the channels as the household needs
   ([below](#changing-the-radios-settings), [Local rules](configuration.md#local-rules)). After
   the radio was plugged in again, restart the container
   ([What the script does](#what-the-script-does)).
 * **Updates.** `--update` runs on the Proxmox host
   ([Update, reconfigure, remove](#update-reconfigure-remove)); a new major version names its
-  steps in the changelog. After an update whose changelog says so (each minor and major version),
-  after a new target and after contacts got a device, make the dashboard again and paste it into
-  Home Assistant ([Dashboard](home-assistant.md#dashboard)). After Debian updated Python or
-  paho-mqtt, restart the service (above). The dashboard and the update come back with releases;
-  #169 (the dashboard) and #185 (fewer manual steps) track taking them off the administrator.
+  steps in the changelog. After an update whose changelog says so (each minor and major version,
+  and each patch that changes the dashboard), after a new target and after contacts got a
+  device, make the dashboard again and paste it into Home Assistant
+  ([Dashboard](home-assistant.md#dashboard)). After Debian updated Python or paho-mqtt, restart
+  the service (above). Making the dashboard again and updating recur with releases; #169 (the
+  dashboard) and #185 (fewer manual steps) track taking them off the administrator.
 
 ### Changing the radio's settings
 
@@ -840,8 +850,9 @@ python3 -m venv /root/meshcore-cli                         # an environment of i
 systemctl start meshcore-home-gateway
 ```
 
-The gateway restricts none of these settings by region or law: set the preset, the transmit
-power and the channels by the rules for your band ([Local rules](configuration.md#local-rules)).
+The gateway restricts none of these settings by region or law: set the preset and the transmit
+power by the rules for your band ([Local rules](configuration.md#local-rules)), the channels as
+the household needs.
 `set tx 14` above is an example, not a recommendation.
 
 A radio over TCP is reached the same way from the gateway's container, the only host that should

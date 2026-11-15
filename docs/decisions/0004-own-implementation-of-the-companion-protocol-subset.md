@@ -91,7 +91,8 @@ version is raised.
   hold: `python3-meshcore` is in a Debian stable release with its tests run as autopkgtest, so
   that [ADR 0005](0005-runtime-dependencies-from-the-distribution.md) can take it from the
   distribution; upstream runs its tests in CI and its releases carry provenance; and the
-  gateway's scope needs more of the protocol than its subset. This makes the revisit above
-  concrete for the library. Until then the firmware's source and the firmware itself stay the
-  references for every frame
+  gateway's scope needs more of the protocol than its subset. This review was the revisit that
+  the grown scope called for (note of 2026-11-02); for MeshCore's library these three conditions
+  replace the revisit line above. Until then the firmware's source and the firmware itself stay
+  the references for every frame
   ([ADR 0026](0026-gateway-tested-against-the-real-firmware-built-natively.md)).
