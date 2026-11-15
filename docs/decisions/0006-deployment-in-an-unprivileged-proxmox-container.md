@@ -134,3 +134,10 @@ to a valid configuration. `tests/manual/installer_dialogs.py` drives the real wh
   the program inside the container, instead of running from a clone on the host.
 * Revisit if Proxmox VE offers hot-plug USB passthrough for containers, or if the bridge needs to
   run on hosts without systemd.
+* Amended on 2026-11-15 by [ADR 0036](0036-the-settings-registry-recommendations-and-the-update-review.md),
+  a proposal for 2.3.0a1: `--update` stages the new version and lets it review the settings against
+  its recommendations; in a terminal it asks, without one it follows that record's consent rules. It
+  writes the configuration only on an answer and keeps the old one as `config.toml.<old version>`.
+  The staged program switches itself first and the configuration second (`install switch`).
+  `--review CTID` asks the same questions without an update. New installations leave out preferences
+  that equal their default.

@@ -381,6 +381,9 @@ CI, with npm packages. The repertoire, the cap of 30 and one look for claimed na
 recommendations the maintainer accepted the same day. So does ADR 0036's rule that *deletes* means
 stored data, which lets the flip reach unattended installations too.
 
+This record amends [ADR 0005](0005-runtime-dependencies-from-the-distribution.md), which carries a
+dated line: npm packages for one check in CI, none in production.
+
 2.2.1 carries the parts of #179 that change no default: the range check (SEC-3), the guard of
 rule 1 (SEC-7), and the documentation of SEC-5, SEC-6, SEC-11 and SEC-12. This record brings the
 rest in 2.3.0a1, right after the settings registry, so the update into 2.3 asks about its own

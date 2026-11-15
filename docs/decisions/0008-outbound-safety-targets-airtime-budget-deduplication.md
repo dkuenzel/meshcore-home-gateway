@@ -95,3 +95,8 @@ check queue expiry and retries with an emulated radio.
   (`advert/send`, zero hop, at most one every 10 minutes) is charged to this budget like a
   message, and refused when the budget cannot pay it at once and still hold one long message
   beside it, or while a message is on its way; the radio's other adverts stay uncounted.
+* Amended on 2026-11-15 by [ADR 0036](0036-the-settings-registry-recommendations-and-the-update-review.md),
+  a proposal for 2.3.0a1: when the file does not set `burst_s`, the bridge derives it at each
+  connect from the radio's preset: an advert and a long message beside it, rounded up, at least
+  10 s, at most one hour's budget. A new size keeps the bucket's level and never adds to it. The
+  regulatory bound stays the radio's own limiter.

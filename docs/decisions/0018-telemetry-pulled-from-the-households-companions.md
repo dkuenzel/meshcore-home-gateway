@@ -143,3 +143,7 @@ items for routes, permissions, GPS states and padding.
   design sprint (2026-10-23), summarised in [protocol.md](../protocol.md) with the implementation.
 * Revisit when MeshCore offers pushed or subscribed telemetry, when command 39 is deprecated, or
   when measured airtime (`GET_STATS`) shows the estimates are off.
+* Amended on 2026-11-15 by [ADR 0035](0035-the-companion-state-model.md), a proposal for 2.3.0a2:
+  the interval counts from the companion's last report, not from the last request; one movement rule
+  (50 m, a move confirmed by a second answer) decides both how often a companion is asked and which
+  fixes are published.

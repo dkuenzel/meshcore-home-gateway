@@ -128,3 +128,9 @@ stays as accepted, and supersedes nothing. The documents: [mqtt-api.md](../mqtt-
 the guide: [home-assistant.md](../home-assistant.md#telemetry-of-the-households-companions).
 Revisit when the hardware checklist or a week of use shows the time bound too short or too long
 in a busy mesh, or when Home Assistant changes how a `person`, a zone or availability work.
+
+Amended on 2026-11-15 by [ADR 0035](0035-the-companion-state-model.md), a proposal for 2.3.0a2: this
+record's bound also ends `heard` for a companion the gateway asks; a companion's advert position
+expires 1 h after its report; the document keeps an expired position only through silence, up to
+`[telemetry] last_known_days`, and the sensor *Last known position* shows it then, never the
+tracker.
