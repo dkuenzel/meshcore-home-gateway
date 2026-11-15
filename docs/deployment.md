@@ -592,6 +592,7 @@ name as `device` in `[radio]` ([Boards](#boards)).
 | Watch the bus | `meshcore-home-gateway listen` |
 | Send a test message | `meshcore-home-gateway send --wait 60 <alias> "test"` |
 | Inspect the radio | `systemctl stop meshcore-home-gateway && meshcore-home-gateway probe --serial <device>` |
+| Change the radio's settings | stop the service, use MeshCore's command line client, start the service ([below](#changing-the-radios-settings)) |
 | Back up | `meshcore-home-gateway backup /root/gateway-$(date +%F).tar.gz` (below) |
 | Export the history | `meshcore-home-gateway history export --format csv > messages.csv` |
 | Before the container goes | `systemctl stop meshcore-home-gateway && meshcore-home-gateway retire --yes` |
@@ -740,6 +741,62 @@ updates wait for.
 * **Metrics for Prometheus** come from an exporter beside the gateway, which has no listener of
   its own: [`contrib/mqtt2prometheus`](../contrib/mqtt2prometheus/README.md) has configurations
   for mqtt2prometheus that read `state`, `stats` and the contacts' documents.
+
+### Changing the radio's settings
+
+The gateway writes only what its managed profile names ([`[radio.profile]`](configuration.md#radioprofile));
+the radio's preset, its transmit power, its channels and its other settings are set with
+MeshCore's own tools. The radio serves one client at a time, and the service holds its port for
+itself, so the service stops first. Without unplugging the radio, MeshCore's command line client
+`meshcore-cli` reaches it from inside the container, as root, at the device of `[radio]`:
+
+```sh
+systemctl stop meshcore-home-gateway
+apt install python3-venv                                   # once
+python3 -m venv /root/meshcore-cli                         # an environment of its own
+/root/meshcore-cli/bin/pip install meshcore-cli==1.6.10
+/root/meshcore-cli/bin/meshcli -s /dev/serial/by-id/usb-<radio>-if00 infos
+/root/meshcore-cli/bin/meshcli -s /dev/serial/by-id/usb-<radio>-if00 set tx 14
+systemctl start meshcore-home-gateway
+```
+
+A radio over TCP is reached the same way from any computer in its network
+(`meshcli -t <address> -p 5000 infos`), also with the service stopped: else the gateway takes the
+link back within a second. This page was written against meshcore-cli 1.6.10 from its source;
+the project does not test it.
+
+* **Where it comes from.** meshcore-cli is not in Debian 13. It comes from PyPI with MeshCore's
+  Python library `meshcore` and their dependencies (`bleak`, `prompt_toolkit`, `requests`,
+  `pycryptodome`, `pyserial-asyncio-fast`, `pycayennelpp`), unpinned by hash, without
+  provenance on PyPI and without tests in their CI. Whatever runs in that environment controls
+  the radio, its private key included. So install it on your own responsibility, at a version
+  you chose, never into the system's Python or beside the gateway, and remove the environment
+  when you are done (`rm -r /root/meshcore-cli`). This is why the gateway does not depend on it
+  ([ADR 0005](decisions/0005-runtime-dependencies-from-the-distribution.md)).
+* **Give it its commands on its command line.** Started without one, `meshcli` opens its
+  interactive mode, which fetches the messages waiting in the radio (`meshcore_cli.py` lines 625-639,
+  1141 and 5828 at `v1.6.10`), as do its commands `recv`, `wait_msg`, `sync_msgs` and
+  `msgs_subscribe`: a message it takes never reaches the gateway, nor does a command in it. It
+  also keeps a log of messages in `~/.config/meshcore/` when that directory exists (line 5796):
+  leave it absent.
+* **What the gateway sets back.** Its next start reads the radio again: its settings, contacts
+  and channels. The managed profile writes back what it manages, with a warning in the log:
+  manual adding and the node types added automatically, the telemetry permissions, the position
+  in adverts, and the duty cycle in 869.40–869.65 MHz; it adds the contact targets and command
+  senders back as favourites. Change those in the configuration, not on the radio. A name changed
+  on the radio is kept and reported. The preset, the transmit power and the channels stay as set:
+  a new preset changes every time on air the gateway counts, and the log of the connect says
+  whether `[airtime] burst_s` still holds an alert and an advert ([Radio presets](configuration.md#radio-presets));
+  a channel a target names must still be there. `probe --config` before the start shows what
+  the profile will write.
+* **What to leave alone.** Send no adverts with it (`advert`, `floodadv`): they pass none of the
+  gateway's checks; *Send advert nearby* does ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)).
+  Set no clock ahead (`time`): the gateway sets it from the host and takes a time ahead back only
+  by restarting the radio (step 62 of the [hardware checklist](testing.md#hardware-checklist)
+  does it on purpose). Export or import no private key, do no factory reset (the radio then
+  has a new key, and every companion must add it again), and do not switch it off from its
+  command line: it stays off until its reset button or a power cycle wakes it
+  ([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md)).
 
 ## 5 Troubleshooting
 
