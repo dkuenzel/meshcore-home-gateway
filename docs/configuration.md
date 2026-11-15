@@ -47,13 +47,14 @@ no position into its adverts, and in the EU band 869.40–869.65 MHz limits itse
 cycle (airtime factor 9). At every connect, before it reads the contact table, it compares the
 radio with this profile and writes only what differs, one command per setting; the radio rewrites
 its preferences file for each. Nothing else is ever written: frequency, bandwidth, spreading
-factor, coding rate, transmit power and the radio's keys stay as they are.
+factor, coding rate, transmit power and the radio's keys stay as they are. The 10 % is the band's
+default, not a limit the gateway enforces ([Local rules](#local-rules)).
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `manage` | `auto` | `auto` writes on tested firmware only (companion 1.18) and only reports on other firmware; `observe` never writes; `always` writes on any firmware |
 | `name` | as found | the radio's name in the mesh, 1–31 bytes of UTF-8. Written when this setting changes; a name changed on the radio later (the phone app) is kept and reported |
-| `duty_cycle_percent` | 10 in 869.40–869.65 MHz, else as found | the radio's own transmit limit, 10–100 (the firmware cannot limit below 10 %; the gateway's own budget is `[airtime]`) |
+| `duty_cycle_percent` | 10 in 869.40–869.65 MHz, else as found | the radio's own transmit limit, 10–100 (the firmware cannot limit below 10 %; the gateway's own budget is `[airtime]`); the default follows the band, the value set here wins ([Local rules](#local-rules)) |
 | `protect_contacts` | `true` | keep the contact targets and command senders on the radio as favourites; a missing one is added, named after its alias (a command sender without one `sender-` and its first four key digits) until its next advert names it |
 
 At the first connect of a radio its differences are written: a new or replaced radio, the first
@@ -179,9 +180,10 @@ level is kept in `state.json` across restarts: a start takes it back, refilled f
 stopped, but at least what a long direct message needs at the radio's settings, so that the first
 alert after a restart goes out at once; a restart adds at most that much, not a burst.
 The radio's own traffic (acknowledgements it sends, adverts) is not counted; in the EU band
-869.40–869.65 MHz the device limit is 10 % of every hour. The radio has its own limiter, the
-*airtime factor*, which the firmware sets to 50 % and the managed profile to 10 % in that band
-(`[radio.profile]`, protocol.md section 7).
+869.40–869.65 MHz the device limit is 10 % of every hour, and other bands have other rules
+([Local rules](#local-rules)). The radio has its own limiter, the *airtime factor*, which the
+firmware sets to 50 % and the managed profile to 10 % in that band (`[radio.profile]`,
+protocol.md section 7).
 
 ## Radio presets
 
@@ -234,6 +236,26 @@ larger burst lets a slow preset send an alert of 160 bytes and an advert at all;
 raise the hourly budget. The radio's own limiter, the airtime factor that the managed profile
 sets to 10 % in the band 869.40–869.65 MHz, stays the bound of what the radio sends
 ([`[radio.profile]`](#radioprofile)).
+
+## Local rules
+
+The gateway restricts no radio setting by region or law: neither the preset, the frequency and
+the transmit power, nor the share of each hour the radio may send. It is an international
+project. The rules differ by country and band, and a limit such as 500 mW e.r.p. counts the
+antenna's gain, which the gateway cannot know ([design §4.3](design.md#43-constraints)).
+Whoever runs the gateway follows the rules for their band (#174, #175).
+
+* **A default that comes from a band is a recommendation, not a limit.** In 869.40–869.65 MHz,
+  whose 10 % duty cycle comes from ERC Recommendation 70-03
+  ([design §4.3](design.md#43-constraints)), the managed profile sets the radio's own limit to
+  10 %, unless `duty_cycle_percent` says otherwise ([`[radio.profile]`](#radioprofile)); in other
+  bands it keeps what it finds. `[airtime] budget_s_per_hour` is the gateway's own pace, 1 % of
+  the hour by default, not a legal figure ([`[airtime]`](#airtime)).
+* **The gateway never writes the preset, the frequency or the transmit power**
+  ([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md)). They are set with
+  MeshCore's own tools ([deployment.md](deployment.md#changing-the-radios-settings)). The power
+  the radio reports is its radio chip's setting: a board with an amplifier sends more at the same
+  number ([Boards](deployment.md#boards)).
 
 ## `[commands]`
 

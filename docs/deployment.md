@@ -8,10 +8,13 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
 
 * **Radio:** a MeshCore companion radio with USB firmware (or WiFi firmware for TCP), set up with
   the official app: name, radio preset, channels, contacts. Then disconnect the app; the gateway
-  must be the radio's only client (protocol.md, section 1).
+  must be the radio's only client (protocol.md, section 1). Choose the preset and the transmit
+  power by the rules for your band: the gateway restricts neither by region or law
+  ([Local rules](configuration.md#local-rules)).
 * **Radio settings:** the gateway sets the radio up as an observer at its first connect: contacts
   added manually only, no telemetry for anyone, no position in adverts, and the 10 % duty cycle in
-  the EU band 869.40–869.65 MHz (configuration.md, `[radio.profile]`; ADR 0020). The installer
+  the EU band 869.40–869.65 MHz, a default the configuration can change (configuration.md,
+  `[radio.profile]`; ADR 0020). The installer
   shows what changes; in the advanced setup it also asks for the radio's name. With firmware other than companion 1.18 it
   only reports; check the settings in the app then, or set `radio.profile.manage = "always"`.
 * **Broker:** an MQTT user for the gateway, with an ACL (mqtt-api.md, last section); the ACL is
@@ -760,6 +763,10 @@ python3 -m venv /root/meshcore-cli                         # an environment of i
 systemctl start meshcore-home-gateway
 ```
 
+The gateway restricts none of these settings by region or law: set the preset, the transmit
+power and the channels by the rules for your band ([Local rules](configuration.md#local-rules)).
+`set tx 14` above is an example, not a recommendation.
+
 A radio over TCP is reached the same way from the gateway's container, the only host that should
 reach it ([`[radio]`](configuration.md#radio)), with
 `/root/meshcore-cli/bin/meshcli -t <address> -p 5000 infos`. Stop the service first here too:
@@ -812,7 +819,7 @@ was written against meshcore-cli 1.6.10 from its source; the project does not te
 | State `disconnected`, log shows `connection lost` every few minutes | USB power or cable; check `dmesg` on the host |
 | `delivery: failed`, reason `unknown_contact` | The contact is not in the radio's contact table or has a different key; `meshcore-home-gateway probe` shows the table |
 | `delivery: failed`, reason `channel_not_configured` | The channel index has no name on the radio |
-| `delivery: expired`, reason `airtime_budget` | More messages than the budget allows; see the airtime entity, raise `budget_s_per_hour` only within the legal limit |
+| `delivery: expired`, reason `airtime_budget` | More messages than the budget allows; see the airtime entity, raise `budget_s_per_hour` only within the rules for your band ([Local rules](configuration.md#local-rules)) |
 | `delivery: failed`, reason `exceeds_airtime_burst` | One long message needs more airtime than `burst_s` at the radio's settings (slow presets; the log says so at each connect); shorten messages or raise `burst_s` ([Radio presets](configuration.md#radio-presets)) |
 | `advert: refused`, reason `airtime_budget`, also with a full budget | The budget keeps one long message for an alert beside the advert, and at slow presets the two do not fit into `burst_s` together. At each connect the log says so and names the `burst_s` that holds both (`… set burst_s to N`), and so does `probe`; set it ([Radio presets](configuration.md#radio-presets)) |
 | Commands rejected with `too_old` / `from_the_future` | The sender's clock or the gateway host's clock is wrong: the check compares the time the sender's device stamped on the message (the phone app sets a companion's clock) with the host's clock; the clock of the gateway's own radio does not enter it. Set the wrong clock right, or set `max_age_s = 0` |

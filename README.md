@@ -197,9 +197,11 @@ companion interface, which hands the radio's private key to any client that reac
 [`docs/threat-model.md`](docs/threat-model.md), [`docs/design.md#7-security`](docs/design.md#7-security)
 and [`SECURITY.md`](SECURITY.md).
 
-Radio regulation is your responsibility. In the EU band 869.40–869.65 MHz a device may transmit
-at most 10 % of the time; the gateway's default budget uses 1 %, but the radio's own limit is a
-separate setting on the radio.
+Radio regulation is your responsibility. The gateway restricts no radio setting by region or
+law: follow the rules for your band ([local rules](docs/configuration.md#local-rules)). In the EU
+band 869.40–869.65 MHz, for example, a device may transmit at most 10 % of the time; there the
+managed radio profile sets the radio's own limit to 10 % by default, and the gateway's default
+budget uses 1 %.
 
 ## Privacy
 
