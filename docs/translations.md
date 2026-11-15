@@ -128,7 +128,10 @@ address, without the program. `make translations` turns each catalog into a plai
 writes the pack's SHA-256 into the script; the installer fetches the pack from where the script
 comes from (a release publishes each pack beside its installer, a checkout has it next to the
 script) and uses it only when the digest matches. Its buttons (`msgctxt "button"`) have at most
-12 characters. Its own log lines stay English.
+12 characters. A box shows a fixed number of lines and cuts the rest without a mark, so
+`make check` wraps every text of every catalog as whiptail does and names one that needs more
+lines than its box shows ([testing.md](testing.md#the-length-of-the-installers-texts)): shorten
+the translation, keeping all it says. Its own log lines stay English.
 
 ## Adding a language
 

@@ -411,6 +411,32 @@ keys into the German dialogs. Whether whiptail draws a no-break space (U+00A0, U
 checked yet: until it is, the catalog checks refuse one in the command line's texts, which the
 installer's boxes show too.
 
+## The length of the installer's texts
+
+whiptail shows as many lines of a text as fit its box and cuts the rest without a mark
+([platform-notes.md](platform-notes.md#whiptail)). `tests/test_dialog_texts.py`, part of
+`make check`, reads every dialog from the installer: each `whiptail` call, each call of
+`show_dialog`, `ask`, `ask_advanced` and `ask_required`, and each error that `die` shows in a box,
+with its kind and size. It renders each text in English and in every catalog of
+`deploy/proxmox/locale/`, so a language added later is checked too, wraps it as whiptail 0.52.24
+does and fails when it needs more lines than its box shows. A value filled into a text is the
+script's own text where the script gives one, else the longest realistic value that
+`tests/dialog_texts.py` names with its reason (`FIELD_VALUES`, `EMBEDDED`); the final message and
+the plan for the radio are put together as the script does, in the combinations that can occur. A
+box with `--scrolltext` is exempt, as its text scrolls. A dialog the test cannot read, or a value
+without a worst case, fails it too.
+
+CI has no whiptail, so the wrapping is a model of newt's code. After changing the model, or to
+check another version of whiptail, compare the model with the real program:
+
+```sh
+.venv/bin/python -I tests/manual/dialog_texts.py
+```
+
+It needs whiptail and tmux (`apt install whiptail tmux`). It runs whiptail in tmux's pseudo
+terminal over every text of every language and over the cases the test measured, reads each screen,
+and exits non-zero when a line differs from the model or the box shows more or fewer lines.
+
 ## Release check
 
 A release is checked in three places, none of them a procedure by hand

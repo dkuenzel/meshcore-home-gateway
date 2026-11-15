@@ -779,12 +779,14 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   fits: Enter and space do nothing, Tab moves to Ok, and Enter then closes the box. *Verified:*
   experiment, all three versions; the text of the final message for each source, with
   0.52.24-2ubuntu2; newt `textbox.c:121-125` (a scrolling text box takes the focus). *Here:*
-  `summary()` shows the final message in a box of height 22 without `--scrolltext`. The message
-  fits for an installation from a release, a pre-release, `main` or a clone at a path of up to 130
-  characters; with `--ref`, its commands wrap onto more lines and the last line can be cut. The
-  same text is logged to standard error before the box; with an xterm-like `TERM`, whiptail draws
-  on the terminal's alternate screen, so the text shows again when the box closes (with
-  `TERM=linux` the box stays on the screen instead). *Check:*
+  `summary()` shows the final message in a box of height 24 (18 lines) without `--scrolltext`.
+  `tests/test_dialog_texts.py` checks that it fits in every language for an installation from a
+  release, a pre-release, `main` or a clone at a path of up to 120 characters, with a container
+  ID of four digits and a radio over TCP at an IPv6 address; with `--ref` and a branch, its
+  commands wrap onto more lines and the last two can be cut. The same text is logged to standard
+  error before the box; with an xterm-like `TERM`, whiptail draws on the terminal's alternate
+  screen, so the text shows again when the box closes (with `TERM=linux` the box stays on the
+  screen instead). *Check:*
   `whiptail --msgbox "$(seq 1 30)" 12 40` shows 1 to 6 and closes with Enter;
   `whiptail --scrolltext --msgbox "$(seq 1 30)" 12 40` stays open on Enter; Tab, then Enter
   closes it.
@@ -803,11 +805,15 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   checklist's less 3), `:23` and `:604-612` (the button row is 1 line, 3 with `--fb`). *Here:*
   the installer's menus and checklists are 20x78 with a list of 10 (`show_dialog()`), which
   leaves 3 and 4 lines of text, and each of their texts is a single line. `show_dialog()`'s
-  yes/no boxes are 12x72 and show 6; two others are 18x78 and 20x78 (12 and 14 lines). The
-  German question before a radio over TCP without authentication needs 7 lines in its 12x72 box
-  and is cut after "TCP trotzdem verwenden": the question and what *No* does are not shown. No
-  test compares a text's length with its box; a shorter German text and such a test are still
-  to do. *Check:*
+  yes/no boxes are 14x72 and show 8 lines; two others are 18x78 and 20x78 (12 and 14 lines).
+  Up to 2.2.0 they were 12x72 and showed 6: the German question before a radio over TCP without
+  authentication needs 7 and was cut after "TCP trotzdem verwenden", without the question and
+  what *No* does (#190). `tests/test_dialog_texts.py` wraps every text of every dialog in every
+  language as whiptail does, with the longest realistic values, and fails when one needs more
+  lines than its box shows; `tests/manual/dialog_texts.py` compares that model with the real
+  whiptail ([testing.md](testing.md#the-length-of-the-installers-texts)). On 2026-11-15 the two
+  agreed on every text of the installer's 122 dialogs in English and German, with
+  0.52.24-2ubuntu2. *Check:*
   `whiptail --menu -- "$(seq 1 30)" 20 78 3 a A b B c C` shows 1 to 10 above the list; with
   `--fb` before `--menu`, 1 to 8.
 
