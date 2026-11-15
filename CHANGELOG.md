@@ -49,6 +49,14 @@ format, the command line and Home Assistant discovery are public interfaces
   with its state and when it was last heard; a silent one as not heard for so many days, since
   when, with the fact that its adverts carried its position until then, muted. With only silent
   devices the card is a blue note. Make the dashboard again to get it (#168).
+- The installer cut off a text longer than its box without a mark. In German, the question before
+  a radio over TCP without authentication ended at "TCP trotzdem verwenden": the question with
+  `tcp_unauthenticated = true` and what *Nein* does were not shown. Its yes/no boxes of 12 rows
+  now have 14 and show 8 lines instead of 6. In German, the final message could also lose
+  the end of its warning about a radio over TCP when the login and the self-test took two lines
+  each; three of its results are shorter now. A new test wraps every text of every dialog in
+  every language as whiptail does, with the longest realistic values, and fails when one needs
+  more lines than its box shows (#190).
 
 ### Security
 

@@ -55,7 +55,7 @@ ct.gateway ct.template_storage radio.choice targets.channels targets.contacts "
 # --- language packs: written by `make translations` from deploy/proxmox/locale/*.po; do not edit
 L10N_ORDER=(en de)
 declare -A L10N_NAME=([en]=English [de]=Deutsch)
-declare -A L10N_SHA256=([de]=ac1ecfae46104b15022c1937809d92a8cc9d126cde657753ea9e316e4638bc68)
+declare -A L10N_SHA256=([de]=24c6d9f292b06bfe82d2ef3b8ec08af79f977a50f125ff220bbfa74075574ef0)
 # --- end of language packs
 L10N_MENU=()   # code, name, code, name, ...: the items of the language menus
 for code in "${L10N_ORDER[@]}"; do L10N_MENU+=("$code" "${L10N_NAME[$code]}"); done
@@ -209,7 +209,9 @@ show_dialog() {  # show_dialog KIND TEXT DEFAULT [CHOICE ...]: a dialog, whateve
     yesno)  # the answer is the exit status; the screen goes to stderr, not into $(...)
       local -a options=()
       if [[ $default == false ]]; then options+=(--defaultno); fi
-      if whiptail --title "$TITLE" "${options[@]}" --yesno -- "$text" 12 72 >&2; then
+      # 14 rows show 8 lines: the question before a radio over TCP takes 7 in German, and whiptail
+      # cuts what does not fit without a mark (tests/test_dialog_texts.py)
+      if whiptail --title "$TITLE" "${options[@]}" --yesno -- "$text" 14 72 >&2; then
         result=true
       else
         result=false

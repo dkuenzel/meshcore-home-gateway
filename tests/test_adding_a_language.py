@@ -34,6 +34,7 @@ SUITES = [
     "tests/test_cli_language.py",
     "tests/test_contrib.py",
     "tests/test_dashboard.py",
+    "tests/test_dialog_texts.py",
     "tests/test_discovery.py",
     "tests/test_i18n.py",
     "tests/test_i18n_tool.py",

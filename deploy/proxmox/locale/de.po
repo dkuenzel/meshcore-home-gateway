@@ -416,7 +416,7 @@ msgid "limiting the journal in container {ctid} failed (see above)"
 msgstr "Begrenzen des Journals in Container {ctid} fehlgeschlagen (siehe oben)"
 
 msgid "login accepted"
-msgstr "Anmeldung akzeptiert"
+msgstr "angemeldet"
 
 msgid "login failed (see above), the service keeps trying"
 msgstr "Anmeldung fehlgeschlagen (siehe oben), der Dienst versucht es weiter"
@@ -494,11 +494,11 @@ msgid "not checked (version {version} cannot; check after --update)"
 msgstr "nicht geprüft (Version {version} kann das nicht; nach --update prüfen)"
 
 msgid "not run (the broker login failed)"
-msgstr "nicht ausgeführt (die Anmeldung am Broker ist fehlgeschlagen)"
+msgstr "nicht ausgeführt (Anmeldung am Broker fehlgeschlagen)"
 
 #, python-brace-format
 msgid "not run (version {version} has no doctor command)"
-msgstr "nicht ausgeführt (Version {version} hat keinen Befehl doctor)"
+msgstr "nicht ausgeführt (Version {version} ohne Befehl doctor)"
 
 msgid "package pve-container not found"
 msgstr "Paket pve-container nicht gefunden"

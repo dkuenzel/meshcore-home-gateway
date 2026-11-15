@@ -104,7 +104,7 @@ msg	installing packages in container {ctid} failed (see above)	Installieren der 
 msg	invalid settings (see above)	ungültige Einstellungen (siehe oben)
 msg	invalid settings: {reason}	ungültige Einstellungen: {reason}
 msg	limiting the journal in container {ctid} failed (see above)	Begrenzen des Journals in Container {ctid} fehlgeschlagen (siehe oben)
-msg	login accepted	Anmeldung akzeptiert
+msg	login accepted	angemeldet
 msg	login failed (see above), the service keeps trying	Anmeldung fehlgeschlagen (siehe oben), der Dienst versucht es weiter
 msg	login not checked	Anmeldung nicht geprüft
 msg	meshcore-home-gateway from {ref} was not installed in container {ctid} (see above)	meshcore-home-gateway aus {ref} wurde nicht in Container {ctid} installiert (siehe oben)
@@ -120,8 +120,8 @@ msg	no answer for {key} ({text})	keine Antwort für {key} ({text})
 msg	no user name	keinen Benutzernamen
 msg	none (no user name)	keine (kein Benutzername)
 msg	not checked (version {version} cannot; check after --update)	nicht geprüft (Version {version} kann das nicht; nach --update prüfen)
-msg	not run (the broker login failed)	nicht ausgeführt (die Anmeldung am Broker ist fehlgeschlagen)
-msg	not run (version {version} has no doctor command)	nicht ausgeführt (Version {version} hat keinen Befehl doctor)
+msg	not run (the broker login failed)	nicht ausgeführt (Anmeldung am Broker fehlgeschlagen)
+msg	not run (version {version} has no doctor command)	nicht ausgeführt (Version {version} ohne Befehl doctor)
 msg	package pve-container not found	Paket pve-container nicht gefunden
 msg	passed	bestanden
 msg	passing {device} to container {ctid} failed (see above)	Durchreichen von {device} an Container {ctid} fehlgeschlagen (siehe oben)
