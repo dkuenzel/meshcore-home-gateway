@@ -23,6 +23,48 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
   every companion that is not excluded, and the first time it runs that way it waits an hour after
   the radio connects, so the household can exclude every companion that is not its own.
 
+### Boards
+
+Any board with MeshCore's companion firmware over USB will do; the gateway reads what the radio
+reports and keeps no list of boards. Flash the build `<board>_companion_radio_usb` for the
+board's exact radio chip, of the companion version the gateway is tested with (1.18.0), not a
+Bluetooth or WiFi build; a few USB builds lack their USB interface and never answer
+([platform notes](platform-notes.md#meshcore-companion-firmware)). One radio per gateway, and
+one gateway per radio. What differs between boards, from the firmware's build settings at
+`companion-v1.18.0`:
+
+| Board | USB | Device | Power setting: default, highest |
+| --- | --- | --- | --- |
+| nRF52 boards (RAK4631, Heltec T114, T-Echo …) | the chip's own USB | `ttyACM*`, a `by-id` name with vendor, product and serial number | 22, 22 dBm on most builds |
+| ESP32-S3 boards with the chip's USB: Heltec V4, LilyGo T3-S3 | the chip's built-in USB Serial/JTAG (`boards/heltec_v4.json`, `boards/t3_s3_v1_x.json`: `ARDUINO_USB_MODE=1`) | `ttyACM*`, a `by-id` name with Espressif and the chip's MAC address | Heltec V4: 10, 22 into its amplifier (below); T3-S3: 22, 22 with an SX1262, 20, 20 with an SX1276 (`variants/lilygo_t3s3/platformio.ini:28`, `variants/lilygo_t3s3_sx1276/platformio.ini:26`) |
+| ESP32 boards with a USB-UART bridge, such as the Heltec V3 | the bridge chip (CP210x, CH340 …) | `ttyUSB*`, a `by-id` name after the bridge; some bridges give every unit the same serial number, so two such boards share one name | 22, 22 dBm |
+
+Without a value of its own a build takes 20 for both (`examples/companion_radio/MyMesh.h:50-55`).
+The gateway never changes the transmit power ([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md));
+`probe` and the attributes of the radio link show it.
+
+* **The Heltec V4's power is that of its radio chip, before an amplifier.** Its build sets 10
+  and says the output is then 22 dBm (`variants/heltec_v4/platformio.ini:29-30`); the amplifier
+  adds several dB more at every setting (Meshtastic, which drives the same board, uses tables of
+  7 to 13 dB). Raise it in the app only as far as your band allows.
+* **Opening the port resets no board.** The gateway holds DTR and clears RTS, so it never
+  asserts RTS alone, which resets an ESP32 behind a USB-UART bridge
+  ([platform notes](platform-notes.md#meshcore-companion-firmware)). Such a board whose power
+  fails for a moment while the gateway holds DTR may start in its download mode and answer
+  nothing until it is unplugged; feed it from a port that carries its transmit current.
+* **The clock.** An ESP32 keeps its time across a restart of the firmware, and starts at
+  1 March 2026 after a loss of power (`src/helpers/ESP32Board.h:203-247`); either way the
+  companion sets its clock from its newest contact, and the gateway moves it forward as on nRF52
+  boards ([troubleshooting](#5-troubleshooting)).
+* **A board with a screen** shows the last message it received, sender and text, for 15 seconds
+  after its button is pressed: over USB the firmware takes the client as always connected and
+  keeps the screen dark otherwise (`examples/companion_radio/ui-new/UITask.cpp:10-11, 796-832`,
+  `src/helpers/ArduinoSerialInterface.cpp:16-17`). Put it where only the household reaches it;
+  whoever holds a radio can read its key out anyway.
+* **A new board** counts as checked once it has passed steps 59 to 70 of the
+  [hardware checklist](testing.md#hardware-checklist); until then, write down its boot time and
+  whether it restarts at a probe.
+
 ## 2 Proxmox VE
 
 ### Requirements
@@ -529,6 +571,13 @@ systemctl daemon-reload && systemctl restart meshcore-home-gateway
 The command line's texts follow `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG`
 ([configuration.md](configuration.md#language-of-the-command-line)); `LANGUAGE=en` keeps them
 English. The service's log is always English.
+
+On a desktop distribution, ModemManager may probe a serial device that appears, and brltty may
+claim some USB-UART bridges: either keeps the radio from answering the gateway. Remove them where
+nothing needs them, or tell ModemManager to leave the radio alone with the udev property
+`ID_MM_DEVICE_IGNORE=1` in a rule for its vendor and product. Where two boards share one `by-id`
+name, a udev rule that matches the USB port path gives each a fixed name of its own; set that
+name as `device` in `[radio]` ([Boards](#boards)).
 
 ## 4 Operations
 
