@@ -276,11 +276,42 @@ def test_a_failed_login_shows_what_the_program_printed() -> None:
     assert "broker refused the connection: Not authorized (no user name)" in english[0]
 
 
-def test_the_plan_holds_as_many_contacts_as_the_installer_lets_it() -> None:
-    """Up to the installer's PLAN_CONTACTS the plan's box shows every contact; with more it
-    scrolls (#190)."""
-    assert int(model._constant("PLAN_CONTACTS")) == model.PLAN_CONTACTS
+def test_the_plan_lists_the_contacts_its_box_holds(dialogs: list[model.Dialog]) -> None:
+    """The plan's box lists as many contacts as fold says it holds and counts the others in a line
+    of its own (#190): no --scrolltext, with which Enter does not close the box and whiptail marks
+    no text below. Every realistic plan lists two contacts and counts some of PLAN_CONTACTS, in
+    every language; the installer measures with the box's own lines and columns."""
+    (box,) = [d.box for d in dialogs if model.PLAN_NOT_LISTED in d.msgids()]
+    assert box == model.PLAN_BOX
+    script = model.Script(model.SCRIPT.read_text(encoding="utf-8"))
+    assert f'fits "$box" {box.text_width} {box.lines}' in script.text
+    assert not [dialog.where() for dialog in dialogs if dialog.box.scroll]
+    plans = model.COMPOSED["plan_text"](script)
+    assert isinstance(plans, model.PlanBox)
     assert len(model.PLAN_CONTACT.split(" ", 1)[1].encode()) == 31  # the most a name takes
+    for language, catalog in LANGUAGES.items():
+        translate = model.translator(catalog, language)
+        for plan in plans.plans:
+            assert plan.listed(translate, 2) == 2, (language, plan.heading)
+            assert plan.listed(translate, model.PLAN_CONTACTS) < model.PLAN_CONTACTS
+            text = plan.text(translate, model.PLAN_CONTACTS, 0)
+            assert translate(model.PLAN_NOT_LISTED).split("{")[0] in text
+
+
+def test_fold_counts_no_fewer_lines_than_whiptail_shows() -> None:
+    """The installer measures a text with fold (fits), which counts bytes and breaks at the last
+    blank within the columns: never fewer lines than whiptail wraps the text into, for German
+    and wide letters, spaces whiptail breaks at and fold does not, and long words."""
+    box = model.PLAN_BOX
+    texts = [
+        "Schlüssel Funkgerät Überprüfung äöüÄÖÜß " * 6,
+        "漢字かな " * 40,
+        "a" * 73 + " " + "b" * 80,
+        "  " + "x" * 74 + "\n" + "y\N{EN QUAD}" * 50,
+        "word " * 15 + "\nnext line\\nafter the two characters",
+    ]
+    for text in texts:
+        assert model.folded_lines(text, box.text_width) >= len(box.layout(text + "\n")), text
 
 
 LANGUAGES: Final = model.catalogs()

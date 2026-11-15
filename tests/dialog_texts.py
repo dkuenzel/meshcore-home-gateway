@@ -22,9 +22,12 @@ array the script fills.
 
 from __future__ import annotations
 
+import functools
 import importlib.util
 import itertools
+import os
 import re
+import subprocess
 import sys
 import unicodedata
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -1089,84 +1092,165 @@ def _options(expr: Expr) -> tuple[Expr, ...]:
     return expr.options if isinstance(expr, Alt) else (expr,)
 
 
-# the radio's settings as `probe --list profile` writes them: name, value on the radio, wanted
+# the radio's settings as `probe --list profile` writes them (tests/test_cli.py): name, value on
+# the radio and wanted, each its longest realistic value: every kind of node added automatically,
+# telemetry for contacts in all three fields, a duty cycle with two decimals, names of 31 bytes
 PLAN_SETTINGS: Final = (
     ("manual_add", "false", "true"),
-    ("autoadd", "30", "0"),
-    ("telemetry", "3", "0"),
-    ("advert_location", "1", "0"),
-    ("airtime_factor_milli", "0", "9000"),
+    ("autoadd", '["overwrite_oldest", "chat", "repeater", "room", "sensor"]', "[]"),
+    (
+        "telemetry",
+        '{"base": "contacts", "location": "contacts", "environment": "contacts"}',
+        '{"base": "deny", "location": "deny", "environment": "deny"}',
+    ),
+    ("advert_location", '"share"', '"none"'),
+    ("duty_cycle_percent", "33.33", "10.0"),
     ("name", '"' + "r" * 31 + '"', '"' + "g" * 31 + '"'),  # the most bytes a name takes
 )
-# the contacts the plan lists, each with the start of its key and a name of 31 bytes, the most
-# the radio stores: up to PLAN_CONTACTS the plan's box holds them (the installer's constant of the
-# same name); with more, the box scrolls
-PLAN_CONTACTS: Final = 4
+# a contact the plan lists: the start of its key and a name of 31 bytes, the most the radio
+# stores; a plan has up to PLAN_CONTACTS of them (contact targets and command senders)
+PLAN_CONTACTS: Final = 16
 PLAN_CONTACT: Final = "0123456789ab " + "Handheld of a neighbour 0001xyz"
+# the plan's box, whose lines and columns the installer measures the plan against (fits)
+PLAN_BOX: Final = Box("msgbox", 24, 78)
+PLAN_LEFT: Final = "The service leaves alone:"
+PLAN_NOT_LISTED: Final = "contacts not listed here: {count} (see the installer's output)"
+
+
+@functools.cache
+def folded_lines(text: str, columns: int) -> int:
+    """The lines `LC_ALL=C fold -s -w COLUMNS` makes of `text` and a final line break, as the
+    installer's fits() counts them: bytes, never fewer than a character's cells, and a break at
+    the last blank within the columns, never later than whiptail breaks."""
+    folded = subprocess.run(  # noqa: S603 - fold with our arguments
+        ["fold", "-s", "-w", str(columns)],  # noqa: S607 - the system's fold, as the installer's
+        input=(clean_newlines(text) + "\n").encode(),
+        capture_output=True,
+        check=True,
+        env={"LC_ALL": "C", "PATH": os.environ.get("PATH", "/usr/bin:/bin")},
+    )
+    return folded.stdout.count(b"\n")
+
+
+@dataclass(frozen=True)
+class Plan:
+    """A realistic plan of `probe --list profile`, as plan_text writes it: its first section's
+    heading, the settings in that section, a contact's line there, and the settings the service
+    leaves alone (msgid and values)."""
+
+    heading: str
+    settings: tuple[tuple[str, str, str], ...]
+    contact: str
+    left: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = ()
+
+    def msgids(self) -> Iterator[str]:
+        yield self.heading
+        yield self.contact
+        yield PLAN_NOT_LISTED
+        if self.left:
+            yield PLAN_LEFT
+        yield from (msgid for msgid, _ in self.left)
+
+    def text(self, translate: Language, contacts: int, listed: int) -> str:
+        """The plan with `contacts` contacts, `listed` of them listed and the others counted in a
+        line of their own, without its last line break (as $(...) gives it)."""
+        lines = [f"  {name}: {live} -> {wanted}" for name, live, wanted in self.settings]
+        lines += ["  " + _fill(translate(self.contact), {"contact": PLAN_CONTACT})] * listed
+        if listed < contacts:
+            count = {"count": str(contacts - listed)}
+            lines.append("  " + _fill(translate(PLAN_NOT_LISTED), count))
+        plan = "".join(f"{line}\n" for line in [translate(self.heading), *lines]) if lines else ""
+        if self.left:
+            plan += f"{translate(PLAN_LEFT)}\n"
+            plan += "".join(f"  {_fill(translate(m), dict(v))}\n" for m, v in self.left)
+        return plan.rstrip("\n")
+
+    def listed(self, translate: Language, contacts: int) -> int:
+        """How many of `contacts` contacts the installer lists in the box: all, or one fewer
+        until fits() says the box holds the text, or none (choose_profile)."""
+        listed = contacts
+        while listed > 0 and (
+            folded_lines(self.text(translate, contacts, listed), PLAN_BOX.text_width)
+            > PLAN_BOX.lines
+        ):
+            listed -= 1
+        return listed
+
+
+@dataclass(frozen=True)
+class PlanBox(Expr):
+    """choose_profile's box: each plan with each number of contacts up to PLAN_CONTACTS, as many
+    listed as the installer lists."""
+
+    plans: tuple[Plan, ...]
+
+    def render(self, translate: Language) -> list[str]:
+        return _unique(
+            [
+                plan.text(translate, contacts, plan.listed(translate, contacts))
+                for plan in self.plans
+                for contacts in range(PLAN_CONTACTS + 1)
+            ]
+        )
+
+    def msgids(self) -> Iterator[str]:
+        for plan in self.plans:
+            yield from plan.msgids()
 
 
 def _plan(script: Script) -> Expr:
-    """plan_text, for the worst of four realistic plans: on a new radio with tested firmware
+    """plan_text in the plan's box, for four realistic plans: on a new radio with tested firmware
     every setting is set and the contacts are added; with untested firmware (auto) or with
     radio.profile.manage = observe they are only reported; on a radio the service has managed
-    before, two settings are set and four are left alone, one of each kind."""
-    names = script.messages_in("plan_text")
+    before, two settings are set, contacts are made favourites, and four settings are left
+    alone, one of each kind (only the name, which the configuration seeds, is kept)."""
+    settings = {name: (name, live, wanted) for name, live, wanted in PLAN_SETTINGS}
 
-    def say(msgid: str, **values: str) -> Expr:
-        if msgid not in names:
-            raise DialogError(f"plan_text has no text {msgid!r}")
-        return Msg(msgid, tuple((name, Lit(value)) for name, value in values.items()))
+    def left(msgid: str, name: str) -> tuple[str, tuple[tuple[str, str], ...]]:
+        _, live, wanted = settings[name]
+        return msgid, (("setting", name), ("live", live), ("wanted", wanted))
 
-    def setting(name: str, live: str, wanted: str) -> Expr:
-        return Lit(f"  {name}: {live} -> {wanted}\n")
-
-    def contact(msgid: str) -> list[Expr]:
-        return [Cat((Lit("  "), say(msgid, contact=PLAN_CONTACT), Lit("\n")))] * PLAN_CONTACTS
-
-    def section(header: Expr, lines: list[Expr]) -> list[Expr]:
-        return [header, Lit("\n"), *lines]
-
-    settings = [setting(*s) for s in PLAN_SETTINGS]
-    sets = say("At its next connect the service sets the radio:")
-    untested = say(
-        "The radio's firmware is not tested: the service only reports what differs\n"
-        "(radio.profile.manage = always sets it anyway):"
-    )
-    observe = say("With radio.profile.manage = observe the service only reports what differs:")
-    left_alone = [
-        say("{setting}: {live} (changed on the radio; kept)", setting="telemetry", live="3"),
-        say(
-            "{setting}: {live}, not {wanted} (did not take effect; no longer set)",
-            setting="airtime_factor_milli",
-            live="0",
-            wanted="9000",
+    sets = "At its next connect the service sets the radio:"
+    plans = (
+        Plan(sets, PLAN_SETTINGS, "contact {contact}: added as a favourite"),
+        Plan(
+            "The radio's firmware is not tested: the service only reports what differs\n"
+            "(radio.profile.manage = always sets it anyway):",
+            PLAN_SETTINGS,
+            "contact {contact}: not on the radio",
         ),
-        say(
-            "{setting}: {live}, not {wanted} (the firmware does not support it)",
-            setting="advert_location",
-            live="1",
-            wanted="0",
+        Plan(
+            "With radio.profile.manage = observe the service only reports what differs:",
+            PLAN_SETTINGS,
+            "contact {contact}: no favourite",
         ),
-        say(
-            "{setting}: {live}, not {wanted} (compiled out of the radio's firmware)",
-            setting="autoadd",
-            live="30",
-            wanted="0",
-        ),
-    ]
-    plans = [
-        section(sets, [*settings, *contact("contact {contact}: added as a favourite")]),
-        section(untested, [*settings, *contact("contact {contact}: not on the radio")]),
-        section(observe, [*settings, *contact("contact {contact}: no favourite")]),
-        [
-            *section(sets, [*settings[:2], *contact("contact {contact}: made a favourite")[:1]]),
-            *section(
-                say("The service leaves alone:"),
-                [Cat((Lit("  "), line, Lit("\n"))) for line in left_alone],
+        Plan(
+            sets,
+            (settings["manual_add"], settings["advert_location"]),
+            "contact {contact}: made a favourite",
+            (
+                left("{setting}: {live} (changed on the radio; kept)", "name"),
+                left(
+                    "{setting}: {live}, not {wanted} (did not take effect; no longer set)",
+                    "telemetry",
+                ),
+                left(
+                    "{setting}: {live}, not {wanted} (the firmware does not support it)",
+                    "duty_cycle_percent",
+                ),
+                left(
+                    "{setting}: {live}, not {wanted} (compiled out of the radio's firmware)",
+                    "autoadd",
+                ),
             ),
-        ],
-    ]
-    return Alt(tuple(Cat(tuple(plan)) for plan in plans))
+        ),
+    )
+    names = script.messages_in("plan_text")
+    for plan in plans:
+        for msgid in plan.msgids():
+            if msgid not in names:
+                raise DialogError(f"plan_text has no text {msgid!r}")
+    return PlanBox(plans)
 
 
 COMPOSED: Final[Mapping[str, Callable[[Script], Expr]]] = {

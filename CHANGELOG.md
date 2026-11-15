@@ -58,8 +58,11 @@ format, the command line and Home Assistant discovery are public interfaces
   The radio menu cut its item "radio with WiFi firmware (TCP, no authentication)" after "no aut"
   as soon as a serial device was there, and the device's path and name to 37 columns: the menus
   now show their items without their tags, and a device's name longer than 72 characters keeps
-  its start and its end. The plan for the radio's settings lost contacts beyond three; its box
-  has 24 rows and scrolls with more than four. In German, the final message could lose the end
+  its start and its end. The plan for the radio's settings lost its last lines, contacts and the
+  settings left alone, with the values the radio reports already with four contacts; its box has
+  24 rows, lists as many contacts as it holds and counts the others, which the installer's
+  output lists, and does not scroll, since a scrolling box closed only with Tab, then Enter and
+  showed no mark of the text below. In German, the final message could lose the end
   of its warning about a radio over TCP, when the login and the self-test took two lines each or
   the radio's IPv6 address was written out in full; three of its results are shorter, and the
   address stands at the end of the warning's first clause, where an address of up to 75

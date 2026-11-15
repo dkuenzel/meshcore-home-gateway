@@ -351,6 +351,11 @@ msgstr "Kontakt {contact}: kein Favorit"
 msgid "contact {contact}: not on the radio"
 msgstr "Kontakt {contact}: nicht auf dem Funkgerät"
 
+#. {count} is a number; the installer's output lists every contact.
+#, python-brace-format
+msgid "contacts not listed here: {count} (see the installer's output)"
+msgstr "Hier nicht aufgeführte Kontakte: {count} (siehe die Ausgabe des Installers)"
+
 msgid "container ID must be a number of at least 100"
 msgstr "die Container-ID muss eine Zahl ab 100 sein"
 

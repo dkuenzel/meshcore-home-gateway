@@ -2766,33 +2766,86 @@ def test_the_plan_is_logged_and_shown_line_by_line(host: Host) -> None:
     assert boxes[0][-2:] == ["24", "78"]
 
 
-@pytest.mark.parametrize(
-    ("contacts", "scrolls"),
-    [(dialog_texts.PLAN_CONTACTS, False), (dialog_texts.PLAN_CONTACTS + 1, True)],
-)
-def test_a_plan_longer_than_its_box_scrolls(host: Host, contacts: int, scrolls: bool) -> None:
-    """Up to PLAN_CONTACTS contacts the plan's box holds every line in each language
-    (tests/test_dialog_texts.py); with more, its text scrolls rather than being cut (#190)."""
-    plan = "name\\tGateway\\ntested\\tyes\\nwrites\\tyes\\n" + "".join(
-        f"contact\\t{number:064x}\\tadd\\tHandheld {number}\\n" for number in range(contacts)
-    )
-    dialog = [
-        "default",
-        str(host.serial),
-        "broker.example.org",
-        "no",
-        "bridge",
-        "pw",
-        "yes",
-        "1",
-        "",
-        "",
+# the plans of tests/dialog_texts.py, by the case `probe --list profile` reports
+PLAN_CASES = {"tested": 0, "untested": 1, "observed": 2, "managed": 3}
+PLAN_ACTIONS = {  # what the managed plan does with each setting, in its order
+    "manual_add": "set",
+    "advert_location": "set",
+    "name": "kept",
+    "telemetry": "given_up",
+    "duty_cycle_percent": "unsupported",
+    "autoadd": "disabled",
+}
+
+
+def profile_plan(case: str, contacts: int) -> str:
+    """`probe --list profile` for a plan of tests/dialog_texts.py, with its settings' values and
+    `contacts` contacts whose keys start as its contact's, as PROBE_PLAN takes it (printf %b)."""
+    values = {name: (live, wanted) for name, live, wanted in dialog_texts.PLAN_SETTINGS}
+    tested = "no" if case == "untested" else "yes"
+    writes = "no" if case in {"untested", "observed"} else "yes"
+    lines = ["name\tRadio", f"tested\t{tested}", f"writes\t{writes}"]
+    if case == "managed":
+        actions = PLAN_ACTIONS
+    else:
+        actions = dict.fromkeys(values, "set" if writes == "yes" else "reported")
+    lines += [
+        f"change\t{key}\t{values[key][0]}\t{values[key][1]}\t{a}" for key, a in actions.items()
     ]
-    result = run_installer(host, dialog=dialog, env={"PROBE_PLAN": plan})
+    action = {"tested": "add", "untested": "missing", "observed": "not_favourite"}.get(case)
+    start, name = dialog_texts.PLAN_CONTACT.split(" ", 1)
+    lines += [
+        f"contact\t{start}{number:052x}\t{action or 'favourite'}\t{name}"
+        for number in range(contacts)
+    ]
+    return "".join(f"{line}\n" for line in lines).replace("\t", "\\t").replace("\n", "\\n")
+
+
+@pytest.mark.parametrize(
+    "plan",
+    [
+        ("en", "tested", 3, True),
+        ("en", "managed", dialog_texts.PLAN_CONTACTS, False),
+        ("de", "tested", dialog_texts.PLAN_CONTACTS, False),
+        ("de", "untested", 2, True),
+        ("de", "untested", 12, False),
+        ("de", "managed", 5, False),
+    ],
+)
+def test_the_plan_lists_the_contacts_its_box_holds(
+    tmp_path: Path, english_only: Path, plan: tuple[str, str, int, bool]
+) -> None:
+    """whiptail cuts what its box does not hold without a mark: the plan's box lists as many
+    contacts as it holds in the dialogs' language and counts the others, which the log lists;
+    no --scrolltext, with which Enter would not close the box (#190). The box shows the text
+    tests/dialog_texts.py checks, so the model's plans are the installer's. `plan`: the dialogs'
+    language, the case of the plan, its contacts, and whether the box lists all of them."""
+    language, case, contacts, all_listed = plan
+    host = install_stubs(tmp_path)  # the script with its languages, its packs next to it
+    if language == "en":
+        host = dataclasses.replace(host, installer=english_only)
+    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pw", "yes", "1"]
+    dialog = [*(["de"] if language == "de" else []), *dialog, "", ""]
+    result = run_installer(host, dialog=dialog, env={"PROBE_PLAN": profile_plan(case, contacts)})
     assert result.returncode == 0, result.stderr
-    (box,) = [c for c in host.calls("whiptail") if any("service sets the radio" in a for a in c)]
+    (box,) = [c for c in host.calls("whiptail") if any("duty_cycle_percent" in a for a in c)]
+    assert "--scrolltext" not in box
     assert box[-2:] == ["24", "78"]
-    assert ("--scrolltext" in box) is scrolls
+    text = box[-3]
+    assert len(dialog_texts.PLAN_BOX.layout(text)) <= dialog_texts.PLAN_BOX.lines
+    script = dialog_texts.Script(SCRIPT.read_text(encoding="utf-8"))
+    plans = dialog_texts.COMPOSED["plan_text"](script)
+    assert isinstance(plans, dialog_texts.PlanBox)
+    model = plans.plans[PLAN_CASES[case]]
+    translate = dialog_texts.translator(dialog_texts.catalogs()[language], language)
+    listed = model.listed(translate, contacts)
+    assert text == model.text(translate, contacts, listed) + "\n"
+    name = dialog_texts.PLAN_CONTACT.split(" ", 1)[1]
+    assert text.count(name) == listed
+    assert (listed == contacts) is all_listed
+    if not all_listed:
+        assert listed > 0
+    assert result.stderr.count(name) == contacts  # the log lists every contact
 
 
 def test_the_menus_show_their_items_and_shorten_a_long_device_name(host: Host) -> None:

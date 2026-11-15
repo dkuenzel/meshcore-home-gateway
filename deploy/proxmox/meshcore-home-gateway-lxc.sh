@@ -47,9 +47,8 @@ STAGE=/root/meshcore-home-gateway-src      # the program before its installation
 ANSWERS_FILE=/root/meshcore-home-gateway-answers
 JOURNALD_CONF=/etc/systemd/journald.conf.d/meshcore-home-gateway.conf   # the journal's limit
 # whiptail cuts what does not fit its box without a mark (tests/test_dialog_texts.py): a menu item
-# runs over the box's border beyond 72 columns; the plan's box holds this many contacts
+# runs over the box's border beyond 72 columns
 ITEM_COLUMNS=72
-PLAN_CONTACTS=4
 # pct exec passes the host's environment into the container; commands start from a clean one
 CT_ENV=(env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8)
 
@@ -59,7 +58,7 @@ ct.gateway ct.template_storage radio.choice targets.channels targets.contacts "
 # --- language packs: written by `make translations` from deploy/proxmox/locale/*.po; do not edit
 L10N_ORDER=(en de)
 declare -A L10N_NAME=([en]=English [de]=Deutsch)
-declare -A L10N_SHA256=([de]=ae5ed578f3ebd15464d4966de6cb07753bdece9a1fdd5b50095382c96f97a339)
+declare -A L10N_SHA256=([de]=64931a4991dbee605b12207fa098bcdcd0abbcc7d84526b57b687f7d927d3d4f)
 # --- end of language packs
 L10N_MENU=()   # code, name, code, name, ...: the items of the language menus
 for code in "${L10N_ORDER[@]}"; do L10N_MENU+=("$code" "${L10N_NAME[$code]}"); done
@@ -1302,18 +1301,33 @@ choose_profile() {  # the radio's name, and what the managed profile changes (AD
   # each line of the plan ends in a line break, which $(...) dropped
   log "${plan//$'\n'/$'\n'  }"$'\n  '
   if (( INTERACTIVE )); then
-    local -a scroll=()
-    if (( $(grep -c '^contact' <<<"$lines" || true) > PLAN_CONTACTS )); then
-      scroll=(--scrolltext)   # with more contacts its text scrolls: nothing cut, Tab reaches Ok
-    fi
-    whiptail --title "$TITLE" "${scroll[@]}" --msgbox -- "$(plan_text t "$lines")"$'\n' 24 78 \
-      >&2 || true
+    # whiptail cuts what its box does not hold without a mark, and with --scrolltext Enter does
+    # not close the box and nothing marks the text below: the box lists as many contacts as it
+    # holds (24 rows: 18 lines of 74 columns) and counts the others, which the log lists
+    local box listed
+    listed=$(grep -c '^contact' <<<"$lines" || true)
+    box=$(plan_text t "$lines")
+    while (( listed > 0 )) && ! fits "$box" 74 18; do
+      listed=$(( listed - 1 ))
+      box=$(plan_text t "$lines" "$listed")
+    done
+    whiptail --title "$TITLE" --msgbox -- "$box"$'\n' 24 78 >&2 || true
   fi
 }
 
-plan_text() {  # plan_text SAY LINES: what `probe --list profile` LINES plan, or nothing to do; in
-  # English (SAY _fill, the log) or in the dialogs' language (SAY t, the box): one set of texts
-  local say=$1 kind setting live wanted action contact sets="" reported="" left="" plan=""
+fits() {  # fits TEXT COLUMNS LINES: TEXT, as whiptail wraps it in lines of COLUMNS, needs at most
+  # LINES. It may say no to a text that fits, never yes to one that does not: fold counts bytes,
+  # never fewer than the cells a character takes, and breaks a line no later than whiptail does
+  local text=${1//'\n'/$'\n'} count   # whiptail takes the two characters \n for a line break
+  count=$(printf '%s\n' "$text" | LC_ALL=C fold -s -w "$2" | wc -l)
+  (( count <= $3 ))
+}
+
+plan_text() {  # plan_text SAY LINES [LISTED]: what `probe --list profile` LINES plan, or nothing
+  # to do; in English (SAY _fill, the log) or in the dialogs' language (SAY t, the box): one set
+  # of texts. LISTED: list at most that many contacts, and count the others in a line of its own
+  local say=$1 most=${3--1} kind setting live wanted action contact sets="" reported="" left=""
+  local plan="" listed=0 more_set=0 more_reported=0
   while IFS=$'\t' read -r kind setting live wanted action; do
     case $kind/$action in
       change/set) sets+="  $setting: $live -> $wanted"$'\n' ;;
@@ -1333,6 +1347,13 @@ plan_text() {  # plan_text SAY LINES: what `probe --list profile` LINES plan, or
         left+="  $($say "{setting}: {live}, not {wanted} (compiled out of the radio's firmware)" \
           setting "$setting" live "$live" wanted "$wanted")"$'\n' ;;
       contact/*)  # contact KEY ACTION NAME: a contact target or command sender
+        case $live in add|favourite|missing|not_favourite) ;; *) continue ;; esac
+        if (( most >= 0 && listed >= most )); then   # not listed: counted
+          if [[ $live == add || $live == favourite ]]; then more_set=$(( more_set + 1 ))
+          else more_reported=$(( more_reported + 1 )); fi
+          continue
+        fi
+        listed=$(( listed + 1 ))
         contact="${setting:0:12}${wanted:+ $wanted}"   # the start of its key, and its name
         case $live in
           add)
@@ -1347,6 +1368,15 @@ plan_text() {  # plan_text SAY LINES: what `probe --list profile` LINES plan, or
         esac ;;
     esac
   done <<<"$2"
+  if (( more_set )); then
+    # Translators: {count} is a number; the installer's output lists every contact.
+    sets+="  $($say "contacts not listed here: {count} (see the installer's output)" \
+      count "$more_set")"$'\n'
+  fi
+  if (( more_reported )); then
+    reported+="  $($say "contacts not listed here: {count} (see the installer's output)" \
+      count "$more_reported")"$'\n'
+  fi
   if [[ -n $sets ]]; then
     plan+="$($say 'At its next connect the service sets the radio:')"$'\n'$sets
   fi

@@ -88,6 +88,7 @@ msg	contact {contact}: added as a favourite	Kontakt {contact}: als Favorit hinzu
 msg	contact {contact}: made a favourite	Kontakt {contact}: zum Favoriten gemacht
 msg	contact {contact}: no favourite	Kontakt {contact}: kein Favorit
 msg	contact {contact}: not on the radio	Kontakt {contact}: nicht auf dem Funkgerät
+msg	contacts not listed here: {count} (see the installer's output)	Hier nicht aufgeführte Kontakte: {count} (siehe die Ausgabe des Installers)
 msg	container ID must be a number of at least 100	die Container-ID muss eine Zahl ab 100 sein
 msg	container {ctid} did not start (see above)	Container {ctid} ist nicht gestartet (siehe oben)
 msg	container {ctid} has no dialout group	Container {ctid} hat keine Gruppe dialout

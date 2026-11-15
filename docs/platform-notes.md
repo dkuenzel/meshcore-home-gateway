@@ -82,7 +82,7 @@ One line per fact, by section.
 * `--yes-button`, `--no-button`, `--ok-button` and `--cancel-button` set the labels of every box kind and keep the exit status.
 * In a password or input box, Tab moves the focus to the buttons instead of being typed, and what is typed after it is lost.
 * whiptail takes every argument that starts with `-` for an option, also a text, a menu tag or a list item, unless it follows `--`.
-* A message box shows as many lines as fit its height and cuts the rest without a mark; with `--scrolltext` the text scrolls, but Enter no longer closes the box.
+* A message box shows as many lines as fit its height and cuts the rest without a mark; with `--scrolltext` the text scrolls, but Enter no longer closes the box, and nothing marks the text below.
 * A menu shows as many lines of its text as fit above its list and cuts the rest without a mark; a checklist one line more.
 * A menu shortens its tags and items to fit a line of the terminal, without a mark; with `--notags` it writes each item whole, and one wider than the box takes every row over its border.
 
@@ -775,11 +775,15 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   refuses such arguments as popt does. *Check:* `whiptail --msgbox '-x' 10 40; echo $?`, then the
   same with `--` before `'-x'`.
 * **A message box shows as many lines as fit its height and cuts the rest without a mark; with
-  `--scrolltext` the text scrolls, but Enter no longer closes the box.** A box of height 12 shows
-  6 lines, one of height 22 shows 16. With `--scrolltext` the text has the focus, also when it
-  fits: Enter and space do nothing, Tab moves to Ok, and Enter then closes the box. *Verified:*
-  experiment, all three versions; the text of the final message for each source, with
-  0.52.24-2ubuntu2; newt `textbox.c:121-125` (a scrolling text box takes the focus). *Here:*
+  `--scrolltext` the text scrolls, but Enter no longer closes the box, and nothing marks the text
+  below.** A box of height 12 shows 6 lines, one of height 22 shows 16. With `--scrolltext` the
+  text has the focus, also when it fits: Enter and space do nothing, Tab moves to Ok, and Enter
+  then closes the box. While the text is longer than the box, 0.52.24 draws no scroll bar and no
+  arrow, and leaves out the box's right border beside the text; a text that fits gets an arrow
+  (`↓`) at its last line. *Verified:* experiment, all three versions; the text of the final
+  message for each source, with 0.52.24-2ubuntu2; the marks on 2026-11-15 with 0.52.24-2ubuntu2
+  alone, in tmux 3.4 and in pyte; newt `textbox.c:121-125` (a scrolling text box takes the
+  focus). *Here:*
   `summary()` shows the final message in a box of height 24 (18 lines) without `--scrolltext`.
   `tests/test_dialog_texts.py` checks that it fits in every language with each command that runs
   the installer again: the latest release's, a pre-release's, `main`'s and a clone's at a path of
@@ -794,12 +798,20 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   failed login: it logs it, then asks in a yes/no box of 24x78 (18 lines) with the question
   before the message, which holds the start warnings, the error and the hint of a refused login
   without a user name and TLS in German (17 lines); a longer message loses its own end, not the
-  question. The plan for the radio's settings is a message box of 24x78 too, which holds the
-  settings and up to four contacts with names of 31 bytes (`PLAN_CONTACTS`); with more contacts
-  the installer gives it `--scrolltext`. *Check:*
+  question. The plan for the radio's settings is a message box of 24x78 too, without
+  `--scrolltext`: `choose_profile()` lists as many of its contacts as `fold -s -w 74` (under
+  `LC_ALL=C`) says fit in 18 lines, and counts the others in a line of their own ("contacts not
+  listed here: 3 (see the installer's output)"); the log before the box lists every contact.
+  fold counts bytes, never fewer than the cells a character takes, and breaks a line no later
+  than whiptail does, so it may list a contact fewer than would fit, never one too many.
+  `tests/test_dialog_texts.py` lays out four realistic plans with the values `probe --list
+  profile` prints, such as every kind of node added automatically and telemetry for contacts,
+  with up to 16 contacts named with 31 bytes; with all six settings such a box lists 2 to 8 of
+  them. Up to 2.2.0 the box held the settings and four contacts only with the short values the
+  test assumed; with real values it cut its end also with four (#190). *Check:*
   `whiptail --msgbox "$(seq 1 30)" 12 40` shows 1 to 6 and closes with Enter;
-  `whiptail --scrolltext --msgbox "$(seq 1 30)" 12 40` stays open on Enter; Tab, then Enter
-  closes it.
+  `whiptail --scrolltext --msgbox "$(seq 1 30)" 12 40` stays open on Enter, without an arrow or
+  a right border beside 1 to 6; Tab, then Enter closes it.
 * **A menu shows as many lines of its text as fit above its list and cuts the rest without a
   mark; a checklist one line more.** A menu's text gets the box's height less 7 lines and less
   the list's height: a menu of 20x78 with a list of 3 shows 10 lines, with a list of 10 it shows

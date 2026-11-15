@@ -329,6 +329,11 @@ msgstr ""
 msgid "contact {contact}: not on the radio"
 msgstr ""
 
+#. {count} is a number; the installer's output lists every contact.
+#, python-brace-format
+msgid "contacts not listed here: {count} (see the installer's output)"
+msgstr ""
+
 msgid "container ID must be a number of at least 100"
 msgstr ""
 
