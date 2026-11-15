@@ -57,6 +57,15 @@ format, the command line and Home Assistant discovery are public interfaces
   each; three of its results are shorter now. A new test wraps every text of every dialog in
   every language as whiptail does, with the longest realistic values, and fails when one needs
   more lines than its box shows (#190).
+- The dashboard stated one region's rule as a fact: *Gateway*'s fold *What the graph shows* and
+  the row *Airtime budget* on *Settings* said that the law allows a radio only a share of each
+  hour, and *Settings* spoke of settings that protect the law. The gateway restricts no radio
+  setting by region or law; whoever runs it follows the rules for their band
+  ([Local rules](docs/configuration.md#local-rules)). The texts now say what the budget is, the
+  airtime the gateway gives its own messages in an hour and at once, which *Settings* names by
+  its keys `[airtime] budget_s_per_hour` and `burst_s`, and that local rules may limit a radio's
+  airtime, which the administrator follows. Make the dashboard again to get the texts (#174,
+  #175).
 
 ### Security
 

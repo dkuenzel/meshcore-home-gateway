@@ -277,7 +277,8 @@ PLAIN: dict[str, tuple[str, ...]] = {
     "Contacts added only by hand": ("Contacts",),
     (
         "A switch here would work for everyone who uses Home Assistant, children and guests "
-        "included. Settings that protect people, the radio or the law stay with the administrator."
+        "included. Settings that protect people or the radio, or that local rules may limit, stay "
+        "with the administrator."
     ): ("Settings",),
     "Contacts managed by the gateway": ("Contacts",),
     "Contacts with a device": ("Contacts",),

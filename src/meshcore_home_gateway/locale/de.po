@@ -1965,8 +1965,8 @@ msgstr "Ein Sensor liefert Messwerte, wenn das Gateway ihn abfragt; die Admins e
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "A switch here would work for everyone who uses Home Assistant, children and guests included. Settings that protect people, the radio or the law stay with the administrator."
-msgstr "Ein Schalter hier wäre für alle bedienbar, die Home Assistant nutzen, Kinder und Gäste eingeschlossen. Einstellungen, die Menschen oder das Funkgerät schützen oder das Gesetz einhalten, bleiben Sache der Admins."
+msgid "A switch here would work for everyone who uses Home Assistant, children and guests included. Settings that protect people or the radio, or that local rules may limit, stay with the administrator."
+msgstr "Ein Schalter hier wäre für alle bedienbar, die Home Assistant nutzen, Kinder und Gäste eingeschlossen. Einstellungen, die Menschen oder das Funkgerät schützen oder durch Vorschriften vor Ort begrenzt sein können, bleiben Sache der Admins."
 
 #. the help on writing. Return (↵) is the keyboard's key: the word the phone keyboards of your language show, with the sign ↵, and the same word as in the name beside the Send button (Return, then Send); Send and Write to {name} as their labels are translated. name is the chat's title; minutes, room, window and seconds are whole numbers
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2108,15 +2108,15 @@ msgstr "Verbleibende Sendezeit in dieser Stunde"
 #. hour is a whole number of seconds, such as 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "Airtime: the law allows a radio only a share of each hour. The gateway keeps its own messages within its budget; messages wait when it is used up."
-msgstr "Sendezeit: Das Gesetz erlaubt einem Funkgerät nur einen Teil jeder Stunde. Das Gateway hält seine eigenen Nachrichten innerhalb seines Budgets; Nachrichten warten, wenn es aufgebraucht ist."
+msgid "Airtime: the gateway keeps its own messages within its budget, a share of each hour; messages wait when the budget is used up."
+msgstr "Sendezeit: Das Gateway hält seine eigenen Nachrichten innerhalb seines Budgets, eines Teils jeder Stunde; Nachrichten warten, wenn das Budget aufgebraucht ist."
 
 #. hour is a whole number of seconds, such as 36
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
-msgid "Airtime: the law allows a radio only a share of each hour. The gateway keeps its own messages within {hour} s an hour; messages wait when it is used up."
-msgstr "Sendezeit: Das Gesetz erlaubt einem Funkgerät nur einen Teil jeder Stunde. Das Gateway hält seine eigenen Nachrichten innerhalb von {hour} s pro Stunde; Nachrichten warten, wenn diese Zeit aufgebraucht ist."
+msgid "Airtime: the gateway keeps its own messages within {hour} s an hour; messages wait when that time is used up."
+msgstr "Sendezeit: Das Gateway hält seine eigenen Nachrichten innerhalb von {hour} s pro Stunde; Nachrichten warten, wenn diese Zeit aufgebraucht ist."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -2912,6 +2912,12 @@ msgstr "Wie viele Nachrichten warten dürfen, wie lange und wie oft eine Direktn
 #. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "How much airtime the gateway gives its own messages in an hour and at once; they wait when it is used up."
+msgstr "Wie viel Sendezeit das Gateway seinen eigenen Nachrichten pro Stunde und am Stück gibt; Nachrichten warten, wenn sie aufgebraucht ist."
+
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "How the gateway reaches its radio."
 msgstr "Wie das Gateway sein Funkgerät erreicht."
 
@@ -3152,6 +3158,13 @@ msgstr "Buchstaben"
 msgctxt "dashboard"
 msgid "List of people not to ask"
 msgstr "Liste „Nicht abfragen“"
+
+#. hour is a whole number of seconds, such as 36
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Local rules may limit a radio's airtime; your administrator follows them."
+msgstr "Vorschriften vor Ort können die Sendezeit eines Funkgeräts begrenzen; die Admins halten sie ein."
 
 #. security text (docs/translations.md): what a tick proves and what it does not; a confirmation that came too soon may be forged
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -4430,12 +4443,6 @@ msgstr "Die Sprache der Entitätsnamen und dieses Dashboards."
 msgctxt "dashboard"
 msgid "The last 50 messages are kept here, fewer when they are long."
 msgstr "Die letzten 50 Nachrichten werden hier aufbewahrt, weniger, wenn sie lang sind."
-
-#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
-#: src/meshcore_home_gateway/dashboard.yaml
-msgctxt "dashboard"
-msgid "The law allows a radio only a share of each hour; messages wait when it is used up."
-msgstr "Das Gesetz erlaubt einem Funkgerät nur einen Teil jeder Stunde; Nachrichten warten, wenn er aufgebraucht ist."
 
 #. security texts (docs/translations.md): the items on the key, on the position and on who can send it (shown only while Home Assistant's users can); key is the first 8 hex digits of this home's radio's key
 #: src/meshcore_home_gateway/dashboard.yaml

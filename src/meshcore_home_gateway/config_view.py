@@ -3,8 +3,9 @@
 An allowlist: each value is named here, none is copied by its section. Every user of Home
 Assistant reads the document, so it never holds a host, port, device path, user name, password
 or password file, client ID or key file, a contact's or sender's key (a target's first 8 digits
-aside), the codes file, a code or a command word. The settings that protect people, the radio or
-the law are shown, so that the household sees why Home Assistant cannot change them.
+aside), the codes file, a code or a command word. The settings that protect people or the radio,
+or that local rules may limit, are shown, so that the household sees why Home Assistant cannot
+change them.
 """
 
 from __future__ import annotations

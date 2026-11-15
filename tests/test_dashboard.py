@@ -3211,6 +3211,52 @@ def test_settings_name_each_key_by_its_section_and_its_name_so_the_tables_fit_a_
     assert max(len(w) for w in words) <= CODE_LETTERS, max(words, key=len)
 
 
+# the words that would say what the law allows a radio, in each language shipped: the gateway
+# restricts no radio setting by region or law, and whoever runs it follows the rules for their
+# band (docs/configuration.md, Local rules; #174, #175)
+LAW = {
+    "en": r"\b(?:laws?|legal(?:ly)?|regulations?)\b",
+    "de": r"\b(?:gesetz(?:e|es)?|gesetzlich\w*|rechtlich\w*)\b",
+}
+LOCAL_RULES = "Local rules may limit a radio's airtime; your administrator follows them."
+
+
+@pytest.mark.real_catalogs
+@pytest.mark.parametrize("language", sorted(LAW))
+def test_no_text_says_what_the_law_allows_a_radio(language: str, tmp_path: Path) -> None:
+    """The gateway restricts no radio setting by region or law: the rules differ by country and
+    band, and whoever runs the gateway follows those for their band (docs/configuration.md,
+    Local rules; #174, #175). Gateway's fold What the graph shows and Settings' row Airtime
+    budget said that the law allows a radio only a share of each hour, one region's rule as a
+    fact, and Settings' fold Why can't I change this here? spoke of settings that protect the
+    law. No text of the dashboard speaks of a law, in any language shipped."""
+    text, _ = dashboard.dashboard(
+        config(more=f'[homeassistant]\nlanguage = "{language}"\n'), tmp_path
+    )
+    assert re.findall(LAW[language], text, re.IGNORECASE) == []
+
+
+def test_airtime_says_what_the_budget_is_and_that_local_rules_may_limit_it() -> None:
+    """What the law's place says (#174, #175): the airtime budget is the airtime the gateway
+    gives its own messages, which wait when it is used up; the radio's own traffic is beyond it
+    (the graph's second line). Local rules may limit a radio's airtime, and the administrator
+    follows them: one text, after either branch of Gateway's fold and in Settings' row, which
+    names its keys as the other rows do (`[airtime] budget_s_per_hour`, `burst_s`)."""
+    (fold,) = [t for t in rules.texts(view_of("gateway")) if "What the graph shows" in t]
+    item = fold.partition("<li>")[2].partition("</li>")[0]
+    with_hour, _, without = item.partition("{% else %}")
+    assert "Airtime: the gateway keeps its own messages within {{ hour }} s an hour" in with_hour
+    assert "Airtime: the gateway keeps its own messages within its budget" in without
+    assert item.endswith("{% endif %} " + LOCAL_RULES)
+    (table,) = [t for t in rules.texts(view_of("settings")) if "<td>Airtime budget</td>" in t]
+    row = table.partition("<td>Airtime budget</td>")[2].partition("</tr>")[0]
+    assert row.endswith(
+        "How much airtime the gateway gives its own messages in an hour and at once; they wait "
+        f"when it is used up. {LOCAL_RULES} <code>[airtime]</code> <code>budget_s_per_hour</code> "
+        "<code>burst_s</code></td>"
+    )
+
+
 # DR-14: what Help names, besides the titles and the names rule 8 finds by themselves
 HELP_TOPICS = (
     "What this gateway does",
