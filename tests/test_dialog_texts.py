@@ -10,6 +10,7 @@ cases and over every text below, and compares it with the model.
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Sequence
 from typing import Final
 
@@ -279,22 +280,20 @@ def test_a_failed_login_shows_what_the_program_printed() -> None:
 
 
 def test_the_plan_box_holds_its_worst_case(dialogs: list[model.Dialog]) -> None:
-    """The plan's box counts the contacts and lists none (#190), so its text has a bound that
-    nothing measures at run time: every setting the managed profile manages, each at the values
-    and in the form whose line takes the most lines, a radio's name of 31 bytes in the most
-    columns, and each count of contacts with three digits. The box has 24 rows, the most a
-    terminal of 80x24 shows, and no --scrolltext, with which Enter would not close it and
-    whiptail marks no text below: the worst case fits in every language
-    (test_every_text_fits_its_box). The model has every text of plan_text, and only those."""
+    """The plan's box counts the contacts and lists none (#190), and shows the radio's name
+    without its values (test_the_plan_box_shows_no_value_of_the_radios_name), so its text has a
+    bound that nothing measures at run time: every setting the managed profile manages, each at
+    the values and in the form whose line takes the most lines, and each count of contacts with
+    three digits. The box has 24 rows, the most a terminal of 80x24 shows, and no --scrolltext,
+    with which Enter would not close it and whiptail marks no text below: the worst case fits in
+    every language (test_every_text_fits_its_box). The model has every text of plan_text, and
+    only those."""
     (dialog,) = [d for d in dialogs if model.PLAN_LISTED in d.msgids()]
     assert dialog.box == model.PLAN_BOX
     assert dialog.function == "choose_profile"
     assert not [d.where() for d in dialogs if d.box.scroll]
     script = model.Script(model.SCRIPT.read_text(encoding="utf-8"))
     assert set(dialog.msgids()) == script.messages_in("plan_text")
-    assert {len(name.encode()) for name in model.PLAN_NAMES} == {31}  # the most the radio stores
-    names = [_json_text(name) for name in model.PLAN_NAMES]  # as probe prints them
-    assert max(map(model.text_width, names)) == 34  # 32 columns and the quotes
     for language, catalog in LANGUAGES.items():
         translate = model.translator(catalog, language)
         changes = model.worst_changes(translate)
@@ -308,6 +307,27 @@ def test_the_plan_box_holds_its_worst_case(dialogs: list[model.Dialog]) -> None:
 
 
 LANGUAGES: Final = model.catalogs()
+
+
+def test_the_plan_box_shows_no_value_of_the_radios_name() -> None:
+    """The radio holds any name of up to 31 bytes, and probe prints one in up to 188 columns
+    (\\\\ for a backslash, \\" for a quote, a \\u escape for each control or format
+    character, two for one outside the basic plane) or with the two characters \\n, which
+    whiptail turns into a line break, also after another backslash. So the plan's box names the
+    name's setting in each of its forms without its values, which the installer's output above
+    it shows (#190): its worst case holds whatever name the radio or the configuration has."""
+    names = [_json_text(name) for name in model.PLAN_HIDDEN_NAMES]  # as probe prints them
+    assert {len(name.encode()) for name in model.PLAN_HIDDEN_NAMES} == {31}  # the most it stores
+    assert max(map(model.text_width, names)) == 188
+    assert [name for name in names if "\\n" in name]
+    pairs = list(itertools.permutations([*names, '"Gateway"'], 2))
+    for language, catalog in LANGUAGES.items():
+        translate = model.translator(catalog, language)
+        for action in ("set", "reported", *model.PLAN_LEFT_FORMS):
+            changes = [model.Change("name", live, wanted, action) for live, wanted in pairs]
+            (line,) = {model.plan_line(translate, change) for change in changes}
+            assert "\\" not in line, (language, action)
+            assert len(model.PLAN_BOX.layout(f"  {line}")) == 1, (language, line)
 
 
 @pytest.mark.parametrize("language", list(LANGUAGES))

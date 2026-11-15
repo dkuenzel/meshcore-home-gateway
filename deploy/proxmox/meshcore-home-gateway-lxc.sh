@@ -58,7 +58,7 @@ ct.gateway ct.template_storage radio.choice targets.channels targets.contacts "
 # --- language packs: written by `make translations` from deploy/proxmox/locale/*.po; do not edit
 L10N_ORDER=(en de)
 declare -A L10N_NAME=([en]=English [de]=Deutsch)
-declare -A L10N_SHA256=([de]=307276fa4fcdd218c5229e144657cbd30fd432655d05b7ed9d22580d0c1e244d)
+declare -A L10N_SHA256=([de]=11fb065782d42836cc4fb6952cfdc633fcd872b0db4cb1ce97cc99d6b68740bc)
 # --- end of language packs
 L10N_MENU=()   # code, name, code, name, ...: the items of the language menus
 for code in "${L10N_ORDER[@]}"; do L10N_MENU+=("$code" "${L10N_NAME[$code]}"); done
@@ -1312,9 +1312,10 @@ choose_profile() {  # the radio's name, and what the managed profile changes (AD
   log "${plan//$'\n'/$'\n'  }"$'\n  '
   if (( INTERACTIVE )); then
     # whiptail cuts what its box does not hold without a mark, and with --scrolltext Enter does
-    # not close the box and nothing marks the text below: the box counts the contacts, which the
-    # log above lists, so its text has a bound, which a box of 24 rows (18 lines of 74 columns)
-    # holds in every language (tests/test_dialog_texts.py)
+    # not close the box and nothing marks the text below: the box counts the contacts and names
+    # the radio's name without its values, which the log above shows, so its text has a bound,
+    # which a box of 24 rows (18 lines of 74 columns) holds in every language
+    # (tests/test_dialog_texts.py)
     whiptail --title "$TITLE" --msgbox -- "$(plan_text t "$lines" count)"$'\n' 24 78 >&2 || true
   fi
 }
@@ -1322,10 +1323,26 @@ choose_profile() {  # the radio's name, and what the managed profile changes (AD
 plan_text() {  # plan_text SAY LINES [count]: what `probe --list profile` LINES plan, or nothing
   # to do; in English (SAY _fill, the log) or in the dialogs' language (SAY t, the box): one set
   # of texts. The log lists each contact (in English, as all the log); count: the box counts
-  # them by what the service does, and says that the log lists them
-  local say=$1 kind setting live wanted action contact sets="" reported="" left="" plan=""
+  # them by what the service does, says that the log lists them, and names the radio's name
+  # without its values
+  local say=$1 kind setting live wanted action contact named sets="" reported="" left="" plan=""
   local -A counted=()
   while IFS=$'\t' read -r kind setting live wanted action; do
+    if [[ $kind == change && $setting == name && ${3-} == count ]]; then
+      # the box names the radio's name without its values, which the log shows: the radio holds
+      # any name of up to 31 bytes, which probe prints in up to 188 columns, and whiptail turns
+      # the two characters \n into a line break
+      # Translators: the radio's name in the plan's box, in each of its sections; the
+      # installer's output before the box shows the radio's name and the one the service wants.
+      named="  $($say "{setting}: differs (the installer's output above shows the names)" \
+        setting "$setting")"$'\n'
+      case $action in
+        set) sets+=$named ;;
+        reported) reported+=$named ;;
+        kept|given_up|unsupported|disabled) left+=$named ;;
+      esac
+      continue
+    fi
     case $kind/$action in
       change/set) sets+="  $setting: $live -> $wanted"$'\n' ;;
       change/reported) reported+="  $setting: $live -> $wanted"$'\n' ;;

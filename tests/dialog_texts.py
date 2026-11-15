@@ -1144,12 +1144,21 @@ PLAN_COUNTS: Final = {
     "not_favourite": "Contacts that are no favourites: {count}",
 }
 PLAN_LISTED: Final = "The installer's output above lists every contact."
+# the radio's name, in each section: the box shows none of its values (PLAN_HIDDEN_NAMES)
+PLAN_NAME: Final = "{setting}: differs (the installer's output above shows the names)"
 PLAN_COUNT: Final = 999  # three digits: the radio holds a few hundred contacts at most
-# a radio's name of 31 bytes, the most it stores, in the most columns, without a space: 31
-# letters, or a family emoji, whose three zero-width joiners probe writes as \u200d (6 columns
-# each), and 6 letters: 32 columns
-_FAMILY: Final = "\N{ZERO WIDTH JOINER}".join(("\N{MAN}", "\N{WOMAN}", "\N{GIRL}", "\N{BOY}"))
-PLAN_NAMES: Final = ("W" * 31, _FAMILY + "W" * 6, "W" * 6 + _FAMILY)
+# radio names of 31 bytes, the most the radio stores, that the box would not hold: probe prints
+# a backslash as \\, which whiptail turns into a line break before an n (cleanNewlines(), also
+# after another backslash), a quote as \", a control character as a \u escape of 6 columns, and
+# a format character outside the basic plane, as each tag character of the flag of Wales, as a
+# surrogate pair of 12 columns. The box shows the name's setting without its values (PLAN_NAME),
+# so these stand for any name (test_dialog_texts.py)
+_WALES: Final = (
+    "\N{WAVING BLACK FLAG}"
+    + "".join(chr(0xE0000 + ord(letter)) for letter in "gbwls")
+    + "\N{CANCEL TAG}"
+)
+PLAN_HIDDEN_NAMES: Final = ("\\n" * 15 + "x", "\\" * 31, '"' * 31, _WALES + "Cym", "\x01" * 31)
 _SEED: Final = core_profile.Kind.SEED
 
 
@@ -1163,8 +1172,10 @@ class Change(NamedTuple):
 
 
 def plan_line(translate: Language, change: Change) -> str:
-    """A setting's line in the plan, without its indentation: as found and as wanted, or why the
-    service leaves it alone."""
+    """A setting's line in the plan's box, without its indentation: as found and as wanted, or
+    why the service leaves it alone; the radio's name without its values (PLAN_NAME)."""
+    if change.setting == SETTING_NAMES[core_profile.NAME]:
+        return _fill(translate(PLAN_NAME), {"setting": change.setting})
     if change.action in {"set", "reported"}:
         return f"{change.setting}: {change.live} -> {change.wanted}"
     return _fill(translate(PLAN_LEFT_FORMS[change.action]), change._asdict())
@@ -1221,10 +1232,11 @@ def _shapes(values: Iterable[object]) -> list[str]:
 @functools.cache
 def plan_values() -> dict[str, tuple[list[str], list[str]]]:
     """Each setting the managed profile manages, by the name `probe --list profile` gives it: the
-    values the radio can report and those the profile can want, as probe prints them (one of each
-    shape). The radio reports its auto-add byte and its telemetry modes as they are, the duty
-    cycle from the airtime factor that its firmware clamps to 0 to 9 at boot (100 % to 10 %),
-    which the profile can want too; a name of 31 bytes either way (PLAN_NAMES)."""
+    values the radio can report and those the profile can want, as probe prints them (two of
+    each shape at most, _shapes). The radio reports its auto-add byte and its telemetry modes as
+    they are, the duty cycle from the airtime factor that its firmware clamps to 0 to 9 at boot
+    (100 % to 10 %), which the profile can want too; any name of up to 31 bytes either way, which
+    the box does not show (PLAN_HIDDEN_NAMES)."""
     want = core_profile.desired(core_profile.TEN_PERCENT_BAND_KHZ[0]).values
     factors = range(core_profile.MAX_AIRTIME_FACTOR_MILLI + 1)
     found: dict[str, tuple[Iterable[object], Iterable[object]]] = {
@@ -1241,7 +1253,8 @@ def plan_values() -> dict[str, tuple[list[str], list[str]]]:
         )
         for key, (lives, wanted) in found.items()
     }
-    values[SETTING_NAMES[core_profile.NAME]] = (_shapes(PLAN_NAMES), _shapes(PLAN_NAMES))
+    names = [_json_text(name) for name in PLAN_HIDDEN_NAMES]
+    values[SETTING_NAMES[core_profile.NAME]] = (names, names)
     return values
 
 
@@ -1285,7 +1298,7 @@ class PlanBox(Expr):
         yield from (PLAN_SETS, PLAN_UNTESTED, PLAN_OBSERVED, PLAN_LEFT)
         yield from PLAN_LEFT_FORMS.values()
         yield from PLAN_COUNTS.values()
-        yield PLAN_LISTED
+        yield from (PLAN_LISTED, PLAN_NAME)
 
 
 def _plan(script: Script) -> Expr:

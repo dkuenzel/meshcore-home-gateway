@@ -571,6 +571,12 @@ msgstr ""
 msgid "{device} is already passed through to another container (ID {ctids}): a radio takes one client at a time"
 msgstr ""
 
+#. the radio's name in the plan's box, in each of its sections; the
+#. installer's output before the box shows the radio's name and the one the service wants.
+#, python-brace-format
+msgid "{setting}: differs (the installer's output above shows the names)"
+msgstr ""
+
 #. a setting of the radio and its value, as the radio names them.
 #, python-brace-format
 msgid "{setting}: {live} (changed on the radio; kept)"

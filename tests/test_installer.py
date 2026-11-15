@@ -38,6 +38,7 @@ from pathlib import Path
 import pytest
 
 from meshcore_home_gateway import __version__
+from meshcore_home_gateway.cli.common import _json_text
 from meshcore_home_gateway.config import Config, parse_config, render_config
 from tests import dialog_texts
 
@@ -2880,6 +2881,46 @@ def test_the_plan_box_shows_the_worst_case(
     counts = {actions[0]: 101, actions[1]: 100}
     assert text == dialog_texts.plan_box_text(translate, changes, counts) + "\n"
     assert len(dialog_texts.PLAN_BOX.layout(text)) <= dialog_texts.PLAN_BOX.lines
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+@pytest.mark.parametrize("action", ["reported", "given_up"])
+@pytest.mark.parametrize("names", [(0, 1), (3, 2), (4, 0)])
+def test_the_plan_box_shows_no_value_of_the_radios_name(
+    tmp_path: Path, english_only: Path, language: str, action: str, names: tuple[int, int]
+) -> None:
+    """A radio's name that probe prints in up to 188 columns or with the two characters \\n,
+    which whiptail turns into a line break (dialog_texts.PLAN_HIDDEN_NAMES), in the box's worst
+    case with untested firmware, reported or left alone: the box shows the model's text, which
+    names the name's setting without its values, holds it and ends with its last line; the log
+    before the box shows the values (#190)."""
+    host = install_stubs(tmp_path)
+    if language == "en":
+        host = dataclasses.replace(host, installer=english_only)
+    translate = dialog_texts.translator(dialog_texts.catalogs()[language], language)
+    found, wants = (_json_text(dialog_texts.PLAN_HIDDEN_NAMES[n]) for n in names)
+    name = dialog_texts.Change("name", found, wants, action)
+    worst = dialog_texts.worst_changes(translate, "reported")
+    changes = [name if change.setting == "name" else change for change in worst]
+    assert name in changes
+    contacts = [
+        (f"{n:064x}", ("missing", "not_favourite")[n % 2], f"Neighbour {n:03d}") for n in range(201)
+    ]
+    plan = plan_input(changes, contacts, tested=False)
+    result = run_installer(host, dialog=plan_dialog(host, language), env={"PROBE_PLAN": plan})
+    assert result.returncode == 0, result.stderr
+    (box,) = [c for c in host.calls("whiptail") if any("duty_cycle_percent" in a for a in c)]
+    text = box[-3]
+    counts = {"missing": 101, "not_favourite": 100}
+    assert text == dialog_texts.plan_box_text(translate, changes, counts) + "\n"
+    assert "\\" not in text  # no part of the names, nothing whiptail turns into a line break
+    assert text.endswith(f"\n{translate(dialog_texts.PLAN_LISTED)}\n")
+    assert len(dialog_texts.PLAN_BOX.layout(text)) <= dialog_texts.PLAN_BOX.lines
+    if action == "reported":
+        logged = f"name: {found} -> {wants}"
+    else:
+        logged = f"name: {found}, not {wants} (did not take effect; no longer set)"
+    assert f"  {logged}\n" in result.stderr
 
 
 def test_the_menus_show_their_items_and_shorten_a_long_device_name(host: Host) -> None:

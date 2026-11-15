@@ -149,6 +149,7 @@ msg	whiptail not found: install it ({command}) or use --answers FILE	whiptail ni
 msg	{bridge}, {ip}, gateway {gateway}	{bridge}, {ip}, Gateway {gateway}
 msg	{device} is already passed through to another container (ID {ctids}). A radio takes one client at a time: whichever opens it second cannot use it. Choose another radio, or take it out of that container first.	{device} ist schon an einen anderen Container durchgereicht (ID {ctids}). Ein Funkgerät bedient immer nur einen Client: Wer es als Zweites öffnet, kann es nicht nutzen. Wähle ein anderes Funkgerät oder nimm es zuerst aus diesem Container heraus.
 msg	{device} is already passed through to another container (ID {ctids}): a radio takes one client at a time	{device} ist schon an einen anderen Container durchgereicht (ID {ctids}): Ein Funkgerät bedient immer nur einen Client
+msg	{setting}: differs (the installer's output above shows the names)	{setting}: weicht ab (die Ausgabe des Installers oben zeigt die Namen)
 msg	{setting}: {live} (changed on the radio; kept)	{setting}: {live} (am Funkgerät geändert; beibehalten)
 msg	{setting}: {live}, not {wanted} (compiled out of the radio's firmware)	{setting}: {live}, nicht {wanted} (nicht in die Firmware kompiliert)
 msg	{setting}: {live}, not {wanted} (did not take effect; no longer set)	{setting}: {live}, nicht {wanted} (ohne Wirkung; nicht mehr gesetzt)

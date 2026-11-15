@@ -802,20 +802,23 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   before the message, which holds the start warnings, the error and the hint of a refused login
   without a user name and TLS in German (17 lines); a longer message loses its own end, not the
   question. The plan for the radio's settings is a message box of 24x78 too, without
-  `--scrolltext`, and it lists no contact: `choose_profile()` shows the settings the service
-  sets, only reports or leaves alone, one line for each kind of contact with its count
-  ("Contacts made favourites: 12"), and a last line saying that the installer's output above
-  lists every contact; the log before the box lists each with the start of its key and its
-  name. So its text has a bound, and nothing is measured at run time:
-  `tests/test_dialog_texts.py` lays out its worst case in every language, every setting the
-  managed profile manages with the values `probe --list profile` prints (every kind of node
-  added automatically, every telemetry mode, every duty cycle from 10 to 100 %) and in the form
-  whose line takes the most lines, a radio's name of 31 bytes in the most columns (a family
-  emoji, whose zero-width joiners probe writes as `\u200d`, and six letters: 32 columns), and
-  each count with three digits. It takes 18 lines in English and in German. A radio's name of
-  control or format characters, which probe writes as `\u` escapes of 6 columns each, can make
-  the box longer; whiptail then cuts its last lines, which the log has
-  (#190). *Check:*
+  `--scrolltext`, and it lists no contact and no name: `choose_profile()` shows the settings
+  the service sets, only reports or leaves alone, the radio's name without its values
+  ("name: differs (the installer's output above shows the names)"), one line for each kind of
+  contact with its count ("Contacts made favourites: 12"), and a last line saying that the
+  installer's output above lists every contact; the log before the box shows the names and
+  lists each contact with the start of its key and its name. The radio holds any name of up to
+  31 bytes, and probe prints a backslash as `\\`, a quote as `\"`, a control character as a
+  `\u` escape and a format character outside the basic plane, as each tag character of the
+  flag of Wales, as two of them: a name of 31 bytes takes up to 188 columns with its quotes. And
+  whiptail turns the two characters `\n` into a line break, also after another backslash, so a
+  name of `\n`s takes a line for each. So the box's text has a bound only without the name's
+  values, and nothing is measured at run time: `tests/test_dialog_texts.py` lays out its worst
+  case in every language, every setting the managed profile manages with the values
+  `probe --list profile` prints (every kind of node added automatically, every telemetry mode,
+  every duty cycle from 10 to 100 %) and in the form whose line takes the most lines, and each
+  count with three digits. It takes 17 lines in English and in German (#190). *Check:*
+  `whiptail --msgbox 'a\\nb' 8 20` shows `a\` and `b` on two lines;
   `whiptail --msgbox "$(seq 1 30)" 12 40` shows 1 to 6 and closes with Enter;
   `whiptail --scrolltext --msgbox "$(seq 1 30)" 12 40` stays open on Enter, without an arrow or
   a right border beside 1 to 6; Tab, then Enter closes it.

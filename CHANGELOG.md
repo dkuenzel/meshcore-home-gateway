@@ -60,13 +60,14 @@ format, the command line and Home Assistant discovery are public interfaces
   as soon as a serial device was there, and the device's path and name to 37 columns: the menus
   now show their items without their tags, a device's name longer than 72 characters keeps its
   start and its end (each more of its end when two would read the same), and the setup's
-  items start with the names the docs and an answers file give them, default and advanced. The plan for the radio's settings lost its last lines, contacts and the
-  settings left alone, with the values the radio reports already with four contacts; its box has
-  24 rows and does not scroll, since a scrolling box closed only with Tab, then Enter and showed
-  no mark of the text below, and it counts the contacts instead of listing them (the installer's
-  output above it lists each). The final message could lose the end of its
-  warning about a radio over TCP: in German when the login and the self-test took two lines each
-  or the radio's IPv6 address was written out in full, and in both languages with a broker user
+  items start with the names the docs and an answers file give them, default and advanced.
+  The plan for the radio's settings lost its last lines, contacts and the settings left alone,
+  with the values the radio reports already with four contacts, and a radio's name with `\n` in
+  it broke its line; its box now has 24 rows, counts the contacts instead of listing them and
+  shows the radio's name without its values (the installer's output above it lists each contact
+  and shows the names). The final message could lose the end of its warning about a radio over
+  TCP: in German when the login and the self-test took two lines each or the radio's IPv6
+  address was written out in full, and in both languages with a broker user
   name longer than the suggested one; three of its results are shorter, and the line about the
   radio now follows the message's first line, before the rows that a long user name, address or
   command makes longer. A new test wraps every text of every dialog in every
