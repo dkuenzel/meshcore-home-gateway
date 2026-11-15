@@ -41,3 +41,6 @@ or name a later record that supersedes a part of it, and a reversed decision nee
 | [0031](0031-household-chat-problems-and-settings-on-the-generated-dashboard.md) | Household chat, problems and settings on the generated dashboard | accepted; amended 2026-11-11 (the refused line above the thread); amended by 0033 (the advert button) |
 | [0032](0032-heard-nodes-kept-with-name-signal-and-time-by-default.md) | Heard nodes are kept with name, signal and time by default | accepted |
 | [0033](0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md) | A zero-hop advert of the gateway's radio on request | accepted |
+| [0034](0034-untrusted-text-from-the-mesh.md) | Untrusted text from the mesh, canonical where it enters and encoded at every sink | proposed |
+| [0035](0035-the-companion-state-model.md) | The companion state model: presence, positions that age, and confirmed movement, in one module | proposed |
+| [0036](0036-the-settings-registry-recommendations-and-the-update-review.md) | The settings registry, recommendations and the update review by the new version | proposed |

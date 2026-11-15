@@ -1277,3 +1277,60 @@ in slices, each a release-ready step with its own tests, Home Assistant first:
 
 Later: a terminal dashboard and a web dashboard on the same documents, Home Assistant as a
 control surface for selected radio settings, the household's own repeaters.
+
+### 13.1 Release 2.3: the foundations, and updates that ask
+
+On 2026-11-15 the maintainer accepted the analyses of the feedback on 2.2 (#166 to #189) and the
+plan built from them for 2.3 to 2.5, except two decisions that stay open (below). 2.2.1, a patch,
+first finishes what was decided for 2.2. 2.3 then builds the data contracts that later views,
+automations and releases read, and the update into 2.3 is the first that asks instead of needing
+hand edits. It ships as four pre-releases, then a release candidate:
+
+| Slice | Content | Records |
+| --- | --- | --- |
+| 2.3.0a1: updates that ask | new installations stop pinning preference defaults; the settings registry with its recommendations and guard tests; the module for untrusted text and `clean_received = true`; `burst_s` derived from the radio's preset; the update review (`config review`, `broker acl`, the installer's dialogs, `--review`); release information checked daily by a unit of its own and shown as an update entity | [0034](decisions/0034-untrusted-text-from-the-mesh.md), [0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md), 0039 (to be written) |
+| 2.3.0a2: the companion state | presence, positions that age, confirmed movement and the automatic clear of old advert positions, in one module; the advert check that survives firmware which clears withdrawn positions; every companion's tracker announced from the start; why a contact is protected (`protected_as`) | [0035](decisions/0035-the-companion-state-model.md) |
+| 2.3.0a3: new data and privacy | forgetting a contact; the `counts` document and node details for the redesign; findings as codes; a restart at a quiet moment after Debian replaced Python or paho-mqtt, and the detection of a replugged radio; the boot messages of ESP32 radios | 0037 (to be written); an amendment of 0015 |
+| 2.3.0a4: *Enrolling* | a household mode that ends by itself: a zero-hop advert every 10 minutes for 30 minutes (up to 2 hours, at most 12 a day), new devices first in *Add heard node*, devices added meanwhile asked at once | 0038 (to be written) |
+
+a1 comes first: the review must exist before 2.3's own changed defaults ship. a2 comes before a4,
+because *Enrolling* reads the companion state. If 2.3 runs long, a3's findings, the restart, the
+replug detection and the boot messages move to 2.4; the counts and node details stay, because the
+redesign shows them. 2.4 redesigns the dashboard once, with the commands and the maintenance port
+(after its spike, [platform notes](platform-notes.md#meshcores-command-line-client-and-python-library)).
+2.5 brings the dashboard strategy and updates installed from Home Assistant.
+
+**Decisions of 2026-11-15**, numbered as the records cite them:
+
+1. **Release shape:** as above. Decided.
+2. **Household overrides** (values Home Assistant may change, kept beside the configuration):
+   **open**. Recommended: defer until a setting that households change often needs them; the
+   radio's name and transmit power go through the maintenance port meanwhile (ADR 0036).
+3. ***Enrolling*:** as designed above, behind `radio_controls`, kept across restarts, one
+   zero-hop advert after a new name inside the daily cap, and only a suggestion after a new radio
+   key. Decided.
+4. ***Pause asking*:** deferred until a household asks. Decided.
+5. **The update review's consent rules:** as ADR 0036 lists them; *deletes* means stored data.
+   Decided.
+6. **The update check:** a daily check in a sandboxed timer unit of its own, on for new
+   installations with a privacy note, offered to existing ones by the review. Decided.
+7. **The maintenance port** (#187): in 2.4 after its spike, as designed, with the command
+   catalogue without the answers' grammar and the firewall rule printed rather than written.
+   Decided.
+8. **Updates installed from Home Assistant** (2.5): by its administrators, opt-in with *No*
+   preselected, checked by HTTPS and the release's `SHA256SUMS`, and by its attestation where
+   `gh` is present; unattended only after two releases. Decided.
+9. **Codes made easy** (2.4): the codes file by default, a reload instead of a restart, the QR
+   code from Debian's `qrencode`, each sender's code state on the dashboard, never the secret.
+   Decided.
+10. **The upstream firmware route:** **open**. Recommended: three small contributions in order
+    (an advert without a position clears the stored one; push subscriptions for companions, after
+    an issue; a motion wake later), the household's trackers on a release tag with the patch, the
+    gateway's radio on official firmware (ADR 0035). The gateway's own part, an advert check that
+    survives such firmware, comes in 2.3 either way.
+11. **The duty cycle derived from the band:** a default the file can change, not a limit. Decided.
+12. **Replacing a target's key from Home Assistant** (#167, 2.5): the opt-in
+    `[contacts] replace_targets`, off by default and never preselected. Decided.
+
+Two automatic actions need no right and report themselves, so they have no decision of their own:
+the restart after Debian replaced Python or paho-mqtt, and the detection of a replugged radio.
