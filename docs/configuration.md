@@ -248,6 +248,25 @@ sets to 10 % in the band 869.40–869.65 MHz, stays the bound of what the radio 
 Commands also need a sender timestamp newer than that sender's last accepted command; the gateway
 keeps these timestamps in `/var/lib/meshcore-home-gateway/state.json`.
 
+**A command word at the start of a chat.** The gateway takes every direct message whose first
+word is a configured word as a command, also one meant as chat; a command needs no mark of its
+own, and a slash before the word makes it another word (`/arm` is no command). From an allowed
+sender, "Arm wrestling tonight?" is the command `arm` with `args` `wrestling tonight?`, and the
+automations of `arm` run. The word must stand alone: `arm,` or `armchair` is no command. From a
+sender with a code secret such a message ends in no code: it is refused as `code_missing`, and
+it counts as a wrong code, so five such messages within an hour lock that sender's commands for
+an hour, and the log says that someone may be guessing the codes (below). From a contact that is
+no sender it is refused as `sender_not_allowed` and listed among the refused commands. The
+message is published and kept as a chat message in each case ([mqtt-api.md](mqtt-api.md#commands-command)).
+To keep chat from commanding:
+
+* choose words nobody starts a sentence with, such as `gate-open` instead of `open`; a word may
+  hold any character but a space or a line break;
+* let each automation check `args` against the few values it expects (`args` empty, or `now`),
+  as the strings they are, and do nothing for any other;
+* give the senders code secrets: a chat message then commands nothing, though it still counts
+  toward the lock.
+
 **Answers.** With `reply`, the sender learns on its phone whether the command reached the
 automations, without an automation of its own. The answer goes to the sender's full key as any
 message does: through the queue and the airtime budget, with `delivery` events (the `target` is

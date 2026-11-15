@@ -252,7 +252,9 @@ a plain direct message whose first word (ended by any whitespace, also a line br
 `commands.words`, from a contact whose full key is
 in `commands.senders`, newer than the last accepted command of that sender and within
 `max_age_s` of the gateway clock; from a sender with a code secret, also ending with a fresh code
-([configuration.md](configuration.md#commands)), which `args` then leaves out.
+([configuration.md](configuration.md#commands)), which `args` then leaves out. Any such message
+is a command, also one meant as chat ("Arm wrestling tonight?" is `arm` with `args`
+`wrestling tonight?`): see [a command word at the start of a chat](configuration.md#commands).
 
 ```json
 {"event_type": "arm", "args": "now", "sender_key": "a1b2…", "sender_name": "Alice",

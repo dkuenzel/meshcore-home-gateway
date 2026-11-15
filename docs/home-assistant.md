@@ -1100,6 +1100,10 @@ actions:
 mode: queued
 ```
 
+Every direct message of an allowed sender that starts with the word is the command, also a chat
+such as "status of the bus?": choose words and check `args` as
+[configuration.md](configuration.md#commands) says (*A command word at the start of a chat*).
+
 Get told when a message could not be delivered:
 
 ```yaml
