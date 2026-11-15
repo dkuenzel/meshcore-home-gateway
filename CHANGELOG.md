@@ -26,10 +26,10 @@ format, the command line and Home Assistant discovery are public interfaces
   (#166).
 - A direct message from a sender with a code secret that starts with a command word and ends in
   no code, such as chat ("Arm wrestling tonight?"), counted as a wrong code: five within an hour
-  locked that sender's commands for an hour, and the log warned that someone may be guessing its
-  codes. Such a message makes no guess at the code. It is still refused as `code_missing` and
-  listed among the refused commands, but it no longer counts toward the lock; 5 wrong codes
-  within an hour lock a sender as before (#176).
+  locked that sender's commands until the first of them was an hour old, and the log warned that
+  someone may be guessing its codes. Such a message makes no guess at the code. It is still
+  refused as `code_missing` and listed among the refused commands, but it no longer counts
+  toward the lock; 5 wrong codes within an hour lock a sender as before (#176).
 - A position outside ±90° latitude or ±180° longitude in a contact's record, in an advert or in
   the radio's own self info was taken as it came: the firmware stores what a node sends without a
   check. The contact document published it, Home Assistant's tracker took it and computed a

@@ -1094,7 +1094,7 @@ What the managed profile found and did at the last connect
 | `settings.<name>.live`, `.desired` | after the writes; `desired` is `null` for a setting left as found, `live` `null` for one the firmware does not report |
 | `settings.<name>.state` | `ok`, `written` (set and read back), `drift`, `differs`, `failed` (refused by the radio), `not_taken` (written, but reads back otherwise), `not_converging` (no longer written: it did not take at three connects in a row), `unsupported` (the firmware does not know the command: not written to that firmware again), `disabled` (the command is compiled out of the radio's firmware: not written to it again either), `unmanaged` (left as found), `unknown` (the firmware does not report it) |
 | `autoadd` | `overwrite_oldest` and the contact types the radio adds by itself |
-| `own_position` | the radio keeps a position of its own (reported, never cleared by the gateway) |
+| `own_position` | the radio keeps a position of its own (within ±90° and ±180°: the gateway takes any other pair for none; reported, never cleared by the gateway) |
 | `protected_contacts` | keys added to the radio, made favourites, refused by the radio (`failed`, usually a full table), and while only observing: missing from the radio, or on it but no favourite (`not_favourite`) |
 
 `setting` reports what happened as an event, with `setting`, `reason` for `written`, `failed`
