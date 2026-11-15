@@ -179,9 +179,13 @@ lines of its own, which `dashboard.py` reads:
    line that names a problem card's class, rule 9 below):
    `{%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}`.
    It prints every value read from Home Assistant (states, attributes, the registry) through it,
-   through `mt()`, or through a macro of the card, on a line that is one `<div>`, `<table>`,
-   `<details>` or `<ha-qr-code` element, or a row of `<table role="presentation" width="100%">`
-   elements. A macro prints only through `m()`, `mt()` and the macros above it, and a field is set
+   through `mt()`, or through a macro of the card, on a line that is one `<div>`, `<table>` or
+   `<details>` element, or a row of `<table role="presentation" width="100%">` elements, or into
+   the `data` attribute of an `<ha-qr-code>` element without content that fills its line. These
+   tags open an HTML block, in which marked parses no Markdown; `<ha-qr-code>` opens none, so its
+   line is parsed, and a value is inert there only inside the tag. On a line that opens with any
+   other tag, such as `<b>` or `<span>`, an escaped value still becomes an image, a link or an
+   autolink (#179). A macro prints only through `m()`, `mt()` and the macros above it, and a field is set
    from one of them or is a whole number. A mapping ends in `m(v)`, in `<code>` where the value is
    a code. `| e` appears nowhere else. GitHub-alert lines print only our texts and integers.
 3. The mapping macros (`said`, `telemetry`, `what`) have one branch per value of the gateway's
@@ -193,8 +197,9 @@ The dashboard of 2.1 follows the numbered rules below as well. `tests/dashboard_
 them on the dashboard made for a household with one chat of every kind, and each finding names
 its rule; the shipped template breaks none of them.
 
-1. A value goes onto one `<div>`, `<table>`, `<details>` or `<ha-qr-code` element per line, or
-   onto a line of `<table role="presentation" width="100%">` elements.
+1. A value goes onto one `<div>`, `<table>` or `<details>` element per line, onto a line of
+   `<table role="presentation" width="100%">` elements, or into the `data` attribute of an
+   `<ha-qr-code>` element without content.
 2. A mapping macro (`said`, `mark`, `why`, `what`, `telemetry`, `status`, `profile`, `part`,
    `place`, `problem`, `mon`, `kind`, `audience`, `node`, `cause`) gives each branch a text, an
    unknown value through `m()`, and has a branch for each value of the gateway's list where there

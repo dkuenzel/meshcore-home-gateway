@@ -203,7 +203,9 @@ their way, a draft and its *Send* for each chat and the configuration
 * **Values from the mesh are text.** Every value a card reads from a state, an attribute or the
   registry (message texts, names, labels, versions, the contact link) goes through the card's
   macro `m`, which turns line breaks into spaces and escapes, onto a line that is one `<div>`,
-  `<table>` or `<ha-qr-code>` element: a CommonMark HTML block, which a blank line would end. The
+  `<table>` or `<details>` element: a CommonMark HTML block, which a blank line would end; or into
+  the `data` attribute of an `<ha-qr-code>` element, which opens no block, so a value is inert
+  there only inside the tag ([development.md](development.md#translations), rule 2). The
   alerts carry only our texts and integers. Machine values of a closed list (delivery steps,
   telemetry states, contact events) are mapped to texts, with the value itself, through `m`, for
   one added later; so are the reason codes the API documents for deliveries, contact

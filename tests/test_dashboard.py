@@ -787,6 +787,10 @@ _OPENS = {
     "<details>": "</details>",
     "<ha-qr-code": "</ha-qr-code>",
 }
+# <ha-qr-code> opens no CommonMark HTML block, so marked parses its line as Markdown: a value
+# stays inert only in its data attribute, part of the raw tag; as its content it would be parsed
+# (#179, SEC-7). One element, no content, the other attributes without a value.
+_QR_LINE = re.compile(r'<ha-qr-code data="(?P<data>[^"]*)"(?: [a-z-]+="[^"{}]*")*></ha-qr-code>')
 
 
 @dataclass
@@ -985,6 +989,8 @@ def _card_findings(block: Block) -> list[str]:  # noqa: PLR0912
             opening = next((tag for tag in _OPENS if text.startswith(tag)), None)
             if opening is None or not text.endswith(_OPENS[opening]):
                 found.append(f"{number}: a value outside one whole element of _OPENS")
+            elif opening == "<ha-qr-code" and not _qr_line(text):
+                found.append(f"{number}: a value of <ha-qr-code> outside its data attribute")
     expected = _mappings()
     for name, (parameter, lines) in macros.items():
         if name not in expected:
@@ -999,6 +1005,15 @@ def _card_findings(block: Block) -> list[str]:  # noqa: PLR0912
         if not any(line.endswith(f"{{%- else -%}}{a}") for line in lines for a in added):
             found.append(f"{name}: no m({parameter}) for a value added later")
     return found
+
+
+def _qr_line(text: str) -> bool:
+    """One <ha-qr-code> element without content whose values all stand in its data attribute."""
+    match = _QR_LINE.fullmatch(text)
+    if match is None:
+        return False
+    rest = text[: match.start("data")] + text[match.end("data") :]
+    return not _TAG.search(rest) and '_("' not in rest
 
 
 def _lines(template: str) -> Iterator[tuple[int, str]]:
@@ -1042,6 +1057,14 @@ def test_the_shipped_template_keeps_its_rules() -> None:
 
 SETTINGS = '            heading: _("Settings")\n'
 LISTED = "{%- macro listed(v) -%}{%- for k in v[:3] -%}{{ who(k) }}"
+QR = '<ha-qr-code data="{{ m(link) }}" scale="4"></ha-qr-code>'
+QR_ = "a value of <ha-qr-code> outside its data attribute"
+TITLE = (
+    "<div><b>{{ m('@chats.title@') }}</b>{% if chan >= 0 %} · "
+    '_("channel · everyone with the channel\'s key reads it"){% elif fresh %} · '
+    '_("heard {heard}"){% endif %}</div>'
+)
+OUTSIDE = "a value outside one whole element"
 
 
 @pytest.mark.parametrize(
@@ -1089,6 +1112,13 @@ LISTED = "{%- macro listed(v) -%}{%- for k in v[:3] -%}{{ who(k) }}"
         ('title: _("Mesh")', 'title: _("Mesh {node}")', "a field in a whole value"),
         ("<table><tr><th>", "<p><tr><th>", "a value outside one whole"),
         ("<table><tr><th>", '<table role="presentation"><tr><th>', "a value outside one whole"),
+        # marked parses Markdown on a line that opens no HTML block (#179, SEC-7): an escaped
+        # value there still becomes an image, a link or an autolink
+        (QR, '<ha-qr-code data="x" scale="4">{{ m(link) }}</ha-qr-code>', QR_),
+        (QR, '<ha-qr-code data="x" scale="{{ m(link) }}"></ha-qr-code>', QR_),
+        (QR, QR.replace("></ha-qr-code>", "></ha-qr-code>{{ m(link) }}</ha-qr-code>"), QR_),
+        (TITLE, TITLE.replace("<div><b>", "<b>", 1).removesuffix("</div>"), OUTSIDE),
+        (TITLE, TITLE.replace("<div><b>", "<span><b>", 1).replace("</div>", "</span>"), OUTSIDE),
         ("views:\n", "views:\n\n", "a blank line"),
     ],
 )
