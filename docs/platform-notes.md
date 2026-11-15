@@ -12,7 +12,8 @@ Linux](#debian-systemd-and-linux), [Python](#python), [GNU gettext](#gnu-gettext
 [Mosquitto](#mosquitto), [Home Assistant Mosquitto add-on](#home-assistant-mosquitto-add-on),
 [paho-mqtt](#paho-mqtt), [Home Assistant MQTT](#home-assistant-mqtt), [Home Assistant
 dashboards](#home-assistant-dashboards), [openHAB Homie binding](#openhab-homie-binding),
-[MeshCore companion firmware](#meshcore-companion-firmware).
+[MeshCore companion firmware](#meshcore-companion-firmware), [MeshCore's command line client and
+Python library](#meshcores-command-line-client-and-python-library).
 
 <!-- index of the facts -->
 ## Index of the facts
@@ -233,6 +234,18 @@ One line per fact, by section.
 * A companion denies telemetry to everyone until its owner allows it.
 * A telemetry answer starts with the battery as the channel 1 voltage and ends with the processor's temperature as a channel 1 temperature, only on a board that reports one.
 * The T1000-E sends its light level as 0–100 % in the luminosity type
+
+**[MeshCore's command line client and Python library](#meshcores-command-line-client-and-python-library)**
+
+* At connect, `meshcli` sends `APP_START` and `DEVICE_QUERY` with protocol version 3, and nothing else; each command line is a TCP connection of its own.
+* Interactive `meshcli` resets the flood scope, reads every channel and takes every waiting message when it starts.
+* `meshcli` does not reconnect: after the server closed the link, the next command goes into the closed connection and waits 15 s, and `infos` then prints the self info it read before, with exit status 0.
+* With auto-reconnect on, the `meshcore` library connects again 1 s after the server closed the link and sends only `APP_START`; against a server that accepts and closes at once it tries once a second without end.
+* The library waits 2 s for the answer to `APP_START` at connect and 15 s for any other answer; after four commands without an answer it sends nothing more on that connection.
+* `meshcli` shows `ERR 1` at once, as `ERR_CODE_UNSUPPORTED_CMD`, and goes on with the next command; `DISABLED` it handles only where the library expects it.
+* Each `set` of `meshcli` sends one command, but some send values the user did not give, and `set radio` switches the radio's client repeat off.
+* The repository's TCP emulator keeps the old client's connection when a new client connects; the firmware closes it.
+* `DEVICE_INFO` carries the radio's stored BLE PIN, and the library reads it.
 
 <!-- end of the index -->
 
@@ -2315,3 +2328,203 @@ Already in protocol.md, with the firmware lines:
   [deployment.md](deployment.md#1-before-you-start).
 * The firmware's `docs/companion_protocol.md` differs from the code in five points:
   [section 8](protocol.md#8-where-the-firmwares-own-documentation-differs-from-the-code).
+
+## MeshCore's command line client and Python library
+
+What MeshCore's own tools do over TCP, for the maintenance port that lends the radio to them
+(#187, release 2.4). A spike on 2026-11-15 ran `meshcore-cli` 1.6.10 (`meshcli`) with the
+library `meshcore` 2.3.19 from PyPI, in an environment of its own with Python 3.13. The radio was
+the household radio of `tools/emulated_radio.py` (`household_radio()`), served over TCP by
+`tests.radio_emulator.TcpRadioServer` at 2.2.0 (`b02a3d8`), mostly without the gateway. A
+recording relay stood where the port's relay would stand: it logged every frame with its time,
+and it could answer a command itself, hold it, delay every answer or close the link. The relay
+and its recordings of 41 cases stay with the spike; the relay comes into `tools/` with the port.
+The repository's emulator answers `ERR 1` to every command outside the gateway's subset
+(`tests/radio_emulator.py:541-542`), so for the cases that change settings a stand-in answered
+`OK` to codes 11, 12, 14, 32, 41, 54, 61 and 63, and `CUSTOM_VARS` to 40. Command names and
+firmware lines are those of `companion-v1.18.0` (`81dbae5`), as in the section above. Library
+lines are at the versions named, in their installed files.
+
+* **At connect, `meshcli` sends `APP_START` and `DEVICE_QUERY` with protocol version 3, and
+  nothing else; each command line is a TCP connection of its own.** `APP_START` is
+  `01 03 20 20 20 20 20 20 6d 63 63 6c 69`: the seven reserved bytes are `0x03` and six spaces,
+  and the client's name is `mccli`. `DEVICE_QUERY` is `16 03`. The given commands follow, and
+  `infos` sends `APP_START` again. No clock, no message sync and no write happen at connect.
+  `meshcli` closes the connection about 30 ms after its last answer; a run of one command held the
+  link for about 40 ms, and the process took about 0.3 s. `-p` sets the port; 5000 is only the
+  default. *Verified:* `meshcore-cli` 1.6.10 and `meshcore` 2.3.19 against the emulated radio;
+  `meshcore_cli.py:5514, 5585, 5686, 5790`, `meshcore/meshcore.py:225-239`,
+  `meshcore/commands/device.py:14-24`. The firmware reads the name from byte 8 on and ignores
+  bytes 1–7 (`MyMesh.cpp:1076-1081`). *Here:* the gateway connects in the same order with the same
+  version (`radio/session.py:183-186`, `protocol/codes.py:8`), so such a client leaves the radio's
+  protocol version as the gateway set it. For the port, the client's name is bytes 8 on of its
+  first `APP_START`, text a stranger chooses, and a series of `meshcli` runs is a series of
+  connections from one address. *Check:* from the checkout, serve the household radio and connect
+  with `meshcli` from an environment of its own:
+
+  ```sh
+  .venv/bin/python -c "import sys, time; sys.path[:0] = ['.', 'src', 'tools']
+  from emulated_radio import household_radio; from tests.radio_emulator import TcpRadioServer
+  with TcpRadioServer(household_radio(int(time.time()))) as s: print(s.port, flush=True); time.sleep(600)" &
+  meshcli -D -t 127.0.0.1 -p <port> infos 2>&1 | grep 'sending pkt'
+  ```
+
+  Three frames: `APP_START`, `DEVICE_QUERY`, `APP_START`.
+* **Interactive `meshcli` resets the flood scope, reads every channel and takes every waiting
+  message when it starts.** Started without a command, it sends `APP_START`, `DEVICE_QUERY`,
+  `SET_FLOOD_SCOPE_KEY` (54) with 16 zero bytes, `GET_CONTACTS`, `GET_CHANNEL` from 0 until an
+  error, `SYNC_NEXT_MESSAGE` until `NO_MORE_MESSAGES` (twice: its sync, then its automatic
+  fetch), and `GET_CUSTOM_VARS` (40). A message that waited in the radio was shown and then gone
+  from the radio; `sync_msgs` takes it the same way. When the relay answered `SYNC_NEXT_MESSAGE`
+  itself with `NO_MORE_MESSAGES`, the client showed nothing and the message stayed in the radio.
+  Code 54 changes only the radio's memory: the firmware does not save it
+  (`MyMesh.cpp:1978-1988`). *Verified:* the same versions; `meshcore_cli.py:1128-1141, 1157,
+  2165-2188, 2300-2321`. *Here:* the port must answer `SYNC_NEXT_MESSAGE` itself with
+  `NO_MORE_MESSAGES`, or a client takes the household's messages; `meshcli` works with that
+  answer, also interactively. *Check:* in a terminal, `meshcli -D -t 127.0.0.1 -p <port>` against
+  the radio above, then `quit`: the `sending pkt` lines show the order.
+* **`meshcli` does not reconnect: after the server closed the link, the next command goes into
+  the closed connection and waits 15 s, and `infos` then prints the self info it read before,
+  with exit status 0.** In interactive mode the prompt stays, and only `-D` shows that the link is
+  gone. The library reconnects only when its caller asks (`auto_reconnect=True`), and `meshcli`
+  does not. *Verified:* the same versions, one run of a single command and one interactive;
+  `meshcore/meshcore.py:89`, `meshcore_cli.py:5686`, `meshcore/connection_manager.py:99-120`,
+  `meshcore_cli.py:4345-4347` (`infos` prints the stored self info whatever the answer). *Here:*
+  a window of the port cannot wait for `meshcli` to come back by itself: the person starts it
+  again, as a new connection. *Check:* `sed -n '4345,4347p' meshcore_cli/meshcore_cli.py` and
+  `sed -n '99,120p' meshcore/connection_manager.py` in the environment's `site-packages`.
+* **With auto-reconnect on, the `meshcore` library connects again 1 s after the server closed the
+  link and sends only `APP_START`; against a server that accepts and closes at once it tries once
+  a second without end.** A TCP connect that succeeds resets the count of attempts before the
+  session works, and a failed `APP_START` after it is only logged. After the first close the relay
+  saw 21 more connections in 20 s. *Verified:* the same versions;
+  `meshcore/connection_manager.py:122-167` (1 s at `:137`, the reset at `:143`, the logged failure
+  at `:148-152`), `meshcore/meshcore.py:216-223`. *Here:* a client of this library that the port
+  refuses comes back every second, so the port reports a refused address once per window, not
+  once per connection. *Check:* `sed -n '122,167p' meshcore/connection_manager.py` in the
+  environment's `site-packages`.
+* **The library waits 2 s for the answer to `APP_START` at connect and 15 s for any other answer;
+  after four commands without an answer it sends nothing more on that connection.** With every
+  answer 1 s late, `infos` and `contacts` worked in 8.4 s. With every answer 2.5 s late, or
+  `APP_START` held 3 s, it printed "No response from meshcore node" and ended after 2 s. With
+  `DEVICE_QUERY` held 16 s: "Error while querying device", end after 15 s. With
+  `SET_RADIO_TX_POWER` held 16 s, `meshcli` reported an error after 15 s although the radio had
+  applied the change. After four unanswered `GET_DEVICE_TIME`, the fifth command and every later
+  one were not sent, and the connection stayed open. *Verified:* the same versions;
+  `meshcore/meshcore.py:231`, `meshcore/commands/base.py:127`, `meshcore/tcp_cx.py:12, 134-143`.
+  *Here:* the port answers every frame of a client at once, with the radio's answer or its own
+  refusal, and never holds one; waiting for the household's messages belongs before a window
+  opens. A resync after a client connected must leave `APP_START` its 2 s. *Check:*
+  `sed -n '12p;134,143p' meshcore/tcp_cx.py` and `sed -n '127p' meshcore/commands/base.py` in the
+  environment's `site-packages`.
+* **`meshcli` shows `ERR 1` at once, as `ERR_CODE_UNSUPPORTED_CMD`, and goes on with the next
+  command; `DISABLED` it handles only where the library expects it.**
+
+  | Command | The relay's answer | What `meshcli` did |
+  | --- | --- | --- |
+  | `set tx 14` (12) | `ERR 1` | "Error: … ERR_CODE_UNSUPPORTED_CMD" at once; the next command ran |
+  | `set tx 14` (12) | `DISABLED` | "Error: … no_event_received" after 15 s |
+  | `get private_key` (23) | `DISABLED` | a traceback, `KeyError: 'private_key'` |
+  | `get private_key` (23) | `ERR 1` | "Error exporting private key … ERR_CODE_UNSUPPORTED_CMD" |
+  | `cli poweroff` (66) | `ERR 1` | "Error sending cli command: … ERR_CODE_UNSUPPORTED_CMD" |
+  | `cli poweroff` (66) | `CLI_REPLY` "Unknown command" | printed "Unknown command" |
+  | connect (22) | `ERR 1` to `DEVICE_QUERY` | "Error while querying device", end |
+  | connect (1) | `ERR 1` to `APP_START` | "No response from meshcore node", end |
+
+  The library expects `DISABLED` only for the key export (`meshcore/commands/device.py:245-247`),
+  and `meshcli` then reads a key that is not there (`meshcore_cli.py:3001-3010`). For the key
+  import it expects only `OK` or `ERR` (`device.py:249-252`), so `DISABLED` would cost 15 s there
+  too *(inferred, not run)*. *Verified:* the same versions, eight runs. *Here:* `ERR 1` serves
+  `meshcli` best for every code the port refuses, the key's export and import included, unless
+  the official app needs `DISABLED`. A firmware built without the key's flags sends `DISABLED`
+  (`MyMesh.cpp:1528-1556`), so `meshcli` fails the same way on such a radio. A `CLI_REPLY` text
+  reaches the user as it is, so a refused verb can say why. `APP_START` and `DEVICE_QUERY` must
+  pass. *Check:* `sed -n '245,252p' meshcore/commands/device.py` in the environment's
+  `site-packages`.
+* **Each `set` of `meshcli` sends one command, but some send values the user did not give, and
+  `set radio` switches the radio's client repeat off.** Every setter makes the firmware write its
+  preferences file again ([section 2](protocol.md#2-commands)).
+
+  | `meshcli` | Frame | Values the user did not give |
+  | --- | --- | --- |
+  | `set tx 14`, `set name …`, `clock sync` | 12, 8, 6 | none |
+  | `set lat 50.5` (or `set lon`) | `SET_ADVERT_LATLON` (14) | the other coordinate, from the self info read at connect; altitude 0, which the firmware ignores (`MyMesh.cpp:1266-1280`) |
+  | `set manual_add_contacts`, `set telemetry_mode_base`, `_loc`, `_env`, `set advert_loc_policy`, `set multi_acks` | `APP_START`, then `SET_OTHER_PARAMS` (38) with 4 bytes | the other three fields, from that fresh `SELF_INFO`, unchanged (`MyMesh.cpp:1488-1503`) |
+  | `set radio f,bw,sf,cr` | `SET_RADIO_PARAMS` (11) without its fifth byte | the client repeat: a missing byte is 0, which switches repeat off (`MyMesh.cpp:1434-1447`) |
+  | `set tuning rx,af` | `SET_TUNING_PARAMS` (21) | both values must be given; two more zero bytes the firmware does not read (`MyMesh.cpp:1470-1480`) |
+
+  *Verified:* the same versions, with the stand-in that answers `OK`: a radio at a position sent
+  its longitude again with `set lat`; the telemetry modes and the advert's location policy went
+  out again unchanged; `meshcore/commands/device.py:56-64, 84-110, 137-198`,
+  `meshcore_cli.py:2617-2690, 2714-2807`. The effect on the repeat flag is read from the firmware
+  only: the emulator has no such flag. *Here:* nothing yet. The port's report of what changed in
+  a window compares the client repeat flag of `DEVICE_INFO` (`MyMesh.cpp:1073`) and the position
+  too, since a window can change them unasked; the profile's fields sent again with the same
+  values change nothing, and the next connect sets back what the profile manages
+  ([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md)). *Check:* in the firmware
+  tree, `sed -n '1434,1447p' examples/companion_radio/MyMesh.cpp`; in the environment's
+  `site-packages`, `sed -n '137,198p' meshcore/commands/device.py`.
+* **The repository's TCP emulator keeps the old client's connection when a new client connects;
+  the firmware closes it.** `TcpRadioServer` hands the new client the radio's output and leaves
+  the old connection open (`tests/radio_emulator.py:826-829`); the firmware stops the old client
+  first (`src/helpers/wifi/SerialWifiInterface.cpp:55-66`). With the gateway connected to the
+  radio of `tools/emulated_radio.py run`, `meshcli infos` worked; the gateway noticed nothing
+  until its next heartbeat, 56 s later, then logged "radio: connection lost (no answer from the
+  radio)" and connected again after 1 s, without reporting a contested link. A WiFi radio would
+  close the gateway's link at once, and the gateway would take the link back after about a second
+  (`bridge.py:73`, [design.md](design.md#74-residual-risks)), which ends the other client's
+  session *(inferred, not run)*. *Verified:* one run with a private broker; `radio/session.py:94`
+  (a heartbeat every 60 s). *Here:* tests of a second client and of a port that only pauses the
+  gateway need an emulator that closes the old connection and answers the settings commands the
+  port passes, or the firmware harness. *Check:* `tools/emulated_radio.py run` with a test broker,
+  then `meshcli -t 127.0.0.1 -p <the radio's port> infos`, then the gateway's log in the work
+  folder.
+* **`DEVICE_INFO` carries the radio's stored BLE PIN, and the library reads it.** Bytes 4–7
+  ([protocol.md](protocol.md#3-responses); `MyMesh.cpp:1064`); `meshcore` publishes it as
+  `ble_pin`. *Verified:* the same versions, in the library's debug output. *Here:* a port that
+  refuses to set the PIN still shows it to every client in the answer to its `DEVICE_QUERY`. It
+  matters only for a radio whose build also serves Bluetooth: the port's design notes it in the
+  threat model, or blanks bytes 4–7 of the `DEVICE_INFO` it relays *(a choice, not tested)*.
+  *Check:* in the firmware tree, `sed -n '1056,1075p' examples/companion_radio/MyMesh.cpp`.
+
+What the spike changes in the port's design (#187), against what the documents assumed:
+
+| Assumed | Where | Found | So |
+| --- | --- | --- | --- |
+| The tools reach a radio over TCP on port 5000; one client at a time; a new connection replaces the old one | [protocol.md §1](protocol.md#1-framing-usb-serial-and-tcp) | `meshcli` takes any port; 5000 is the firmware's build default (`examples/companion_radio/main.cpp:46-48`). The firmware replaces the old client; the emulator does not | The port's card can name any port. The emulator needs the firmware's behaviour for the port's tests |
+| meshcore_py 2.3.17 and meshcore-cli 1.6.6 as the versions compared | [protocol.md](protocol.md) | 2.3.19 and 1.6.10 ran | The port's documents name the versions they cite |
+| The MeshCore tools cannot authenticate over TCP | #187 | Host and port only (`meshcore_cli.py:4741-4742`); the library's TCP class has no credential (`meshcore/tcp_cx.py:15-26`) | Unchanged: an address range, a window, one client |
+| The client's name comes from `APP_START` | #187 | `mccli` from byte 8; bytes 1–7 are not zero | The port takes bytes 8 on and never parses 1–7 |
+| A resync before the client's first frame | #187 | The client sends `APP_START` about 1 ms after it connects and gives up after 2 s | The resync comes before the first answer, within the 2 s, better before the port accepts the connection |
+| The window waits for the queue before it opens | #187 | A command held 15 s or more fails at the client, also when the radio applied it | All waiting before the window; inside it, every answer at once |
+| Unknown codes get `ERR 1`, which the app treats like an older firmware | #187 | `meshcli` shows a clear message at once and runs the next command | Confirmed for `meshcli`; the app is open (below) |
+| `DISABLED` for the key's export and import, as a firmware built without the flags | #187 | `meshcli` 1.6.10: a traceback on export; on import 15 s *(inferred)* | `ERR 1` for codes 23 and 24, unless the app needs `DISABLED` |
+| `RUN_CLI_COMMAND` filtered by its verb | #187 | `ERR 1` and a `CLI_REPLY` text both work; the text is shown as it is | A text can say why |
+| `SYNC_NEXT_MESSAGE` answered with `NO_MORE_MESSAGES` | #187 | Accepted by `sync_msgs` and the interactive start; without it both take the household's messages | Required |
+| One address, which may reconnect; the app reconnects by itself | #187 | `meshcli` never reconnects; each command line is a new connection, 0.3 s apart at best, as far apart as the person types | Kept. A return grace of 60 s can end a window between two typed commands: the same address gets the idle limit, or the card says so |
+| A refused address is refused and reported | #187 | A library client with auto-reconnect returns every second, without end | Reported once per window, the audit rate-limited |
+| No settings policy in the window; a report of what changed | #187 | `set radio` switches repeat off unasked; `set lat` sends the other coordinate again | The report compares the repeat flag and the position too |
+| Dangerous codes refused, the PIN guarded | #187, [ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md)'s deny list | Every client reads the PIN in `DEVICE_INFO` | The threat model notes it, or the relayed `DEVICE_INFO` blanks it |
+| `tools/emulated_radio.py` serves the radio like a WiFi companion | [testing.md](testing.md) | The same frames and parser, but not the same handling of a second client, and `ERR 1` for every settings command | The port's tests need both gaps closed, or the firmware harness |
+
+**Not verified yet: the official app.** It is closed source, so only a person with the app can
+test it, on each platform (Android, iOS, desktop), with the app's version noted:
+
+1. Does the app offer a WiFi (TCP) connection, and can a port other than 5000 be entered?
+2. At connect: which commands in which order, which name and reserved bytes in `APP_START`, any
+   write (clock, flood scope, settings), and does it fetch messages?
+3. Saving a form after changing one field (the transmit power alone, the name alone, the preset):
+   only that command, or the whole form? Does `SET_RADIO_PARAMS` carry its fifth byte?
+4. When the server closes the connection: does it connect again by itself (its auto-reconnect on
+   and off), after how long and how often, also against a server that accepts and closes at once?
+5. What it shows for `ERR 1`, for `DISABLED`, for a `CLI_REPLY` text, and for `NO_MORE_MESSAGES`
+   while messages wait; whether a refused command blocks its screen.
+6. How long it waits for the answer to its first command, and whether a pause of 0.5 s before it
+   matters.
+7. Whether it shows the BLE PIN it reads in `DEVICE_INFO`.
+
+The spike's relay serves the emulated radio on a LAN address for this test, with made-up keys and
+no real data, once on port 5000 and once on another, in a test network. Steps on each platform:
+connect; open the settings; change the transmit power alone and save; change the name alone and
+save; change the preset and save; open the channels; leave the app for a minute with the phone
+locked; stop and start the relay while the app is connected.
