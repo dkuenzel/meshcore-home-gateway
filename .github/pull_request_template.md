@@ -24,6 +24,8 @@ has a waiver. -->
 
 ## Checklist
 
+- [ ] For an issue: analysed, researched, designed as a complete increment and planned across
+  every layer (CONTRIBUTING.md#working-on-issues); the analysis is in the issue or above
 - [ ] Tests first: a new test fails without the change
 - [ ] `make check` and `make matrix` pass; `git fetch --tags origin && make release-plan` passes
   for every change of a public interface (it compares with the last release) and for a release
