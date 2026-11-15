@@ -67,7 +67,7 @@ moves, so that every front end shows one cause and one message?
 The model:
 
 * One pure module with one entry point, fed with the precise time of every report and run by
-  the observer's existing minute tick.
+  the observer's existing tick.
 * One rule per issue, where each issue's data lives today: presence in the views, expiry in the
   observer, motion in the scheduler.
 * Presence and ages in the dashboard only, from *Last heard* (the template rule of 2.2.1,
@@ -96,7 +96,7 @@ The position at rest:
 
 ## Decision Outcome
 
-Chosen option: "one pure module with one entry point, run by the observer's minute tick", with
+Chosen option: "one pure module with one entry point, run by the observer's tick", with
 the *Last known position* sensor, the fresh read in one lock hold, and the reported fix at rest.
 It is the only option that gives every front end the same states from one set of times, adds no
 timer, and lets new sources and consumers join without new rules.
@@ -114,17 +114,31 @@ timer, and lets new sources and consumers join without new rules.
 * **Facts it reads, never owns**: the telemetry state and interval of the scheduler
   (ADR 0024 unchanged), the advert check (ADR 0025), whether the radio is live, and the
   configuration.
-* **Outputs**, each orthogonal to the others: `presence`, `position_state` and `motion`.
-  `telemetry_state` stays the scheduler's. Membership stays with the contact manager: a removed
-  contact has no document (as today); forgotten (#166) and replaced (#167) contacts are events,
-  not presence values.
-* **One tick.** The observer's minute tick (`observer.py:536`, called by the bridge's status loop
-  every 60 s, `bridge.py:76`, `:356`) recomputes every contact and publishes the documents that
-  changed. Telemetry outcomes arrive through the poller's step, as today. No new timer.
+* **Outputs**, each orthogonal to the others: `presence`, `recent`, `position_state` and
+  `motion`. `telemetry_state` stays the scheduler's. Membership stays with the contact manager: a
+  removed contact has no document (as today); forgotten (#166) and replaced (#167) contacts are
+  events, not presence values.
+* **One tick.** The observer's tick (`observer.py:536`) recomputes every contact and publishes
+  the documents that changed. The bridge's status loop calls it every 60 s, and every 30 s under
+  systemd's watchdog: the loop sleeps `min(60 s, watchdog / 2)` (`bridge.py:76`, `:346`, `:356`),
+  and the shipped unit sets `WatchdogSec=60` (`deploy/systemd/meshcore-home-gateway.service:30`).
+  Each tick adds the time that elapsed since the last one, never a fixed minute. Telemetry
+  outcomes arrive through the poller's step, as today. No new timer.
 * **Ages, not times, across a restart.** The module saves its ages in the state file, as the
   schedule does (ADR 0024): a restart neither expires nor revives anything. An age below zero
   (the clock went back) counts as zero. The state file holds no position beyond what it holds
   today (a current companion's kept document).
+* **A start without saved ages.** A contact without an entry of the module in the state file (the
+  first start of 2.3 after 2.2, a state file lost or unreadable, a contact added while the
+  gateway was stopped) takes its last report from what the gateway kept before, the newest of:
+  the `heard` time and `heard_via` the observer restores from the history
+  (`observer.py:228-232`, `_restore_contact`, `core/mesh.py:150-156`); the last answer of the
+  saved schedule (`answered_age_s`, ADR 0024); and the record's `last_advert`, when it is not in
+  the future. Its silence is the time from that report to the gateway's stop, the newest
+  `saved_at` of the state file's records (`state.py:839`, `:931`); the stop itself is not
+  silence. Without a saved stop the silence runs to the start: it errs to quiet, never to heard.
+  `never` is only for a contact with none of these. So after the update into 2.3 *Heard* and
+  *Last heard* agree from the first tick.
 
 ### Presence (#168)
 
@@ -145,6 +159,11 @@ timer, and lets new sources and consumers join without new rules.
   gateway, and makes it exact.
 * **Thresholds are fixed.** They reuse ADR 0024's bound and the telemetry day; there is no new
   setting.
+* **`recent`** is `true` while a contact is silent for less than 24 h, the telemetry day,
+  whether it is asked or not. It is not a presence value: an asked companion is `quiet` from
+  W on and still `recent` until the day is over. It is the one fact that decides whether a
+  companion's advert position is a problem (*What the dashboard shows*, below), so the module
+  owns the 24 hours, and the dashboard and the *Overview* count read the same output.
 * `heard_at` keeps its meaning and its hourly step while answers come. It also follows a path
   update at once, with `heard_via` `path`: a path the companion sent is hearing from it. When a
   companion turns `quiet`, `heard_at` catches up to its last report. So the time shown beside a
@@ -153,10 +172,18 @@ timer, and lets new sources and consumers join without new rules.
 
 ### Positions (#184)
 
-Every published position has a **report time**, `position_reported_at`: the newest telemetry
-answer that carried a fix, or the newest heard advert that carried the position (a new key,
-`advert_heard_at`, the gateway's time of the newest advert it heard). Before the gateway heard
-any advert, the fix's own time stands in (`Fix.at`, `core/mesh.py:231-251`).
+Every published position has a **report time**, `position_reported_at`. It is defined by two
+other keys, so that it cannot drift from them:
+
+* for a position from telemetry, it equals `position_received_at`, which already publishes "the
+  newest telemetry answer that carried a position (also when it did not move)" (`views.py:150`,
+  [mqtt-api.md](../mqtt-api.md), contact document);
+* for a position from adverts, it equals `advert_heard_at`, a new key: the gateway's time of the
+  newest advert it heard, which carried the position (a checked advert without one ends it).
+
+Where that key is `null` (no advert heard yet, or a schedule restored after the clock went back),
+the fix's own time stands in (`Fix.at`, `core/mesh.py:231-251`). `position_received_at` keeps its
+meaning and stays a telemetry time; extending it to adverts would change what it means.
 
 | `position_state` | Condition | Map |
 | --- | --- | --- |
@@ -168,17 +195,36 @@ any advert, the fix's own time stands in (`Fix.at`, `core/mesh.py:231-251`).
 
 * **Silence ages a position.** It is ADR 0024's rule for telemetry (two unanswered requests, the
   time bound, telemetry paused, the radio away), and 1 h after its report for a companion's
-  advert position (`CURRENT_MIN_S`, `core/telemetry.py:74`). The document keeps the coordinates
-  while the position is `last_known`.
+  advert position (`CURRENT_MIN_S`, `core/telemetry.py:74`).
 * **Withdrawal ends a position at once, without a last known one.** Withdrawal means a checked
   advert without a position; answers that are current but carry no fix for more than an hour
   (`no_position`, `LOCATED_S`, `core/telemetry.py:76`); an exclusion from telemetry; a removal
-  from the radio; or telemetry switched off in the configuration. The document's coordinates
-  become `null`. The history keeps the trace for its retention.
-* **The horizon** is `[telemetry] last_known_days`, 7 by default, 0 to 30. 0 shows no last known
-  position: silence then ends a position as withdrawal does. With the history on, the horizon is
-  never longer than `[history] positions_days`. Without the history, a last known position lives
-  in memory until the next restart, as today's expired values do.
+  from the radio; or telemetry switched off in the configuration. `position_state` becomes
+  `null` at once: the tracker turns unavailable, and *Last known position* carries no
+  coordinates.
+* **The coordinate keys keep their documented rule.** `latitude`, `longitude`, `altitude_m`,
+  `position_at` and `position_source` stay "its newest known position", and "a position from
+  telemetry expires (`position_current`); the document keeps it" (`docs/mqtt-api.md`, contact
+  document; `views.py:144-148`, `:163-168`). So the document still holds an expired telemetry
+  position in `last_known`, after `no_position`, with telemetry switched off and past the
+  horizon, as 2.2 does. A checked advert without a position, an exclusion and a removal already
+  take the coordinates away today (`core/mesh.py:231-239`, `:332-350`; a removed contact has no
+  document). `position_state` says whether the gateway still stands behind them; every entity and
+  card follows `position_state`, never the bare coordinates. Setting them to `null` would change
+  what a documented key means, which is breaking within 2.x
+  ([compatibility](../development.md#compatibility)); it waits for 3.0 (*Revisit when*).
+* **The horizon** is `[telemetry] last_known_days`, 7 by default, 0 to 30. It bounds how long
+  Home Assistant shows a silent companion's last known position: after it, `position_state` is
+  `null`, and no entity carries the position. 0 shows no last known position: silence then ends
+  a position as withdrawal does. With the history on, the horizon is never longer than
+  `[history] positions_days`. The horizon applies with or without the history; without the
+  history the gateway also loses the position at a restart, as it loses today's expired values.
+* **The horizon's default is a change for existing installations.** Up to 2.2 no last known
+  position shows (as `0` would). The settings registry therefore records the key's first default
+  with the effect *widens* against that behaviour
+  ([ADR 0036](0036-the-settings-registry-recommendations-and-the-update-review.md)): a new
+  installation shows last known positions for 7 days, and the update into 2.3 asks before it
+  shows them; an unattended update writes `last_known_days = 0`.
 * **Which clock counts.** Currency follows ADR 0024's ages: a stopped gateway ages nothing, a radio
   that is away does (a `person` must not stay `home` on a position nobody confirms). The horizon is
   a retention and follows the wall clock, as the history's purge does. Every time shown is a wall
@@ -232,9 +278,13 @@ So the clear is designed against the race.
   keeps an older one)" (`observer.py:723-733`), and by a sweep when the session becomes live.
   Only companions qualify: they are the only type whose adverts are checked
   (`core/mesh.py:24-25`).
-* **Who.** The observer queues an internal job for the contact manager. Its single worker takes
-  jobs one at a time (`contact_manager.py:329-347`), so a clear never overlaps an add or a
-  removal by the gateway. The worker sees the session only after the profile's own contact
+* **Who.** The observer marks the contact for a clear, and the contact manager's single worker
+  does it. The worker takes jobs one at a time (`contact_manager.py:329-347`), so a clear never
+  overlaps an add or a removal by the gateway. The marks are a set of keys beside the queue of
+  requests, never in it: that queue holds at most 8 (`MAX_WAITING`, `contact_manager.py:67`,
+  `:117`), and a full one refuses a household request as `busy` (`:159`). The worker takes a
+  marked clear only while no request waits, one at a time. So a sweep at connect never takes a
+  household request's place. The worker sees the session only after the profile's own contact
   writes at connect (ADR 0020).
 * **How, in one hold of the session's command lock:**
   1. `GET_CONTACT_BY_KEY` (30) reads that one record as the radio has it now
@@ -298,12 +348,12 @@ the gateway's radio runs a firmware with U1, from a fork or from an upstream rel
 
 | Entity | Change |
 | --- | --- |
-| *Heard* (`sensor`, new; unique ID `…_presence`, entity ID `sensor.mesh_<slug>_heard`) | device class `enum`, options `heard`, `quiet`, `long_quiet`, `never`; state `presence`; no entity category; unknown for a document of an older version |
+| *Heard* (`sensor`, new; unique ID `…_presence`, entity ID `sensor.mesh_<slug>_heard`) | device class `enum`, options `heard`, `quiet`, `long_quiet`, `never`; state `presence`; the attribute `recent`; no entity category; unknown for a document of an older version |
 | *Last known position* (`sensor`, new; unique ID `…_last_position`, entity ID `sensor.mesh_<slug>_last_position`) | device class `timestamp`, icon `mdi:map-clock-outline`, no entity category; state `position_reported_at` while the position is `ageing` or `last_known`, else unknown; the attributes `latitude`, `longitude`, `gps_accuracy` (telemetry only) and `position_source` only while `last_known` |
 | *Position* (`device_tracker`) | available while `position_state` is `current`, `ageing` or `fixed`; a document without the key keeps today's rule (`position_current is not false`, `mqtt/contact_devices.py:119-123`); new attributes `motion` and `motion_since` |
 | *Position in adverts* (`binary_sensor`) | new attribute `advert_heard_at`, so a warning can say how old the advert is |
 | *Last heard* | unchanged; exact once the companion is quiet (above) |
-| *Position in adverts* on the gateway's device | new attributes `heard` and `heard_total`: the companions that carry their position and were heard within the last day |
+| *Position in adverts* on the gateway's device | new attributes `recent` and `recent_total`: the companions that carry their position and are `recent` (heard within the last day) |
 
 * **Announced for every companion and every contact of a type the gateway asks, enabled.** They
   come with the device, are never disabled by default, and stay once announced (the keep rule,
@@ -332,8 +382,8 @@ the gateway's radio runs a firmware with U1, from a fork or from an upstream rel
 ### What the dashboard shows
 
 **One cause, one message.** Every card that names a companion reads its state through one macro.
-The highest state below is the one message; the facts below it show muted, with their age, and
-raise no problem.
+The highest state below is the one message; the states and facts below it show muted, with
+their age, and raise no problem.
 
 | Precedence | State | The row says |
 | --- | --- | --- |
@@ -341,14 +391,18 @@ raise no problem.
 | 2 | a former contact (on its chat page) | "No longer a contact of this radio" |
 | 3 | `long_quiet` | "Not heard for 5 days" |
 | 4 | `never` | "Not heard yet" |
-| 5 | `quiet` | "Not heard for 3 h" |
-| 6 | the facts: advert position, battery, position state | each with its age (below) |
-| 7 | `heard` | the facts as today |
+| 5 | the advert fact, while the companion is `recent` | "Its position is public", amber, with the advert's age and the way out |
+| 6 | `quiet` | "Not heard for 3 h" |
+| 7 | the other facts: battery, position state, and the advert fact once the companion is not `recent` | each with its age (below) |
+| 8 | `heard` | the facts as today |
 
 * **The advert fact.** It is a problem (amber, with the advert's age and the way out) while the
-  companion was heard within the last day. Otherwise it is a grey dated line in the details. The
-  *Overview* problem "a position broadcast to everyone" reads the gateway's new `heard` attribute,
-  not a template rule. This is 2.2.1's decided rule, now decided by the gateway.
+  companion is `recent`, `quiet` included: a position broadcast to everyone matters while the
+  companion may still be out there sending it. Otherwise it is a grey dated line in the details.
+  The row reads the contact's `recent`; the *Overview* problem "a position broadcast to everyone"
+  reads the gateway's `recent` attribute, which counts the same output, not a template rule. This
+  is 2.2.1's decided rule (#168: a companion not heard for 24 h leaves the problem, and its advert
+  fact stays visible, muted and dated), now decided by the gateway.
 * **The status line names; the row explains.** The status line says "Needs a look: Bob's position
   is public". The row carries the mark, the advert's age and the action. No card repeats the
   status line's sentence.
@@ -365,11 +419,15 @@ raise no problem.
   3.81 and 3.65, computed for #184's analysis; WCAG 1.4.11). The browser check measures it against
   the real tiles. The tracker's trail leads to it. Fewer lines appear, because only trips draw.
 * **Words beside every icon** (WCAG 1.4.1), rows in two columns at 360 px, every new text in the
-  catalogs.
+  catalogs, and a text for every value of `presence`, `position_state` and `motion` in every
+  language, by the guard test of codes and texts
+  ([design §6.12](../design.md#612-translations)).
 * **Texts that change.** "A device whose position is not current has no marker, only its line"
-  becomes "A device not heard from shows where it was last, in blue-grey with a clock, for 7
-  days". The advert card drops "remove its contact and add it again": the gateway clears the
-  record itself.
+  becomes "A device not heard from shows where it was last, in blue-grey with a clock, for N
+  days". N is the horizon in effect: `telemetry.last_known_days` of the `config` document, at
+  most `history.positions_days` while the history is on. At 0 the sentence is left out, and the
+  old one stays. The text says no more than the data carries. The advert card drops "remove its
+  contact and add it again": the gateway clears the record itself.
 * **What waits for the redesign** (2.4, #170): the marks on every card, and the *now* map without
   lines and the *trips* map. 2.3 changes the cards that show these facts today.
 
@@ -377,8 +435,8 @@ raise no problem.
 
 | Interface | Change | Compatible |
 | --- | --- | --- |
-| MQTT, `contacts/<key>` | new keys `presence`, `position_state`, `position_reported_at`, `advert_heard_at`, `motion`, `motion_since`; a new value `path` of `heard_via` | yes: new keys and a new value |
-| MQTT, `contacts` | new keys `advert_carries_position_heard`, `…_heard_total` | yes |
+| MQTT, `contacts/<key>` | new keys `presence`, `recent`, `position_state`, `position_reported_at`, `advert_heard_at`, `motion`, `motion_since`; a new value `path` of `heard_via` | yes: new keys and a new value |
+| MQTT, `contacts` | new keys `advert_carries_position_recent`, `…_recent_total` | yes |
 | MQTT, `contact` event | new `event_type` `position_cleared` | yes: a new value |
 | MQTT, `settings` | new keys `contacts_old_advert_position`, `…_total` | yes |
 | MQTT, `config` | new keys `telemetry.rest_radius_m`, `telemetry.last_known_days` | yes |
@@ -387,14 +445,16 @@ raise no problem.
 | Command line | new line kind `old_advert_position` in `probe --list profile` | yes |
 | Home Assistant | two new entities per contact; new attributes of the tracker and of both *Position in adverts* sensors | yes: new entities and attribute keys |
 
-No key, value, entity or option is removed or renamed, and no key changes its type or meaning.
-These behaviours change, listed under *Changed*:
+No key, value, entity or option is removed or renamed, and no key changes its type or meaning
+([compatibility](../development.md#compatibility)). In particular the coordinate keys keep the
+documented "a position from telemetry expires (`position_current`); the document keeps it"
+(`docs/mqtt-api.md`, contact document): a withdrawn position, and one past the horizon, ends in
+`position_state` and in the entities, not in the coordinates (*Positions*, above).
+`position_reported_at` adds no second meaning to a telemetry time: it is `position_received_at`
+for telemetry, and a test keeps the two equal. These behaviours change, listed under *Changed*:
 
 * A companion's advert position expires 1 h after its report; a `person` that relied on it turns
   `unknown` after that hour.
-* A withdrawn position, and one older than the horizon, is `null` in the document. The keys keep
-  their meaning: `latitude` is "its newest known position", and the gateway no longer knows one.
-  This narrows ADR 0024's "the document keeps it" to silence.
 * `position_at` keeps its meaning, "when the position last changed"; it changes with a confirmed
   move instead of every 20 m.
 * `position_current` keeps every value and its meaning; `null` still means "no position, or one
@@ -403,6 +463,8 @@ These behaviours change, listed under *Changed*:
 * `heard_at` follows path updates (`heard_via` `path`), and catches up to the last report when a
   companion turns quiet.
 * The gateway writes contact records under the managed profile without a request.
+* A new installation shows last known positions for 7 days; an existing one only once its
+  administrator takes the new default (ADR 0036).
 
 `make interface` records the additions. The behaviours are checked by tests, not by the snapshot.
 
@@ -411,7 +473,7 @@ These behaviours change, listed under *Changed*:
 * Good, because a silent companion says so, with its age, and its old facts stop raising
   problems: one cause, one message on every card.
 * Good, because a companion that stops answering leaves the map by itself and stays visible,
-  dated, at its last place for up to 7 days.
+  dated, at its last place for up to `last_known_days` (7 by default).
 * Good, because a withdrawn position never comes back, and the workaround "remove the contact and
   add it again" goes.
 * Good, because a companion that stopped sharing no longer warns after an advert the gateway
@@ -425,7 +487,8 @@ These behaviours change, listed under *Changed*:
 * Bad, because the gateway now writes contact records on its own initiative, under the managed
   profile. `manage = "observe"` is the only way to stop it.
 * Bad, because every Home Assistant user sees each companion's presence, and its last known
-  position for up to 7 days (T7).
+  position for up to `last_known_days` (T7). The recorder keeps both for its `purge_keep_days`
+  (10 days by default), longer than the horizon.
 * Bad, because a confirmed move shows one probe later: 90 s next to the gateway, up to about
   5 minutes over three repeaters. A zone change waits as long.
 * Bad, because an unconfirmed excursion is data the gateway received and drops. A companion that
@@ -433,6 +496,11 @@ These behaviours change, listed under *Changed*:
 * Bad, because a companion's advert position is current for an hour only. A household that shares
   positions in adverts on purpose sees them turn last known.
 * Bad, because two new entities per companion add to the device page and the entity list.
+* Bad, because the retained document still carries a withdrawn position, and one past the
+  horizon, as 2.2 does: a broker client that reads `contacts/<key>` reads the newest known
+  position as long as the gateway keeps it (in memory, and across a restart from the history for
+  `positions_days`). The horizon bounds what Home Assistant shows,
+  not what the bus keeps. Ending it in the document is a breaking change and waits for 3.0.
 * Neutral, because a push lost on a TCP link during the few milliseconds of a clear can leave the
   older advert's fields in the record until the next advert. It is the class of ADR 0025's
   "an advert the gateway could not check".
@@ -449,18 +517,28 @@ These behaviours change, listed under *Changed*:
   pins it.
 * **B3, the broker.** The documents gain keys. No new request is accepted.
 * **B4 and B5, Home Assistant and its users.** Presence and last known positions reach every
-  user (T7) and the recorder (T8), and not Assist by default. `privacy.md` names how long.
+  user (T7) and the recorder (T8), and not Assist by default. `privacy.md` describes what the
+  released gateway keeps, so the pull request that implements this record adds there: *Heard*
+  and the attributes of *Last known position* are recorded for the recorder's `purge_keep_days`
+  (10 days by default, longer than the horizon); every Home Assistant user sees last known
+  positions on the map for up to `last_known_days`; the retained document keeps the newest
+  position as in 2.2; and the recorder exclusions for both sensors.
 * **B6, the container.** The state file gains ages, never a position. The history gets fewer rows
   at rest, and never an excursion.
 * **B7, the project.** Not touched.
 
 The threat model's rows T3 (a bounded clear of its own record) and T7 (presence, and last known
-positions for up to 7 days) change in the same pull request.
+positions for up to `last_known_days`) say so in this pull request, marked as proposed for 2.3.
 
 ### Confirmation
 
 * **Pure units** of `core/companion.py`: every transition by time, report and failure; asked and
-  not asked; listening and deaf time; restored ages; the clock going back; an interval change.
+  not asked; listening and deaf time; restored ages; the clock going back; an interval change;
+  ticks 30 s and 60 s apart giving the same states; `recent` for asked and other contacts,
+  `quiet` and `recent` at once included. A start without saved ages: from a state file and a
+  history written by 2.2 (the silence counts to the saved stop, never `never` for a contact the
+  history heard), from the record's `last_advert` alone, with a future `last_advert`, without a
+  saved stop, and one contact without an entry beside others with one.
   Properties (hypothesis): without a new report the states never move towards `heard` or
   `current`; a report with a fix always gives `current`; a withdrawal always gives `null`;
   `last_known` never follows a withdrawal; noise within R never changes the published fix; an
@@ -473,7 +551,13 @@ positions for up to 7 days) change in the same pull request.
   `OK` gives `REMOVE_CONTACT`, `RESET_PATH` or an unchecked advert; no other command runs between
   read and write.
 * **Contact manager**: a removal queued during a clear runs after it; a clear of a removed
-  contact writes nothing; `observe` writes nothing; the budget's half.
+  contact writes nothing; `observe` writes nothing; the budget's half; a sweep with more
+  candidates than the queue holds (nine), then a household add and a removal: neither is refused
+  `busy`, and both run before the remaining clears.
+* **Views**: `position_reported_at` equals `position_received_at` for every telemetry position
+  and `advert_heard_at` for every advert position; the coordinates of a 2.2 document are kept
+  after `no_position`, with telemetry switched off and past the horizon, while `position_state`
+  is `null`.
 * **Advert check (G0)**: the rule table on both firmware behaviours; the harness suites against
   the stock and the patched companion.
 * **Emulated radio** (`tests/radio_emulator.py` gains command 30): share, stop, checked advert,
@@ -488,7 +572,12 @@ positions for up to 7 days) change in the same pull request.
   `mdi:map-clock-outline` are in the frontends 20260930.4 and 20261028.4 (a string check of the
   bundles, 2026-11-15).
 * **Dashboard rules**: every card naming a companion reads its state; no card repeats the status
-  line; every icon has a word; mutants.
+  line; every icon has a word; a `quiet` companion that is `recent` keeps its advert problem, and
+  the row and the *Overview* count agree for it; the map's help text names the horizon in effect
+  and leaves out the sentence at 0; mutants.
+* **Codes and texts**: the guard test of
+  [design §6.12](../design.md#612-translations) covers `presence`, `position_state`, `motion` and
+  the `position_cleared` event in every shipped language.
 * **Browser check** in every language at 360×800 and 1280×800, light and dark: the blue-grey
   marker at 3:1 against the real map tiles, or another theme colour.
 * **Hardware checklist**: stop sharing, advert nearby, see `position_cleared`; walk out of range
@@ -587,8 +676,8 @@ Each carries a dated amendment line of 2026-11-15 that names this record as a pr
   manager's worker under the same firmware gate.
 * [ADR 0024](0024-telemetry-values-in-home-assistant-expire.md): its bound is also the end of
   `heard` for an asked companion; a companion's advert position expires 1 h after its report;
-  the document keeps an expired position only through silence, up to the horizon; the *Last known
-  position* sensor.
+  `position_state` says whether an expired position is still last known, up to the horizon, and
+  the *Last known position* sensor shows it then; the document keeps it, as before.
 * [ADR 0025](0025-positions-in-adverts-checked-from-the-packet-log.md): advert positions expire by
   time; the clear makes the fallback exact; a record that turned to none is no evidence when an
   adjacent log exists (G0).
@@ -603,7 +692,7 @@ and in the 2.3 plan, whose decisions
 | --- | --- |
 | The gateway clears old advert positions itself (#184) | yes, under the managed profile only, race-free as above; no extra setting |
 | Withdrawal ends a position at once (#184) | yes, without a last known marker |
-| The horizon (#184) | 7 days, `last_known_days` 0–30; every Home Assistant user sees last known positions |
+| The horizon (#184) | 7 days, `last_known_days` 0–30; every Home Assistant user sees last known positions; an existing installation once its administrator takes the new default (ADR 0036's consent rules, decision 5 of the 2.3 plan) |
 | Advert positions expire (#184) | after 1 h |
 | Infrastructure positions (#184) | `fixed` |
 | The rare advert race (#184) | errs to warn until the next checked advert |
@@ -612,6 +701,27 @@ and in the 2.3 plan, whose decisions
 | New entities (#168, #177, #184) | *Heard* and *Last known position*, enabled, for every companion; motion as a key only |
 | The motion model (#177) | 50 m; a move confirmed before it is published; the reported fix at rest; excursions dropped; the lanes kept; a *now* and a *trips* map in 2.4 |
 | The release shape (decision 1 of the 2.3 plan) | 2.3.0a2, after 2.3.0a1's text module and before *Enrolling* (2.3.0a4), which reads `presence` |
+
+Refinements of this record, for the review of this pull request:
+
+* **`presence_since` is not published.** #168's proposal listed it as new data. `heard_at`
+  catches up to the last report when a companion turns quiet, so the time beside a silence is
+  exact without it, and Home Assistant records when *Heard* changed. One time fewer to keep in
+  step with the others.
+* **`recent` is new.** It carries 2.2.1's 24 hours as an output of the module, so the advert
+  fact of a row and the *Overview* problem read one fact. It keeps the decided rule: the advert
+  warning ends after a day, not when an asked companion turns `quiet` after an hour. The
+  gateway's attributes are `recent` and `recent_total`, not `heard`, which already names a
+  presence value.
+* **The coordinates stay in the document.** #184's proposal named only additive interfaces. A
+  withdrawn position, and one past the horizon, therefore ends in `position_state` and in the
+  entities, and the coordinate keys keep 2.2's rule.
+* **`position_reported_at` is defined by `position_received_at` and `advert_heard_at`**, so the
+  telemetry time has one meaning in two keys.
+* **A start without saved ages** takes the last report from what 2.2 kept, so the update into
+  2.3 does not show every companion as `never`.
+* **The horizon's default asks existing installations** (*Positions*), by the consent rules the
+  maintainer decided for a default that widens.
 
 ### Open decisions
 
@@ -639,7 +749,9 @@ depends on neither.
 * the firmware gains a command that writes only the position, or reports an advert's content;
 * noise measurements show 50 m too small or too large, or the telemetry carries a fix age or an
   accuracy;
-* Home Assistant changes how a `person`, the map's entity options or availability work.
+* Home Assistant changes how a `person`, the map's entity options or availability work;
+* 3.0 is planned: whether the coordinates of a withdrawn position, and of one past the horizon,
+  become `null` in the document.
 
 ### Sources
 

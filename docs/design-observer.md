@@ -56,8 +56,7 @@ flowchart LR
   telemetry fix, also at the check that shows a companion shares it again; an unchanged one does
   not. A position from telemetry expires ([design §6.11](design.md#611-telemetry)):
   `position_current` says whether it is current, and since 2.3 `position_state` how it ages; the
-  document keeps it while the companion is silent, up to the horizon. Nodes that are not
-  contacts keep none.
+  document keeps it. Nodes that are not contacts keep none.
 * **Positions in adverts** ([ADR 0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md),
   `core/adverts.py`): the observer keeps each logged advert (at most 64, at most 40 s) and, at a
   contact's `ADVERT`, its pending advert with the key's logs. The next table read whose record
@@ -172,7 +171,8 @@ flowchart LR
 
 [ADR 0035](decisions/0035-the-companion-state-model.md), since 2.3: one pure, total module, `core/companion.py`, keeps a record per
 contact of the radio's table and decides three things apart from each other: whether the contact
-is heard (`presence`), where it is (`position_state`), and whether it moves (`motion`). The
+is heard (`presence`, and `recent` for the last 24 hours), where it is (`position_state`), and
+whether it moves (`motion`). The
 scheduler keeps `telemetry_state` (ADR 0024), and the contact manager keeps membership: a removed
 contact has no document.
 
@@ -202,14 +202,27 @@ advert or message.
 | `long_quiet` | silent 24 h or longer | silent 7 days or longer |
 | `never` | no report since it became a contact | the same |
 
-Silence is counted by the minute tick, and only while the radio is live: a gateway that is
-stopped, or whose radio is away, hears nothing, so it holds nobody's silence against them. The
-count is saved in the state file as an age. While telemetry is off or paused, every contact counts
-as not asked. The thresholds are fixed.
+Silence is counted by the observer's tick, and only while the radio is live: a gateway that is
+stopped, or whose radio is away, hears nothing, so it holds nobody's silence against them. Each
+tick adds the time that elapsed since the last one (the status loop calls it every 60 s, every
+30 s under systemd's watchdog). The count is saved in the state file as an age. While telemetry
+is off or paused, every contact counts as not asked. The thresholds are fixed. `recent` is true
+while a contact is silent less than 24 h, asked or not: an asked companion is `quiet` after an
+hour or more and still `recent` until the day is over. The advert warning reads it
+([design-home-assistant.md](design-home-assistant.md#613-dashboard), *A companion's state*).
 
-**Positions.** Every published position has a report time, `position_reported_at`: the newest
-telemetry answer that carried a fix, or the newest heard advert that carried the position
-(`advert_heard_at`); before any heard advert, the fix's own time.
+**A start without saved ages** (the first start of 2.3 after 2.2, a lost state file, a contact
+added while the gateway was stopped): the contact's last report is the newest of the `heard` time
+and `heard_via` restored from the history, the last answer of the saved schedule, and the
+record's `last_advert` when it is not in the future. Its silence runs from that report to the
+gateway's stop, the newest `saved_at` of the state file, and the stop is not silence; without a
+saved stop it runs to the start, which errs to quiet. Only a contact with none of these is
+`never`.
+
+**Positions.** Every published position has a report time, `position_reported_at`: for
+telemetry it is `position_received_at` (the newest answer that carried a position), for adverts
+`advert_heard_at` (the newest heard advert, which carried it); where that key is `null`, the fix's
+own time.
 
 ```mermaid
 stateDiagram-v2
@@ -229,11 +242,16 @@ stateDiagram-v2
   telemetry paused, the radio away); a companion's advert position 1 h after its report.
 * **Withdrawal** ends a position at once, without a last known one: a checked advert without a
   position; current answers without a fix for over an hour (`no_position`); an exclusion; a
-  removal; telemetry switched off in the configuration. The document's coordinates become `null`;
-  the history keeps the trace for its retention.
+  removal; telemetry switched off in the configuration. `position_state` becomes `null`, so the
+  tracker turns unavailable and *Last known position* carries nothing.
+* **The coordinates keep their documented rule**: the document keeps the newest known position
+  as before (a checked advert without one, an exclusion and a removal take it away already).
+  `position_state` tells whether the gateway still stands behind it; every entity and card
+  follows `position_state`.
 * **The horizon** is `[telemetry] last_known_days` (7; 0 to 30; 0 ends a position at the first
-  silence), never longer than `[history] positions_days` while the history is on. Without the
-  history a last known position lives in memory until the next restart.
+  silence), never longer than `[history] positions_days` while the history is on. It bounds how
+  long Home Assistant shows a last known position, with or without the history; without the
+  history the gateway also loses the position at a restart.
 * `fixed`: the advert position of a repeater, room server or sensor, a site that does not expire.
 * Currency follows the schedule's saved ages, so a restart neither expires nor revives a
   position; a radio that is away ages it (ADR 0024). The horizon follows the wall clock, as the
@@ -255,14 +273,16 @@ stateDiagram-v2
 * `motion` is `resting` (a probe included) or `moving` (the settling included), with
   `motion_since`; `null` for a contact without a telemetry position.
 
-**One tick, one place for each rule.** The observer's minute tick asks the module for every
-contact and publishes the documents that changed; telemetry outcomes still come with the poller's
-step. Each rule lives in one table of the module; the views only map it to keys.
+**One tick, one place for each rule.** The observer's tick asks the module for every contact and
+publishes the documents that changed; telemetry outcomes still come with the poller's step. Each
+rule lives in one table of the module; the views only map it to keys.
 
 **The clear of an old advert position.** When a companion's newest checked advert carries no
-position and the radio's record still holds one, the observer queues an internal job for the
-contact manager's worker (at the log line "its advert carries no position (the radio's record
-keeps an older one)", and in a sweep when the session becomes live). Under the managed profile,
+position and the radio's record still holds one, the observer marks the contact for a clear by
+the contact manager's worker (at the log line "its advert carries no position (the radio's record
+keeps an older one)", and in a sweep when the session becomes live). The marks are a set beside
+the queue of household requests, never in it, and the worker takes one only while no request
+waits, so a sweep never makes a request fail `busy`. Under the managed profile,
 with the radio connected, at most once per contact per 10 minutes and while more than half of the
 radio-work budget's burst is left, the worker has the session:
 

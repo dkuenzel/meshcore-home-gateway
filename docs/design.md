@@ -623,8 +623,9 @@ and the inbox after each refusal, §6.4), and the events `contact`, `node` and `
 
 Since 2.3 one pure module, `core/companion.py`, decides for every contact whether it is heard,
 where it is and whether it moves ([ADR 0035](decisions/0035-the-companion-state-model.md)). Every report enters it with its precise
-time; the observer's minute tick moves the states that change by time alone. A position ages by
-silence and ends at once by withdrawal; the last known one stays, dated, for 7 days. The gateway
+time; the observer's tick moves the states that change by time alone. A position ages by
+silence and ends at once by withdrawal; the last known one stays, dated, for
+`[telemetry] last_known_days` (7 by default). The gateway
 clears a companion's old advert position from the radio's record by itself, under the managed
 profile.
 

@@ -32,7 +32,7 @@ and example automations are in [`home-assistant.md`](home-assistant.md).
 | Contacts, Nodes heard | `sensor` | `contacts` → `total`, `nodes` → `total` |
 | Contact, New node | `event` | `contact`, `node` |
 | Noise floor, Radio transmit time last hour, uptime and packet counters | `sensor`, diagnostic; the counters disabled by default | `stats` |
-| Contact with remote access, Companion position in adverts | `binary_sensor` (problem) | `contacts` → `remote_cli_total`, `advert_carries_position_total`; since 2.3 the companions heard within the last day as the attributes `heard`, `heard_total` |
+| Contact with remote access, Companion position in adverts | `binary_sensor` (problem) | `contacts` → `remote_cli_total`, `advert_carries_position_total`; since 2.3 those that are `recent` (heard within the last day) as the attributes `recent`, `recent_total` |
 | Look-alike node heard | `binary_sensor` (problem) | `nodes` → `look_alike_total` |
 | Show hidden contacts | `button` | → `homeassistant/show_hidden` |
 | Send advert nearby | `button`, QoS 0; unavailable while the gateway is offline or the radio not connected, and with `[homeassistant] radio_controls = false` or `controls = false` (announced, never removed) | → `advert/send` ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)) |
@@ -46,7 +46,7 @@ and example automations are in [`home-assistant.md`](home-assistant.md).
 | Telemetry | `switch`, configuration, on each companion's device | `contacts/<key>` → `telemetry_excluded`; → `contacts/<key>/telemetry` |
 | Telemetry state | `sensor` (enum) on each companion's device | `contacts/<key>` → `telemetry_state` |
 | Position in adverts | `binary_sensor` (problem) on each companion's device | `contacts/<key>` → `advert_carries_position`; since 2.3 `advert_heard_at` as an attribute |
-| Heard (2.3) | `sensor` (enum) on each companion's device, and on each contact of a type the gateway asks | `contacts/<key>` → `presence` |
+| Heard (2.3) | `sensor` (enum) on each companion's device, and on each contact of a type the gateway asks | `contacts/<key>` → `presence`; `recent` as an attribute |
 | Last known position (2.3) | `sensor` (timestamp), icon `mdi:map-clock-outline`, on the same devices | `contacts/<key>` → `position_reported_at` while `position_state` is `ageing` or `last_known`; coordinates as attributes only while `last_known` |
 | Position | `device_tracker` on the same devices; since 2.3 announced from the start | `contacts/<key>` → coordinates; since 2.3 available while `position_state` is `current`, `ageing` or `fixed`, with `motion` and `motion_since` as attributes |
 | Battery, MCU temperature, a sensor per reading | `sensor` (their class and unit, state class `measurement`) on a companion's device, with its first answer that carries them | `contacts/<key>` → `battery_v`, `mcu_temperature_c`, `readings`; available while `telemetry_current` |
@@ -187,13 +187,15 @@ their way, a draft and its *Send* for each chat and the configuration
 * **A companion's state** (2.3, [ADR 0035](decisions/0035-the-companion-state-model.md)). One macro maps *Heard*, the position state
   and the advert fact to words and marks, and every card that names a companion uses it.
   Precedence, highest first: the gateway offline or its radio away (one line at the top, no
-  companion raises a problem); a former contact (on its chat page); `long_quiet`; `never`;
-  `quiet`; the facts (the advert position, the battery, the position's age); `heard`. The highest
-  is the one message; the facts below it show muted with their age. The advert fact is a problem
-  only while the companion was heard within the last day; the *Overview* problem reads the
-  gateway's `heard` attribute for it. *Where everyone is* says "since 10:31" for a current
-  position, grey "position from 10:31" for an ageing one, a grey clock and "last known 3 hours
-  ago" for a last known one, and "no position" with the reason in the fold. The map lists each
+  companion raises a problem); a former contact (on its chat page); `long_quiet`; `never`; the
+  advert fact while the companion is `recent`; `quiet`; the other facts (the battery, the
+  position's age, an advert fact once the companion is not `recent`); `heard`. The highest is the
+  one message; what lies below it shows muted with its age. So the advert fact is a problem while
+  the companion was heard within the last day, `quiet` included, as 2.2.1 decided. The row reads
+  the contact's `recent`, and the *Overview* problem the gateway's `recent` attribute, which
+  counts the same output of `core/companion.py`. *Where everyone is* says "since 10:31" for a
+  current position, grey "position from 10:31" for an ageing one, a grey clock and "last known 3
+  hours ago" for a last known one, and "no position" with the reason in the fold. The map lists each
   companion's *Last known position* beside its tracker, with `color: blue-grey` and
   `label_mode: icon`. Every icon has a word beside it. The marks on every card, and the *now* and
   *trips* maps, come with the redesign in 2.4.
