@@ -17,6 +17,13 @@ format, the command line and Home Assistant discovery are public interfaces
   configuration's `burst_s`. The new section *Radio presets* of
   [configuration.md](docs/configuration.md#radio-presets) gives the times and the `burst_s` for
   common presets, also where a long message alone exceeds the default (#181).
+- Removing a contact keeps its chat and what the gateway's history holds of it, but the
+  dashboard did not say so, and privacy.md named removing a contact as the way to stop keeping
+  it. The question before *Remove*, the fold *What removing does* and *Help* now say that the
+  chat and the history stay, and the fold tells the administrator where the guide says what can
+  be deleted at once; privacy.md, the guide and mqtt-api.md say what a removal keeps and what
+  `contacts telemetry --forget KEY off` deletes. Make the dashboard again to get the texts
+  (#166).
 
 ## [2.2.0] - 2026-11-16
 

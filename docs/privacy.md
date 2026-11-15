@@ -33,7 +33,7 @@ prints holds what the history holds: treat both as the history itself.
 | What | Where | How long | Off |
 | --- | --- | --- | --- |
 | Direct messages with contacts and messages on channels: text, the sender's name and key, signal | `received` events (a contact's also on `contacts/<key>/received`), `history` (retained) and Home Assistant's *Message history*, the history | 30 days (`messages_days`) | `[history] enabled = false` keeps no history; Home Assistant's recorder: [exclusions](home-assistant.md#privacy) |
-| Contacts: key, name, type, path, when and how they were last heard, the checks of their adverts | the contacts' documents (retained), with `[homie] enabled` their Homie nodes (retained), `state.json`, the history | while they are contacts; the history's row 7 days after the last time heard | remove the contact |
+| Contacts: key, name, type, path, when and how they were last heard, the checks of their adverts | the contacts' documents (retained), with `[homie] enabled` their Homie nodes (retained), `state.json`, the history | while they are contacts; the history's row 7 days after the last time heard | removing a contact clears its documents and its Homie node; it deletes nothing else the gateway recorded (below) |
 | Companions' positions and readings, from telemetry and from adverts | the contacts' documents (retained), with `[homie] enabled` their Homie nodes' `position` and `battery` (retained), `state.json` while current, the history | 30 days (`positions_days`, `readings_days`) | only the companions included are asked (`[telemetry] ask = "household"`, the default); exclude a companion from telemetry; `contacts telemetry --forget KEY off` deletes what the history has of it ([companions](companions.md#privacy)) |
 | The newest accepted command time of each sender, and the times of its wrong codes within the last hour | `state.json` | while the sender is one; the times of its wrong codes until a later wrong code finds them an hour old | — |
 | The latest five refused commands: when, why, and the sender's key prefix, with the key and name of the contact that has it; also of senders outside the household; never the command's word, arguments or code | `refused_commands` (retained), with command words Home Assistant's *Refused commands*, `state.json` | until five newer refusals replace them | Home Assistant's recorder: [exclusions](home-assistant.md#privacy); every broker client that may read `meshcore/<node>/#` reads them |
@@ -50,6 +50,16 @@ prints holds what the history holds: treat both as the history itself.
 | Messages on the channels that are a target: text and the name the sender claims; with `[messages] publish_channels = "all"` on every channel | `received` events, `history` (retained) and Home Assistant's *Message history*, the history | 30 days | a channel that is not a target is dropped (`[messages] publish_channels = "targets"`, the default); `ignore_channels` leaves out single ones; with `"targets"` every start deletes from the history what an earlier version or `"all"` kept of the other channels and of the ignored ones, for good ([configuration](configuration.md#messages)) |
 | Other people's companions among the radio's contacts | as the household's | as the household's | none of them is asked until included (`[telemetry] ask = "household"`, the default); with `"all"` exclude them ([telemetry](configuration.md#telemetry)) |
 | Every packet the radio receives: raw bytes with other people's ciphertext and the positions in their adverts, and the signal | `rx` events; Home Assistant's *Last packet RSSI* and *Last packet SNR* (disabled by default) | not kept by the gateway | off unless `[diagnostics] publish_rx_log = true`: a diagnostic, it shows the packets as received, positions included |
+
+Removing a contact takes it off the radio and out of Home Assistant, and keeps what the gateway
+recorded of it: the chat in `history` and Home Assistant's *Message history*, its messages,
+positions and readings in the history until they age out, whether it was included in telemetry
+(added again, it is asked as before), the name its entity IDs came from for 90 days, and the
+refused commands that name it until newer ones replace them. While its node counts as heard, it
+is one of the nodes heard. To delete its readings and its positions from telemetry at once, run
+`contacts telemetry --forget KEY off`, also after the removal, which leaves it excluded; its
+messages and the positions its adverts carried stay until they age out
+([what a removal keeps](home-assistant.md#adding-and-removing-contacts)).
 
 A look-alike, a node with the first 6 bytes of a contact's key, is kept even with `heard_nodes =
 "off"`: it is the warning that someone could pass for that contact

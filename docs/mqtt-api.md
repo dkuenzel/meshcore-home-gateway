@@ -891,7 +891,12 @@ nor has one still queued when the gateway stops; otherwise every request has exa
 What follows a removal: the radio drops the node's direct messages; messages queued to it fail
 with `unknown_contact`; a removed look-alike of a command sender keeps that sender
 `sender_ambiguous` for 24 hours (ADR 0009). A removed contact is offered again among the heard
-nodes while it counts as heard.
+nodes while it counts as heard. A removal deletes nothing the gateway recorded: the contact's
+entries in `history` and its messages, positions and readings in the history stay until they
+age out ([`[history]`](configuration.md#history)), and so does its mark in
+`telemetry-excluded.json`; `contacts/<key>/telemetry` with `forget` deletes its readings and its
+positions from telemetry at once, also for a key that is no longer on the radio
+([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)).
 
 ## Excluding a contact from telemetry: `contacts/<key>/telemetry`
 

@@ -2692,6 +2692,11 @@ msgctxt "dashboard"
 msgid "For your administrator: on this gateway, this contact's control has another entity ID: {real}. Rename it in Home Assistant's Settings › Devices & services › Entities, or set a contact prefix for this gateway."
 msgstr "Für Admins: Auf diesem Gateway hat das Bedienelement dieses Kontakts eine andere Entitäts-ID: {real}. Benenne es in Home Assistant unter Einstellungen › Geräte & Dienste › Entitäten um, oder setze ein Kontaktpräfix für dieses Gateway."
 
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "For your administrator: the gateway deletes the history of a removed contact only as it ages; positions and battery readings can go at once."
+msgstr "Für Admins: Das Gateway löscht den Verlauf eines entfernten Kontakts erst, wenn er alt genug ist; Positionen und Batteriewerte lassen sich sofort löschen."
+
 #. the menus and words of Home Assistant as its own translation names them
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -3460,8 +3465,8 @@ msgstr "Unter Kontakte: Füge einen Schlüssel oder Kontaktlink aus der MeshCore
 #. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "On Contacts: takes a contact off the radio. It asks first."
-msgstr "Unter Kontakte: nimmt einen Kontakt vom Funkgerät. Vorher kommt eine Rückfrage."
+msgid "On Contacts: takes a contact off the radio; its chat and the gateway's history of it stay. It asks first."
+msgstr "Unter Kontakte: nimmt einen Kontakt vom Funkgerät; sein Chat und der Verlauf des Gateways von ihm bleiben. Vorher kommt eine Rückfrage."
 
 #. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -4109,6 +4114,11 @@ msgstr "Die Meldung verschwindet, sobald das Gateway ein Advert ohne Position ge
 msgctxt "dashboard"
 msgid "The change works now, but the gateway could not store it. Tell your administrator."
 msgstr "Die Änderung wirkt jetzt, aber das Gateway konnte sie nicht speichern. Sag den Admins Bescheid."
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "The chat and the gateway's history of the contact stay: messages, positions and battery readings, until they are older than Settings shows."
+msgstr "Der Chat und der Verlauf des Gateways von dem Kontakt bleiben: Nachrichten, Positionen und Batteriewerte, bis sie älter sind, als Einstellungen angibt."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -6466,8 +6476,8 @@ msgstr "Steuerung des Funkgeräts dieses Zuhauses über Funk erlaubt für: {name
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
-msgid "{name} can then no longer write to this home, and nobody here can write to {name}. You can add {name} again later."
-msgstr "{name} kann diesem Zuhause dann nicht mehr schreiben, und niemand hier kann an {name} schreiben. Du kannst {name} später wieder hinzufügen."
+msgid "{name} can then no longer write to this home, and nobody here can write to {name}. The chat and the gateway's history of {name} stay. You can add {name} again later."
+msgstr "{name} kann diesem Zuhause dann nicht mehr schreiben, und niemand hier kann an {name} schreiben. Der Chat und der Verlauf des Gateways von {name} bleiben. Du kannst {name} später wieder hinzufügen."
 
 #. name is a person's name; hidden: someone deleted the contact's device in Home Assistant, which hides the contact
 #: src/meshcore_home_gateway/dashboard.yaml

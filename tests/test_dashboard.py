@@ -406,6 +406,47 @@ def test_the_switches_and_remove_buttons_are_guarded_rows_of_the_state(tmp_path:
     assert "type: conditional" not in text
 
 
+KEPT = (
+    "The chat and the gateway's history of the contact stay: messages, positions and battery "
+    "readings, until they are older than Settings shows."
+)
+FORGET = (
+    "For your administrator: the gateway deletes the history of a removed contact only as it "
+    "ages; positions and battery readings can go at once."
+)
+
+
+@pytest.mark.parametrize("removable", [True, False])
+def test_removing_says_that_the_chat_and_the_history_stay(tmp_path: Path, removable: bool) -> None:
+    """#166: Remove takes a contact off the radio and its device out of Home Assistant; the
+    gateway keeps its chat, messages, positions and readings until they age out. The question
+    and the fold What removing does say so, with a row to remove and without; the line for the
+    administrator links the guide's steps to delete what can go at once."""
+    announced = {ALICE: {"slug": "alice", "cmps": {"remove": "button"}}} if removable else {}
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({"ha_contact_devices": {"announced": announced}}), encoding="utf-8")
+    text, _ = dashboard.dashboard(config(), tmp_path)
+    contacts = next(v for v in rules.load(text)["views"] if v["path"] == "contacts")
+    rows = [n["row"] for n, _ in rules.nodes(contacts) if isinstance(n, dict) and "row" in n]
+    asked = [r["tap_action"]["confirmation"]["text"] for r in rows if "tap_action" in r]
+    assert asked == (
+        [
+            (
+                "Alice can then no longer write to this home, and nobody here can write to "
+                "Alice. The chat and the gateway's history of Alice stay. You can add Alice "
+                "again later."
+            )
+        ]
+        if removable
+        else []
+    )
+    (fold,) = [t for t in rules.texts(contacts) if "What removing does" in t]
+    assert f"<li>{KEPT}</li>" in fold
+    guide = rules.GUIDE_URL.format(version=rules.VERSION)
+    link = f'<a href="{guide}#adding-and-removing-contacts">How, in the guide</a>'
+    assert f"<li>{FORGET} {link}</li>" in fold
+
+
 def test_the_generator_takes_no_fixed_list_of_controls() -> None:
     """Design §6.1: the flag `controls` and `["@controls@"]` of 2.0 are gone; the switches and
     buttons are the items of `switches` and `removes`."""
@@ -1956,7 +1997,8 @@ def test_every_link_resolves_to_a_page_of_this_dashboard() -> None:
     assert {link for link in links if link.startswith("./{{")} == {"./{{ m(r.path) }}"}
     # the guide's section, of this dashboard's version (D-30)
     guide = rules.GUIDE_URL.format(version=rules.VERSION)
-    sections = {guide + "#a-second-gateway", guide + "#privacy"}
+    anchors = ("#a-second-gateway", "#privacy", "#adding-and-removing-contacts")
+    sections = {guide + anchor for anchor in anchors}
     assert {link for link in links if link.startswith("http")} == sections
     assert rules.rule_6(shipped(), None, loaded, rules.HOUSEHOLD) == []
 

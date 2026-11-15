@@ -297,6 +297,18 @@ in *Add heard node*, and adding it back restores the device with its name, area 
 *Delete* on the device page is something else: it hides the contact in Home Assistant only
 ([Contacts](#contacts)), and the contact stays on the radio.
 
+**What a removal keeps.** Removing takes the contact off the radio and out of Home Assistant; it
+deletes nothing the gateway recorded. The chat stays in *Message history*, so in *Chats* and
+*Latest chats* of the dashboard, and the gateway's history keeps the contact's messages,
+positions and readings until they are older than `[history]` allows, 30 days by default
+([configuration.md](configuration.md#history)). Whether the contact was included in telemetry
+stays too: added again, it is asked as before. To delete its readings and its positions from
+telemetry at once, exclude it with `meshcore-home-gateway contacts telemetry --forget KEY off`,
+which also works for a key no longer on the radio (added again, it then stays excluded until
+its *Telemetry* is switched on); its messages and the positions its adverts carried stay until
+they age out, and no command deletes them alone. Home Assistant's recorder keeps the history of
+the contact's entities on its own terms ([Privacy](#privacy)).
+
 **The gateway in the MeshCore app.** The radio drops direct messages from nodes it has not
 added, and the app on a phone does the same: the phone's owner adds the gateway by scanning its
 contact link as a QR code. The link is the attribute `contact_link` of
@@ -820,7 +832,9 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   gone out ([advert nearby](#advert-nearby)); with `radio_controls` or `controls` off a blue line
   says so instead. Its help names the first digits of the radio's key to compare with, and,
   unless `radio_controls` or `controls` is off, that everyone here can send it. Then a *Remove*
-  for each contact, which asks first, and *Hidden contacts* with *Show again*; and
+  for each contact, which asks first and says that the chat and the gateway's history of the
+  contact stay ([what a removal keeps](#adding-and-removing-contacts)), and *Hidden contacts*
+  with *Show again*; and
   *Nodes heard nearby*, the nodes you can add. While the
   controls cannot act, a line above them says why: the gateway offline or the radio disconnected
   (in red, as on *Overview*), `controls = false`, contact management off, the radio not reported
