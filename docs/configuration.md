@@ -270,6 +270,9 @@ Whoever runs the gateway follows the rules for their band (#174, #175).
 Commands also need a sender timestamp newer than that sender's last accepted command; the gateway
 keeps these timestamps in `/var/lib/meshcore-home-gateway/state.json`.
 
+What a household member needs to know to send a command, with examples, the answers and the
+refusals: [home-assistant.md](home-assistant.md#commands-from-a-companion).
+
 **A command word at the start of a chat.** The gateway takes every direct message whose first
 word is a configured word as a command, also one meant as chat; a command needs no mark of its
 own, and a slash before the word makes it another word (`/arm` is no command). From an allowed

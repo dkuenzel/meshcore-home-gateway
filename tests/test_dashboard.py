@@ -1999,7 +1999,12 @@ def test_every_link_resolves_to_a_page_of_this_dashboard() -> None:
     assert {link for link in links if link.startswith("./{{")} == {"./{{ m(r.path) }}"}
     # the guide's section, of this dashboard's version (D-30)
     guide = rules.GUIDE_URL.format(version=rules.VERSION)
-    anchors = ("#a-second-gateway", "#privacy", "#adding-and-removing-contacts")
+    anchors = (
+        "#a-second-gateway",
+        "#privacy",
+        "#adding-and-removing-contacts",
+        "#commands-from-a-companion",
+    )
     sections = {guide + anchor for anchor in anchors}
     assert {link for link in links if link.startswith("http")} == sections
     assert rules.rule_6(shipped(), None, loaded, rules.HOUSEHOLD) == []

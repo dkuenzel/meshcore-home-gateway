@@ -249,6 +249,97 @@ Writing grants nothing new: every user can send with the notify entities already
 `homeassistant.controls = false` changes neither. The topics, the request forms and the rules are
 in [mqtt-api.md](mqtt-api.md#drafts-of-home-assistants-chats-homeassistantdraftkindchat).
 
+## Commands from a companion
+
+A command is a direct message from a companion that starts one of this home's automations. The
+gateway carries out none itself: it passes the command to Home Assistant, whose automations
+decide what happens ([an example](#examples)). Commands come only from the contacts the
+administrator chose, the command senders, and only with the words the administrator set. The
+dashboard's *Settings* shows how many senders there are and whether codes are on, never the
+words: ask the administrator for them. The rules in full are in
+[configuration.md](configuration.md#commands), the events in
+[mqtt-api.md](mqtt-api.md#commands-command).
+
+**How to send one.** In the MeshCore app, write a direct message to this home's radio, in its
+chat, not on a channel: the command word first, then what the automation reads, if anything,
+and, with a code secret, the 6-digit code from the authenticator app last, each after a space.
+Alice, a command sender in a home with the words `status` and `gate-open`:
+
+| Alice sends | Alice has a code secret | What happens |
+| --- | --- | --- |
+| `status` | no | the command `status`, with `args` empty |
+| `gate-open now` | no | the command `gate-open`, with `args` `now` |
+| `status 492039` | yes | the command `status`, if 492039 is her app's current code; `args` empty, without the code |
+| `gate-open now 492039` | yes | the command `gate-open`, with `args` `now` |
+| `status` | yes | refused: `code_missing` |
+| `Status of the bus?` | no | the command `status`, with `args` `of the bus?` |
+| `Status of the bus?` | yes | refused: `code_missing`; it counts toward no lock |
+| `/status`, `status,`, `statusnow` | either | no command: a chat message |
+
+The word must stand alone and first; upper and lower case do not matter. What follows it reaches
+the automation as `args`, which the automation should check. Every direct message whose first
+word is a command word is a command, also one meant as chat (below).
+
+**The code.** If the administrator gave you a code secret, every command of yours ends with a
+code; without one, a command needs none.
+
+* The administrator runs `meshcore-home-gateway commands enrol` with your companion's key and
+  shows you a QR code, or a line of text. You add it once to an authenticator app on your phone
+  (one for 6-digit codes that change every 30 seconds, TOTP). The secret is then in your app and
+  in the gateway's codes file; Home Assistant and the dashboard never see it.
+* A code serves once, until about a minute after your app first shows it: the gateway takes the
+  code of its current 30 seconds and of those just before and after, and none older than the
+  last code you used. Your phone's clock and the gateway's must agree within 30 seconds; phones
+  set theirs from the network.
+* A code shows that your app made it at that time; it does not bind the rest of the message
+  ([design §7.4](design.md#74-residual-risks)). It stays visible in your chat and in the
+  history, where a used code serves nobody.
+* A new phone: the administrator enrols you again, which ends the old secret. A lost phone: tell
+  the administrator at once, who revokes it.
+
+**The answer.** Whether the gateway answers is the administrator's choice (`[commands] reply`):
+by default it does not, and the automation may answer itself, as the [example](#examples) does.
+With `accepted` the gateway answers `ok: status` once the command reached the automations; with
+`all` it also answers a refusal with its reason, such as `rejected: code_invalid`, except those
+that the table below says get no answer. `ok` says that the command was passed on, not what the
+automation did. An answer is a message to your companion like any other: it waits for airtime,
+and with `[messages] confirm_nonce` it ends in a short code such as `#1a2b3c4d`. The dashboard's
+*Gateway* view shows the newest command, accepted or refused, under *Latest of each kind*.
+
+**When a command is refused.** The reason shows in the answer (with `reply = "all"`), in
+*Refused commands* and on the dashboard, whose *Help* explains each one under *Why a command was
+refused*. Send a command again as a new message: a copy of the same message, as a companion
+sends when an acknowledgement got lost, is dropped without an answer.
+
+| Reason | What it means | What to do |
+| --- | --- | --- |
+| `code_missing` | no 6-digit code at the end | send it again with the current code last |
+| `code_invalid` | not your current code: a wrong entry in the app, a clock that is off, or a command that waited in the mesh too long | check your phone's clock, then send it again with a new code |
+| `code_reused` | that code, or an older one, served already | wait for the next code |
+| `code_locked` | 5 wrong codes within the hour (below) | wait; tell the administrator |
+| `replay`, `too_old`, `from_the_future` | a copy of an earlier command, or a clock off by more than 15 minutes (the default of `max_age_s`) | send it again; if it repeats, the administrator checks the clocks |
+| `state_unwritable`, `broker_unavailable` | the gateway could not keep it safe from copies, or not pass it on | send it again a little later; tell the administrator if it repeats |
+| `sender_unverified` | the gateway could not check the sender, such as while it connected to the radio after a restart; no answer | send it again a minute later |
+| `sender_unknown`, `sender_ambiguous`, `sender_not_allowed` | your companion is no contact of this home's radio or no command sender here, or another node's key starts like yours; no answer | ask the administrator |
+
+**What locks a sender.** Five wrong codes (`code_invalid`) of one sender within an hour lock its
+commands: each is refused as `code_locked`, without a look at its code, until the first of the
+five is an hour old. A restart of the gateway does not end it, and its log warns that someone may
+be guessing the codes. These count toward no lock: a message without a code (`code_missing`),
+such as chat that starts with a command word (since 2.2.1, #176); a code that served already
+(`code_reused`); a command that came late with the right code of the time it was sent (it waited
+in the mesh or in the radio); and the commands refused while the lock holds. Chat cannot lock you.
+
+**Keeping chat from commanding.** The gateway cannot tell a command from chat that starts with
+the same word: from a sender, "Status of the bus?" is the command `status`.
+
+* Start a message to this home's radio with a command word only when you mean the command.
+* The administrator can choose words nobody starts a sentence with, such as `gate-open` instead
+  of `open`, and let each automation act only on the `args` it expects
+  ([configuration.md](configuration.md#commands)).
+* With a code secret, chat commands nothing: it ends in no code, is refused as `code_missing`
+  and counts toward no lock; it still shows among the refused commands.
+
 ## Adding and removing contacts
 
 The gateway adds contacts to the radio and removes them on request, so a new handheld needs
@@ -923,9 +1014,9 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   versions of the dashboard, the gateway and the
   radio. A gateway before 2.1 reports no settings, and the page says so and shows only what it
   can tell; offline, it says that instead.
-* *Help*: what the gateway does, the pages, every button and switch, the kinds of messages, what
-  the dashboard cannot do, what each word of the cards means, who sees what, and what the
-  administrator does.
+* *Help*: what the gateway does, the pages, every button and switch, the kinds of messages (with a
+  link to [Commands from a companion](#commands-from-a-companion)), what the dashboard cannot do,
+  what each word of the cards means, who sees what, and what the administrator does.
 
 It uses only the gateway's entities and the cards of Home Assistant, no custom card. Its texts
 follow `homeassistant.language`; entity IDs, reason codes and names from the mesh stay as they
@@ -1112,6 +1203,8 @@ mode: queued
 Every direct message of an allowed sender that starts with the word is the command, also a chat
 such as "status of the bus?": choose words and check `args` as
 [configuration.md](configuration.md#commands) says (*A command word at the start of a chat*).
+What the household needs to know to send a command: [Commands from a
+companion](#commands-from-a-companion).
 
 Get told when a message could not be delivered:
 
