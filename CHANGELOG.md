@@ -24,6 +24,12 @@ format, the command line and Home Assistant discovery are public interfaces
   be deleted at once; privacy.md, the guide and mqtt-api.md say what a removal keeps and what
   `contacts telemetry --forget KEY off` deletes. Make the dashboard again to get the texts
   (#166).
+- A direct message from a sender with a code secret that starts with a command word and ends in
+  no code, such as chat ("Arm wrestling tonight?"), counted as a wrong code: five within an hour
+  locked that sender's commands for an hour, and the log warned that someone may be guessing its
+  codes. Such a message makes no guess at the code. It is still refused as `code_missing` and
+  listed among the refused commands, but it no longer counts toward the lock; 5 wrong codes
+  within an hour lock a sender as before (#176).
 
 ### Security
 

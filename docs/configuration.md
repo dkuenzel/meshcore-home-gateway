@@ -253,20 +253,18 @@ word is a configured word as a command, also one meant as chat; a command needs 
 own, and a slash before the word makes it another word (`/arm` is no command). From an allowed
 sender, "Arm wrestling tonight?" is the command `arm` with `args` `wrestling tonight?`, and the
 automations of `arm` run. The word must stand alone: `arm,` or `armchair` is no command. From a
-sender with a code secret such a message ends in no code: it is refused as `code_missing`, and
-it counts as a wrong code, so five such messages within an hour lock that sender's commands
-until the first of them is an hour old, and the log says that someone may be guessing the codes
-(below). From a contact that is
-no sender it is refused as `sender_not_allowed` and listed among the refused commands. The
-message is published and kept as a chat message in each case ([mqtt-api.md](mqtt-api.md#commands-command)).
+sender with a code secret such a message ends in no code: it is refused as `code_missing` and
+listed among the refused commands. It makes no guess at the code, so it counts toward no lock
+and draws no warning of guessing, however often it comes (below). From a contact that is no
+sender it is refused as `sender_not_allowed` and listed among the refused commands. The message
+is published and kept as a chat message in each case ([mqtt-api.md](mqtt-api.md#commands-command)).
 To keep chat from commanding:
 
 * choose words nobody starts a sentence with, such as `gate-open` instead of `open`; a word may
   hold any character but a space or a line break;
 * let each automation check `args` against the few values it expects (`args` empty, or `now`),
   as the strings they are, and do nothing for any other;
-* give the senders code secrets: a chat message then commands nothing, though it still counts
-  toward the lock.
+* give the senders code secrets: a chat message then commands nothing.
 
 **Answers.** With `reply`, the sender learns on its phone whether the command reached the
 automations, without an automation of its own. The answer goes to the sender's full key as any
@@ -290,15 +288,16 @@ code does not bind the text: whoever reads a command before the gateway does, su
 can send another text with its code, once, within about 90 seconds
 ([design §7.4](design.md#74-residual-risks)). Senders without a secret keep the rules above,
 except while a secret is ignored (below).
-After 5 wrong codes of a sender within an hour, a command without a code included (but not
-the refusals of a sender without a secret while one is ignored, below), the gateway
-refuses that sender's commands without a look at the code (`code_locked`) until the first of
-them is an hour old, and its log warns: someone may be guessing the codes. A restart does not
-end it. So a guess wins with at most 3 in a million, and 5 guesses an hour are all there are
-([design §7.4](design.md#74-residual-risks)). A command that waited in the radio (a restart, an
-update, a re-plug) or in the mesh carries the code of the time it was sent: it is refused as
-`code_invalid` when it comes too late, but it does not count as a wrong code. To
-give one a secret (or a new one, which ends the old):
+After 5 wrong codes of a sender within an hour, the gateway refuses that sender's commands
+without a look at the code (`code_locked`) until the first of them is an hour old, and its log
+warns: someone may be guessing the codes. A restart does not end it. So a guess wins with at
+most 3 in a million, and 5 guesses an hour are all there are
+([design §7.4](design.md#74-residual-risks)). A command whose last word is no 6-digit code
+(`code_missing`) is no wrong code: it makes no guess, as chat that starts with a command word
+makes none (#176). A command that waited in the radio (a restart, an update, a re-plug) or in
+the mesh carries the code of the time it was sent: it is refused as `code_invalid` when it
+comes too late, but it does not count as a wrong code. To give one a secret (or a new one,
+which ends the old):
 
 ```sh
 # once: codes_file = "/etc/meshcore-home-gateway/command-codes" under [commands]

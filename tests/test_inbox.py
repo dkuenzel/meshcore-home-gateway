@@ -522,9 +522,10 @@ def test_wrong_codes_lock_the_sender_out_for_a_while_also_across_a_restart(
 ) -> None:
     """#79, RFC 4226 section 7.3: each guess of a code wins with 3 in 10^6, and a host posing
     as the radio feeds thousands a second. After CODE_FAILURE_LIMIT wrong codes within
-    CODE_FAILURE_WINDOW_S (a command without one counts too) the sender's commands are refused
-    from the cached table, the right code's too, and the log says so once; the count is in the
-    state file, so a restart does not end it."""
+    CODE_FAILURE_WINDOW_S the sender's commands are refused from the cached table, the right
+    code's too, and the log says so once; the count is in the state file, so a restart does not
+    end it. A command without a code between the guesses is refused, but it makes no guess and
+    does not count (#176): the bound stays at CODE_FAILURE_LIMIT guesses."""
     caplog.set_level(logging.WARNING)
     secret = b"12345678901234567890"
     config = make_config()
@@ -536,24 +537,28 @@ def test_wrong_codes_lock_the_sender_out_for_a_while_also_across_a_restart(
     good = {code_at(secret, step + d) for d in (-1, 0, 1)}
     wrong = [c for c in (f"{n:06d}" for n in range(20)) if c not in good]
     alice = ALICE.public_key[:6]
-    tries = CODE_FAILURE_LIMIT + 2
+    without = 3  # commands without a code among the guesses, within the burst of received ones
+    texts = [t for n in range(without) for t in ("arm now", f"arm {wrong[n]}")]
+    texts += [f"arm {code}" for code in wrong[without:CODE_FAILURE_LIMIT]]
 
     async def main() -> None:
         radio = EmulatedRadio(contacts=[ALICE])
         async with running(config, radio, tmp_path) as (_, bus, _notes):
             reads = radio.commands().count(Command.GET_CONTACTS)
-            for n in range(tries):
-                text = f"arm {wrong[n]}" if n % 2 else "arm now"
+            for n, text in enumerate(texts):
                 radio.queue_direct_message(alice, text, NOW - 100 + n)
             right = f"arm {code_at(secret, step)}"
             radio.queue_direct_message(alice, right, NOW - 50)
             await bus.wait_for("/received", lambda r: r["text"] == right)
             reasons = [r["command"]["reason"] for r in bus.payloads("/received")]
-            wrong_ones = ["code_missing", "code_invalid"] * CODE_FAILURE_LIMIT
-            assert reasons == wrong_ones[:CODE_FAILURE_LIMIT] + ["code_locked"] * 3
+            guesses = ["code_missing", "code_invalid"] * without
+            guesses += ["code_invalid"] * (CODE_FAILURE_LIMIT - without)
+            assert reasons == [*guesses, "code_locked"]
             assert not bus.payloads("/command")
             assert radio.commands().count(Command.GET_CONTACTS) == reads  # the cache's verdict
         assert caplog.text.count("wrong command codes") == 1
+        stored = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+        assert len(stored["command_code_failures"][sender]) == CODE_FAILURE_LIMIT
         restarted = EmulatedRadio(contacts=[ALICE])
         async with running(config, restarted, tmp_path) as (_, bus, _notes):
             restarted.queue_direct_message(alice, f"status {code_at(secret, step)}", NOW - 40)
@@ -567,6 +572,43 @@ def test_wrong_codes_lock_the_sender_out_for_a_while_also_across_a_restart(
             await bus.wait_for("/command", lambda c: c["event_type"] == "status")
 
     scenario(main)
+
+
+def test_chat_that_starts_with_a_command_word_is_no_guess(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """#176: a direct message whose first word is a command word is a command, also one meant
+    as chat ("arm wrestling tonight?"). From a sender with a code secret it ends in no code and
+    is refused as code_missing, but it makes no guess: the code is read from its last word only.
+    So it counts toward no lock and draws no warning of guessing, however often it comes, and
+    the sender's next command with its code is accepted; the state file keeps no wrong code."""
+    caplog.set_level(logging.WARNING)
+    secret = b"12345678901234567890"
+    config = make_config()
+    sender = ALICE.public_key.hex()
+    config = dataclasses.replace(
+        config, commands=dataclasses.replace(config.commands, secrets=((sender, secret),))
+    )
+    alice = ALICE.public_key[:6]
+    chats = CODE_FAILURE_LIMIT + 3  # within the burst of received messages a sender may send
+
+    async def main() -> None:
+        radio = EmulatedRadio(contacts=[ALICE])
+        async with running(config, radio, tmp_path) as (_, bus, _notes):
+            for n in range(chats):
+                radio.queue_direct_message(alice, "arm wrestling tonight?", NOW - 100 + n)
+            right = f"arm now {code_at(secret, int(NOW // CODE_STEP_S))}"
+            radio.queue_direct_message(alice, right, NOW - 50)
+            command = await bus.wait_for("/command", lambda c: True)
+            assert (command["event_type"], command["args"]) == ("arm", "now")
+            reasons = [r["command"]["reason"] for r in bus.payloads("/received")]
+            assert reasons == ["code_missing"] * chats + [None]
+        assert "wrong command codes" not in caplog.text
+        assert "guessing" not in caplog.text
+
+    scenario(main)
+    stored = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert not stored.get("command_code_failures")
 
 
 def test_genuine_codes_that_came_late_do_not_lock_their_sender_out(tmp_path: Path) -> None:
