@@ -127,8 +127,8 @@ QUOTES: dict[str, tuple[str, ...]] = {
     "To write back from here, add that person under Add a contact.": ("Add a contact",),
     "Remove: the contact leaves the radio; to talk again, add it again.": ("Remove",),
     (
-        "The chat and the gateway's history of the contact stay: messages, positions and battery "
-        "readings, until they are older than Settings shows."
+        "The chat and the gateway's history of the contact stay: messages, positions and readings, "
+        "until they are older than Settings shows."
     ): ("Settings",),
     "Show again brings back all hidden contacts.": ("Show again",),
     (

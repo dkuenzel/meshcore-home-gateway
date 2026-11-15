@@ -407,12 +407,14 @@ def test_the_switches_and_remove_buttons_are_guarded_rows_of_the_state(tmp_path:
 
 
 KEPT = (
-    "The chat and the gateway's history of the contact stay: messages, positions and battery "
-    "readings, until they are older than Settings shows."
+    "The chat and the gateway's history of the contact stay: messages, positions and readings, "
+    "until they are older than Settings shows."
 )
+# what `contacts telemetry --forget KEY off` deletes: the readings and the positions from
+# telemetry; the positions from adverts stay (history.forget_telemetry)
 FORGET = (
     "For your administrator: the gateway deletes the history of a removed contact only as it "
-    "ages; positions and battery readings can go at once."
+    "ages; the readings and positions it asked the contact for can go at once."
 )
 
 
