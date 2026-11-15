@@ -239,6 +239,7 @@ One line per fact, by section.
 
 * At connect, `meshcli` sends `APP_START` and `DEVICE_QUERY` with protocol version 3, and nothing else; each command line is a TCP connection of its own.
 * Interactive `meshcli` resets the flood scope, reads every channel and takes every waiting message when it starts.
+* A client can set the flood scope of every message the radio sends afterwards, the gateway's included: until the next reboot with code 54, and for good with code 63.
 * `meshcli` does not reconnect: after the server closed the link, the next command goes into the closed connection and waits 15 s, and `infos` then prints the self info it read before, with exit status 0.
 * With auto-reconnect on, the `meshcore` library connects again 1 s after the server closed the link and sends only `APP_START`; against a server that accepts and closes at once it tries once a second without end.
 * The library waits 2 s for the answer to `APP_START` at connect and 15 s for any other answer; after four commands without an answer it sends nothing more on that connection.
@@ -2377,12 +2378,29 @@ lines are at the versions named, in their installed files.
   fetch), and `GET_CUSTOM_VARS` (40). A message that waited in the radio was shown and then gone
   from the radio; `sync_msgs` takes it the same way. When the relay answered `SYNC_NEXT_MESSAGE`
   itself with `NO_MORE_MESSAGES`, the client showed nothing and the message stayed in the radio.
-  Code 54 changes only the radio's memory: the firmware does not save it
-  (`MyMesh.cpp:1978-1988`). *Verified:* the same versions; `meshcore_cli.py:1128-1141, 1157,
-  2165-2188, 2300-2321`. *Here:* the port must answer `SYNC_NEXT_MESSAGE` itself with
-  `NO_MORE_MESSAGES`, or a client takes the household's messages; `meshcli` works with that
-  answer, also interactively. *Check:* in a terminal, `meshcli -D -t 127.0.0.1 -p <port>` against
-  the radio above, then `quit`: the `sending pkt` lines show the order.
+  The 54 sent at the start, with 16 zero bytes, resets the scope (next fact). *Verified:* the same
+  versions; `meshcore_cli.py:1128-1141, 1157, 2165-2188, 2300-2321`. *Here:* the port must answer
+  `SYNC_NEXT_MESSAGE` itself with `NO_MORE_MESSAGES`, or a client takes the household's messages;
+  `meshcli` works with that answer, also interactively. *Check:* in a terminal,
+  `meshcli -D -t 127.0.0.1 -p <port>` against the radio above, then `quit`: the `sending pkt`
+  lines show the order.
+* **A client can set the flood scope of every message the radio sends afterwards, the gateway's
+  included: until the next reboot with code 54, and for good with code 63.** The firmware keeps
+  the scope of code 54 (`SET_FLOOD_SCOPE_KEY`) in memory only and resets it only in the
+  constructor (`MyMesh.cpp:913-914`, `:1978-1988`); a 54 with sub-code 1 floods unscoped instead.
+  Code 63 (`SET_DEFAULT_FLOOD_SCOPE`) writes a default scope to flash with `savePrefs`
+  (`:1989-2005`); code 64 reads it (`:2006`). Every flood the radio sends to a contact or a
+  channel takes the scope of 54, else the default of 63 (`:502-525`; `BaseChatMesh.cpp:481`,
+  `:507`). `meshcli` sets both: `scope` (`meshcore_cli.py:3216`, help at `:4869`) and
+  `set default_scope` (`:2808`), through the library's `set_flood_scope` and
+  `set_default_flood_scope` (`meshcore/commands/messaging.py:411`, `:456`). The stand-in answered
+  `OK` to both codes, so the radio's side is read from the firmware only. *Verified:*
+  `companion-v1.18.0` and the library versions above. *Here:* the gateway never sends, reads or
+  manages a scope (`protocol/codes.py` and `core/profile.py` hold none), so a client in a
+  maintenance window can leave every later message of the gateway, alerts included (asset A2 of
+  the [threat model](threat-model.md)), flooding only inside a region, until a reboot or for good.
+  The port's design must answer it (below). *Check:* in the firmware tree,
+  `sed -n '502,525p;913,914p;1978,2010p' examples/companion_radio/MyMesh.cpp`.
 * **`meshcli` does not reconnect: after the server closed the link, the next command goes into
   the closed connection and waits 15 s, and `infos` then prints the self info it read before,
   with exit status 0.** In interactive mode the prompt stays, and only `-D` shows that the link is
@@ -2400,9 +2418,9 @@ lines are at the versions named, in their installed files.
   saw 21 more connections in 20 s. *Verified:* the same versions;
   `meshcore/connection_manager.py:122-167` (1 s at `:137`, the reset at `:143`, the logged failure
   at `:148-152`), `meshcore/meshcore.py:216-223`. *Here:* a client of this library that the port
-  refuses comes back every second, so the port reports a refused address once per window, not
-  once per connection. *Check:* `sed -n '122,167p' meshcore/connection_manager.py` in the
-  environment's `site-packages`.
+  refuses comes back every second, so reporting each connection would flood the audit; how often
+  a refused address is reported is a choice for the port's record (below). *Check:*
+  `sed -n '122,167p' meshcore/connection_manager.py` in the environment's `site-packages`.
 * **The library waits 2 s for the answer to `APP_START` at connect and 15 s for any other answer;
   after four commands without an answer it sends nothing more on that connection.** With every
   answer 1 s late, `infos` and `contacts` worked in 8.4 s. With every answer 2.5 s late, or
@@ -2501,9 +2519,10 @@ What the spike changes in the port's design (#187), against what the documents a
 | `DISABLED` for the key's export and import, as a firmware built without the flags | #187 | `meshcli` 1.6.10: a traceback on export; on import 15 s *(inferred)* | `ERR 1` for codes 23 and 24, unless the app needs `DISABLED` |
 | `RUN_CLI_COMMAND` filtered by its verb | #187 | `ERR 1` and a `CLI_REPLY` text both work; the text is shown as it is | A text can say why |
 | `SYNC_NEXT_MESSAGE` answered with `NO_MORE_MESSAGES` | #187 | Accepted by `sync_msgs` and the interactive start; without it both take the household's messages | Required |
-| One address, which may reconnect; the app reconnects by itself | #187 | `meshcli` never reconnects; each command line is a new connection, 0.3 s apart at best, as far apart as the person types | Kept. A return grace of 60 s can end a window between two typed commands: the same address gets the idle limit, or the card says so |
-| A refused address is refused and reported | #187 | A library client with auto-reconnect returns every second, without end | Reported once per window, the audit rate-limited |
-| No settings policy in the window; a report of what changed | #187 | `set radio` switches repeat off unasked; `set lat` sends the other coordinate again | The report compares the repeat flag and the position too |
+| One address, which may reconnect; the app reconnects by itself | #187 | `meshcli` never reconnects; each command line is a new connection, 0.3 s apart at best, as far apart as the person types | Kept. A return grace of 60 s can end a window between two typed commands. **(S) A choice for the maintainer in the port's record (2.4):** keep the decided 60 s and let the card say that `meshcli` needs a new window after a pause (no added exposure); or give the same address the idle limit, 5 min (the lent radio stays reachable from that address up to 5 min after the client left instead of 60 s, with the alert path down meanwhile, apart from R1's yield) |
+| A refused address is refused and reported | #187 | A library client with auto-reconnect returns every second, without end | **(Q) A choice for the maintainer in the port's record (2.4):** report a refused address at its first attempt, and again when another address or a later burst arrives; the audit counts attempts per address and the card shows the count. The decided design reports each refused address, so any thinning is a quieter warning |
+| A client changes only what it is asked to | #187 | A client can set the flood scope of every later flood the radio sends: in memory with 54 until a reboot, in flash with 63 (`MyMesh.cpp:913-914`, `:1978-2005`). The gateway manages no scope | **(S) For the port's record (2.4):** at the window's end the port sends 54 without a key (a reset), or it refuses 54 with a key or with sub-code 1, and 63; the report reads the default scope with 64 before and after the window and names a change |
+| No settings policy in the window; a report of what changed | #187 | `set radio` switches repeat off unasked; `set lat` sends the other coordinate again | The report compares the repeat flag and the position too, and the default flood scope (row above) |
 | Dangerous codes refused, the PIN guarded | #187, [ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md)'s deny list | Every client reads the PIN in `DEVICE_INFO` | The threat model notes it, or the relayed `DEVICE_INFO` blanks it |
 | `tools/emulated_radio.py` serves the radio like a WiFi companion | [testing.md](testing.md) | The same frames and parser, but not the same handling of a second client, and `ERR 1` for every settings command | The port's tests need both gaps closed, or the firmware harness |
 
