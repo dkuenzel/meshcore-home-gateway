@@ -170,8 +170,9 @@ The script asks for confirmation before it creates anything. Then it downloads t
 settings with the program's own configuration code (when it installs a clone: already before the
 container is created), logs in to the broker with the user name and password given, reads the
 radio's channels and contacts for the last questions, writes the configuration and starts the
-service. When the broker refuses the login, the script shows its answer and offers to enter the
-broker settings again (without dialogs it warns and goes on: the service keeps trying). Once the
+service. When the broker refuses the login, the script logs its answer, offers to enter the
+broker settings again and shows the answer below that question (without dialogs it warns and
+goes on: the service keeps trying). Once the
 service runs, the script has the gateway check itself (`meshcore-home-gateway doctor`: the
 configuration, the broker, the radio as the gateway reports it, the container) and repeats the
 check for about a minute while the radio connects. The final message shows the result of the

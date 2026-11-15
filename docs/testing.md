@@ -421,10 +421,16 @@ with its kind and size. It renders each text in English and in every catalog of
 `deploy/proxmox/locale/`, so a language added later is checked too, wraps it as whiptail 0.52.24
 does and fails when it needs more lines than its box shows. A value filled into a text is the
 script's own text where the script gives one, else the longest realistic value that
-`tests/dialog_texts.py` names with its reason (`FIELD_VALUES`, `EMBEDDED`); the final message and
-the plan for the radio are put together as the script does, in the combinations that can occur. A
-box with `--scrolltext` is exempt, as its text scrolls. A dialog the test cannot read, or a value
-without a worst case, fails it too.
+`tests/dialog_texts.py` names with its reason (`FIELD_VALUES`, `EMBEDDED`, each form of a value
+a candidate). A value that is the program's message, such as what `check-config --broker`
+printed after a failed login, is built from the program's own catalog in the same language, as
+the installer runs it (`DIALOG_VALUES`). The final message and the plan for the radio are put
+together as the script does, in the combinations that can occur; the plan with as many contacts
+as its box holds before the installer lets it scroll (`PLAN_CONTACTS`). It also lays out the
+rows of every menu as whiptail does in a terminal of 80 columns, the rows the script fills into
+an array with their worst cases (`LIST_ROWS`), and fails when a tag or an item is shortened or
+runs over the box's border. A box with `--scrolltext` is exempt, as its text scrolls. A dialog
+the test cannot read, or a value without a worst case, fails it too.
 
 CI has no whiptail, so the wrapping is a model of newt's code. After changing the model, or to
 check another version of whiptail, compare the model with the real program:
@@ -434,8 +440,9 @@ check another version of whiptail, compare the model with the real program:
 ```
 
 It needs whiptail and tmux (`apt install whiptail tmux`). It runs whiptail in tmux's pseudo
-terminal over every text of every language and over the cases the test measured, reads each screen,
-and exits non-zero when a line differs from the model or the box shows more or fewer lines.
+terminal over every text and every menu of every language and over the cases the test measured,
+reads each screen, and exits non-zero when a line differs from the model, the box shows more or
+fewer lines, or whiptail cuts other rows of a menu than the model does.
 
 ## Release check
 

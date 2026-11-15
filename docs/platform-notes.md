@@ -84,6 +84,7 @@ One line per fact, by section.
 * whiptail takes every argument that starts with `-` for an option, also a text, a menu tag or a list item, unless it follows `--`.
 * A message box shows as many lines as fit its height and cuts the rest without a mark; with `--scrolltext` the text scrolls, but Enter no longer closes the box.
 * A menu shows as many lines of its text as fit above its list and cuts the rest without a mark; a checklist one line more.
+* A menu shortens its tags and items to fit a line of the terminal, without a mark; with `--notags` it writes each item whole, and one wider than the box takes every row over its border.
 
 **[Mosquitto](#mosquitto)**
 
@@ -780,13 +781,22 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   experiment, all three versions; the text of the final message for each source, with
   0.52.24-2ubuntu2; newt `textbox.c:121-125` (a scrolling text box takes the focus). *Here:*
   `summary()` shows the final message in a box of height 24 (18 lines) without `--scrolltext`.
-  `tests/test_dialog_texts.py` checks that it fits in every language for an installation from a
-  release, a pre-release, `main` or a clone at a path of up to 120 characters, with a container
-  ID of four digits and a radio over TCP at an IPv6 address; with `--ref` and a branch, its
-  commands wrap onto more lines and the last two can be cut. The same text is logged to standard
-  error before the box; with an xterm-like `TERM`, whiptail draws on the terminal's alternate
-  screen, so the text shows again when the box closes (with `TERM=linux` the box stays on the
-  screen instead). *Check:*
+  `tests/test_dialog_texts.py` checks that it fits in every language with each command that runs
+  the installer again: the latest release's, a pre-release's, `main`'s and a clone's at a path of
+  120 characters; with a container ID of four digits and a radio over TCP at an IPv6 address
+  written out in full with its port (46 characters). The address stands where its length breaks
+  no other line, so one of up to 75 characters with its port, a host name of 70, keeps the
+  message at 18 lines in English and German. With `--ref` and a ref of five characters or more,
+  the commands take a line more and the message's last line is cut. The same text is logged to
+  standard error before the box; with an xterm-like `TERM`, whiptail draws on the terminal's
+  alternate screen, so the text shows again when the box closes (with `TERM=linux` the box stays
+  on the screen instead). `check_broker()` does the same with the program's message after a
+  failed login: it logs it, then asks in a yes/no box of 24x78 (18 lines) with the question
+  before the message, which holds the start warnings, the error and the hint of a refused login
+  without a user name and TLS in German (17 lines); a longer message loses its own end, not the
+  question. The plan for the radio's settings is a message box of 24x78 too, which holds the
+  settings and up to four contacts with names of 31 bytes (`PLAN_CONTACTS`); with more contacts
+  the installer gives it `--scrolltext`. *Check:*
   `whiptail --msgbox "$(seq 1 30)" 12 40` shows 1 to 6 and closes with Enter;
   `whiptail --scrolltext --msgbox "$(seq 1 30)" 12 40` stays open on Enter; Tab, then Enter
   closes it.
@@ -805,17 +815,47 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   checklist's less 3), `:23` and `:604-612` (the button row is 1 line, 3 with `--fb`). *Here:*
   the installer's menus and checklists are 20x78 with a list of 10 (`show_dialog()`), which
   leaves 3 and 4 lines of text, and each of their texts is a single line. `show_dialog()`'s
-  yes/no boxes are 14x72 and show 8 lines; two others are 18x78 and 20x78 (12 and 14 lines).
-  Up to 2.2.0 they were 12x72 and showed 6: the German question before a radio over TCP without
-  authentication needs 7 and was cut after "TCP trotzdem verwenden", without the question and
-  what *No* does (#190). `tests/test_dialog_texts.py` wraps every text of every dialog in every
-  language as whiptail does, with the longest realistic values, and fails when one needs more
-  lines than its box shows; `tests/manual/dialog_texts.py` compares that model with the real
-  whiptail ([testing.md](testing.md#the-length-of-the-installers-texts)). On 2026-11-15 the two
-  agreed on every text of the installer's 122 dialogs in English and German, with
-  0.52.24-2ubuntu2. *Check:*
+  yes/no boxes are 14x72 and show 8 lines; the confirmation is 18x78 (12 lines) and the question
+  after a failed login 24x78 (18 lines). Up to 2.2.0 `show_dialog()`'s were 12x72 and showed 6:
+  the German question before a radio over TCP without authentication needs 7 and was cut after
+  "TCP trotzdem verwenden": the setting `tcp_unauthenticated = true`, the question mark and what
+  *No* does were not shown (#190). `tests/test_dialog_texts.py` wraps every text of every dialog
+  in every language as whiptail does, with the longest realistic values, and fails when one
+  needs more lines than its box shows; `tests/manual/dialog_texts.py` compares that model with
+  the real whiptail ([testing.md](testing.md#the-length-of-the-installers-texts)). On
+  2026-11-15 the two agreed on every text of the installer's 122 dialogs in English and German,
+  with 0.52.24-2ubuntu2. *Check:*
   `whiptail --menu -- "$(seq 1 30)" 20 78 3 a A b B c C` shows 1 to 10 above the list; with
   `--fb` before `--menu`, 1 to 8.
+* **A menu shortens its tags and items to fit a line of the terminal, without a mark; with
+  `--notags` it writes each item whole, and one wider than the box takes every row over its
+  border.** The list is as wide as the widest tag and the widest item and a space, at most the
+  terminal's columns less 6 (74 in 80), 2 more when it scrolls. With tags, the tag column and the
+  item column are shortened in turn, the wider first, until a row fits: beside a tag of 60
+  characters, as a device's path in `/dev/serial/by-id/`, each keeps 37 columns, and the item
+  "radio with WiFi firmware (TCP, no authentication)" shows as "radio with WiFi firmware (TCP, no
+  aut". With `--notags` the tags are not shown and the items are not shortened; the list is
+  centred in the box, so in a box of 78 columns an item of up to 75 fits, 72 when the list has
+  more rows than its height and scrolls (its bar takes 3 columns). A wider item widens the list,
+  and every row runs over the box's right border. A checklist writes each row as its tag, padded
+  to the widest, two spaces and its item, and shortens neither. *Verified:* on 2026-11-15 with
+  0.52.24-2ubuntu2 alone, as above, menus of 20x78 with a list of 10 in a terminal of 80x24:
+  with tags, device paths of 63 and 74 characters and the TCP item in English and German; with
+  `--notags`, items of 72 to 76 columns with and without a scrolling list, and the device names
+  of a CP2102 (69 characters) and a CP2102N with a serial number of 32 hex digits (98); and a
+  checklist with two contacts, their keys of 64 hex digits as tags, which showed six letters of
+  each name and no right border. newt `r0-52-24` `dialogboxes.c:329-347` (the list's width, its
+  position and the shortening), `:349-367` (each row, with and without tags), `:477-480` (a
+  checklist's row). *Here:* `show_dialog()` gives every menu `--notags`: the tag is the value an
+  answers file names, the item says what it is. The radio menu shows a device by its name in
+  `/dev/serial/by-id/`; `ask_radio()` shortens a name longer than 72 characters to its first 34
+  and its last 35 with `...` between them (`ITEM_COLUMNS`), the vendor and the serial number.
+  `tests/test_dialog_texts.py` checks every row of every menu in every language with this rule,
+  and `tests/manual/dialog_texts.py` compares it with whiptail. The checklists of channels and
+  contacts are not checked: their rows are the radio's, and a contact's 64-digit key as its tag
+  leaves a few letters of its name in 80 columns. *Check:*
+  `whiptail --menu -- Radio 20 78 10 /dev/serial/by-id/usb-Example_USB_Single_Serial_0123456789-if00 x tcp 'radio with WiFi firmware (TCP, no authentication)'`
+  shows the item cut after "no aut"; with `--notags` before `--menu`, whole.
 
 ## Mosquitto
 
