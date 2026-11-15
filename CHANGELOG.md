@@ -16,7 +16,8 @@ format, the command line and Home Assistant discovery are public interfaces
   `burst_s` that holds both; `probe` prints both times on air on its line `burst`, against the
   configuration's `burst_s`. The new section *Radio presets* of
   [configuration.md](docs/configuration.md#radio-presets) gives the times and the `burst_s` for
-  common presets, also where a long message alone exceeds the default (#181).
+  common presets, also where a long message alone exceeds the default. At such a preset, set
+  `[airtime] burst_s` to the value the log or `probe` names and restart the service (#181).
 - Removing a contact keeps its chat and what the gateway's history holds of it, but the
   dashboard did not say so, and privacy.md named removing a contact as the way to stop keeping
   it. The question before *Remove*, the fold *What removing does* and *Help* now say that the
@@ -71,7 +72,9 @@ format, the command line and Home Assistant discovery are public interfaces
   command makes longer. A new test wraps every text of every dialog in every
   language as whiptail does, with the longest realistic values and the program's messages in
   that language, lays out the rows of every menu, and fails when a text needs more lines than
-  its box shows or a menu cuts a row (#190).
+  its box shows or a menu cuts a row. Nothing to do: the installer of this release shows them at
+  the next installation or `--reconfigure`; `--update` asks nothing and shows no final message
+  (#190).
 - The dashboard stated one region's rule as a fact: *Gateway*'s fold *What the graph shows* and
   the row *Airtime budget* on *Settings* said that the law allows a radio only a share of each
   hour, and *Settings* spoke of settings that protect the law. The gateway restricts no radio

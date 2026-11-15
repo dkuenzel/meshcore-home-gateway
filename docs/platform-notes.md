@@ -810,8 +810,7 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   `tests/test_dialog_texts.py` lays out four realistic plans with the values `probe --list
   profile` prints, such as every kind of node added automatically and telemetry for contacts,
   with up to 16 contacts named with 31 bytes; with all six settings such a box lists 2 to 8 of
-  them. Up to 2.2.0 the box held the settings and four contacts only with the short values the
-  test assumed; with real values it cut its end also with four (#190). *Check:*
+  them (#190). *Check:*
   `whiptail --msgbox "$(seq 1 30)" 12 40` shows 1 to 6 and closes with Enter;
   `whiptail --scrolltext --msgbox "$(seq 1 30)" 12 40` stays open on Enter, without an arrow or
   a right border beside 1 to 6; Tab, then Enter closes it.
@@ -834,9 +833,9 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   after a failed login 24x78 (18 lines). Up to 2.2.0 `show_dialog()`'s were 12x72 and showed 6:
   the German question before a radio over TCP without authentication needs 7 and was cut after
   "TCP trotzdem verwenden": the setting `tcp_unauthenticated = true`, the question mark and what
-  *No* does were not shown (#190). `tests/test_dialog_texts.py` wraps every text of every dialog
-  in every language as whiptail does, with the longest realistic values, and fails when one
-  needs more lines than its box shows; `tests/manual/dialog_texts.py` compares that model with
+  *Nein* (No) does were not shown (#190). `tests/test_dialog_texts.py` wraps every text of every
+  dialog in every language as whiptail does, with the longest realistic values, and fails when
+  one needs more lines than its box shows; `tests/manual/dialog_texts.py` compares that model with
   the real whiptail ([testing.md](testing.md#the-length-of-the-installers-texts)). On
   2026-11-15 the two agreed on every text of the installer's 122 dialogs in English and German,
   with 0.52.24-2ubuntu2. *Check:*
@@ -871,7 +870,7 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   `tests/test_dialog_texts.py` checks every row of every menu in every language with this rule,
   and `tests/manual/dialog_texts.py` compares it with whiptail. The checklists of channels and
   contacts are not checked: their rows are the radio's, and a contact's 64-digit key as its tag
-  leaves a few letters of its name in 80 columns. *Check:*
+  leaves a few letters of its name in 80 columns (#191). *Check:*
   `whiptail --menu -- Radio 20 78 10 /dev/serial/by-id/usb-Example_USB_Single_Serial_0123456789-if00 x tcp 'radio with WiFi firmware (TCP, no authentication)'`
   shows the item cut after "no aut"; with `--notags` before `--menu`, whole.
 
