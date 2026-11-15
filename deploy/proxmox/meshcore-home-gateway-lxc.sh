@@ -58,7 +58,7 @@ ct.gateway ct.template_storage radio.choice targets.channels targets.contacts "
 # --- language packs: written by `make translations` from deploy/proxmox/locale/*.po; do not edit
 L10N_ORDER=(en de)
 declare -A L10N_NAME=([en]=English [de]=Deutsch)
-declare -A L10N_SHA256=([de]=f22df31d1e3ece34f9b1e229bba1030b09c98225cf0818885e8e4d10adfe4d39)
+declare -A L10N_SHA256=([de]=4bb2aca53bf03e347725e1afc759dd75e2ac2ce6028ff990e5c3dfe2bff86b84)
 # --- end of language packs
 L10N_MENU=()   # code, name, code, name, ...: the items of the language menus
 for code in "${L10N_ORDER[@]}"; do L10N_MENU+=("$code" "${L10N_NAME[$code]}"); done
@@ -896,21 +896,27 @@ limit_journal() {  # limit_journal CTID: the journal keeps at most 100 MB of the
 # --- configuration --------------------------------------------------------------------------
 
 ask_radio() {
-  local -a choices=()
-  local path name short item radio
+  local -a choices=() paths=() names=()
+  local -A shortened=()
+  local path name index radio
   shopt -s nullglob
   for path in "$SERIAL_DIR"/*; do
     name=$(basename -- "$path")
     if (( ${#name} > ITEM_COLUMNS )); then   # its start and its end: the vendor, the serial number
-      short="${name:0:ITEM_COLUMNS/2-2}...${name: -(ITEM_COLUMNS/2-1)}"
-      for item in "${choices[@]}"; do   # another's too: more of its end, where serials differ
-        if [[ $item == "$short" ]]; then short="...${name: -(ITEM_COLUMNS-3)}"; break; fi
-      done
-      name=$short
+      name="${name:0:ITEM_COLUMNS/2-2}...${name: -(ITEM_COLUMNS/2-1)}"
+      shortened[$name]=$(( ${shortened[$name]:-0} + 1 ))
     fi
-    choices+=("$path" "$name")
+    paths+=("$path") names+=("$name")
   done
   shopt -u nullglob
+  for index in "${!paths[@]}"; do   # names that read the same: each more of its end, the serial
+    name=${names[index]}
+    if (( ${shortened[$name]:-0} > 1 )); then
+      name=$(basename -- "${paths[index]}")
+      name="...${name: -(ITEM_COLUMNS-3)}"
+    fi
+    choices+=("${paths[index]}" "$name")
+  done
   # Translators: security text (docs/translations.md): translate all of it, add nothing.
   choices+=("tcp" "$(t 'radio with WiFi firmware (TCP, no authentication)')")
   if (( ! INTERACTIVE )) && [[ ! -v "ANSWERS[radio.choice]" ]]; then
@@ -1307,10 +1313,12 @@ choose_profile() {  # the radio's name, and what the managed profile changes (AD
   if (( INTERACTIVE )); then
     # whiptail cuts what its box does not hold without a mark, and with --scrolltext Enter does
     # not close the box and nothing marks the text below: the box lists as many contacts as it
-    # holds (24 rows: 18 lines of 74 columns) and counts the others, which the log lists
+    # holds (24 rows: 18 lines of 74 columns) and counts the others, which the log lists. Each
+    # contact listed takes a line or more and the heading above them one: 17 at most fit
     local box listed
     listed=$(grep -c '^contact' <<<"$lines" || true)
-    box=$(plan_text t "$lines")
+    if (( listed > 17 )); then listed=17; fi
+    box=$(plan_text t "$lines" "$listed")
     while (( listed > 0 )) && ! fits "$box" 74 18; do
       listed=$(( listed - 1 ))
       box=$(plan_text t "$lines" "$listed")
@@ -1320,10 +1328,18 @@ choose_profile() {  # the radio's name, and what the managed profile changes (AD
 }
 
 fits() {  # fits TEXT COLUMNS LINES: TEXT, as whiptail wraps it in lines of COLUMNS, needs at most
-  # LINES. It may say no to a text that fits, never yes to one that does not: fold counts bytes,
-  # never fewer than the cells a character takes, and breaks a line no later than whiptail does
+  # LINES. It may say no to a text that fits, never yes to one that does not. fold counts bytes
+  # and breaks at the last blank: first, each space whiptail breaks a line at becomes blanks, one
+  # a cell (U+3000 two), and each character below U+2300 but Hangul's (U+1100-U+11FF), as an
+  # umlaut, and U+FFFD one byte, as each takes one cell or none. Any other keeps its bytes, at
+  # least 3, more than its cells also where a long word breaks before a wide one: fold never
+  # counts fewer cells than whiptail and breaks a line no later than whiptail does
   local text=${1//'\n'/$'\n'} count   # whiptail takes the two characters \n for a line break
-  count=$(printf '%s\n' "$text" | LC_ALL=C fold -s -w "$2" | wc -l)
+  count=$(printf '%s\n' "$text" | LC_ALL=C sed -e $'s/\xe3\x80\x80/  /g' -e $'s/\xe1\x9a\x80/ /g' \
+      -e $'s/\xe2\x80[\x80-\x86\x88-\x8a\xa8\xa9]/ /g' -e $'s/\xe2\x81\x9f/ /g' \
+      -e $'s/[\xc2-\xdf][\x80-\xbf]/x/g' -e $'s/\xe0[\x80-\xbf][\x80-\xbf]/x/g' \
+      -e $'s/\xe1[\x80-\x83\x88-\xbf][\x80-\xbf]/x/g' -e $'s/\xe2[\x80-\x8b][\x80-\xbf]/x/g' \
+      -e $'s/\xef\xbf\xbd/x/g' | LC_ALL=C fold -s -w "$2" | wc -l)
   (( count <= $3 ))
 }
 

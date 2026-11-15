@@ -59,7 +59,7 @@ format, the command line and Home Assistant discovery are public interfaces
   The radio menu cut its item "radio with WiFi firmware (TCP, no authentication)" after "no aut"
   as soon as a serial device was there, and the device's path and name to 37 columns: the menus
   now show their items without their tags, a device's name longer than 72 characters keeps its
-  start and its end (more of its end when another device's would read the same), and the setup's
+  start and its end (each more of its end when two would read the same), and the setup's
   items start with the names the docs and an answers file give them, default and advanced. The plan for the radio's settings lost its last lines, contacts and the
   settings left alone, with the values the radio reports already with four contacts; its box has
   24 rows, lists as many contacts as it holds and counts the others, which the installer's

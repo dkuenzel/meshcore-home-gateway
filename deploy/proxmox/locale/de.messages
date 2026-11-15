@@ -59,7 +59,7 @@ msg	The service leaves alone:	Der Dienst lässt unverändert:
 msg	Use TLS for the broker connection? Without it the password, the messages, the positions and the commands cross the network in the clear.	TLS für die Verbindung zum Broker verwenden? Ohne TLS gehen das Passwort, die Nachrichten, die Positionen und die Befehle unverschlüsselt durch das Netzwerk.
 msg	With radio.profile.manage = observe the service only reports what differs:	Mit radio.profile.manage = observe meldet der Dienst nur, was abweicht:
 msg	a radio over TCP needs radio.tcp_unauthenticated = true; for USB, install a new container	ein Funkgerät über TCP braucht radio.tcp_unauthenticated = true; für USB installiere einen neuen Container
-msg	advanced (all settings): container, network, topics, Home Assistant	erweitert (alle Einstellungen): Container, Netzwerk, Topics, Home Assistant
+msg	advanced (all settings): container, network, topics, Home Assistant	Erweitert (alle Einstellungen): Container, Netzwerk, Topics, Home Assistant
 msg	answers file line {line}: expected key=value	Antwortdatei, Zeile {line}: key=value erwartet
 msg	answers file line {line}: not valid UTF-8 (save the file as UTF-8)	Antwortdatei, Zeile {line}: kein gültiges UTF-8 (speichere die Datei als UTF-8)
 msg	answers file: targets.channels: expected channel indices, comma-separated	Antwortdatei: targets.channels: Kanalnummern erwartet, durch Kommas getrennt

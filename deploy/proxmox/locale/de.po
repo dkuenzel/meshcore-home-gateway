@@ -276,7 +276,7 @@ msgid "a radio over TCP needs radio.tcp_unauthenticated = true; for USB, install
 msgstr "ein Funkgerät über TCP braucht radio.tcp_unauthenticated = true; für USB installiere einen neuen Container"
 
 msgid "advanced (all settings): container, network, topics, Home Assistant"
-msgstr "erweitert (alle Einstellungen): Container, Netzwerk, Topics, Home Assistant"
+msgstr "Erweitert (alle Einstellungen): Container, Netzwerk, Topics, Home Assistant"
 
 #, python-brace-format
 msgid "answers file line {line}: expected key=value"

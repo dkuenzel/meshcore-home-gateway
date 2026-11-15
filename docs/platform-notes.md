@@ -805,12 +805,21 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   `--scrolltext`: `choose_profile()` lists as many of its contacts as `fold -s -w 74` (under
   `LC_ALL=C`) says fit in 18 lines, and counts the others in a line of their own ("contacts not
   listed here: 3 (see the installer's output)"); the log before the box lists every contact.
-  fold counts bytes, never fewer than the cells a character takes, and breaks a line no later
-  than whiptail does, so it may list a contact fewer than would fit, never one too many.
+  fold counts bytes and breaks at the last blank, so `fits()` first writes each space whiptail
+  breaks a line at as blanks, one a cell (U+3000 two), and each character below U+2300 but
+  Hangul's (U+1100 to U+11FF), such as an umlaut, Greek or Cyrillic, a typographic quote or
+  dash, and U+FFFD as one byte: each takes one cell or none. Any other character keeps its 3 or
+  4 bytes, more than the 2 cells of a wide one, also where whiptail breaks a long word before
+  it. So fold never counts fewer cells than whiptail and breaks a line no later: a contact whose
+  name holds umlauts takes the one line whiptail gives it, not two; with emoji or CJK in names
+  the box may list fewer contacts than would fit, never one too many. It tries at most 17
+  numbers of contacts, from the most that can fit down, however many the radio holds.
   `tests/test_dialog_texts.py` lays out four realistic plans with the values `probe --list
   profile` prints, such as every kind of node added automatically and telemetry for contacts,
   with up to 16 contacts named with 31 bytes; with all six settings such a box lists 2 to 8 of
-  them (#190). *Check:*
+  them. It checks `fits()` against texts of umlauts, wide letters, every space whiptail breaks
+  at and a radio's name of control characters written as `\u0001` around a Unicode space
+  (#190). *Check:*
   `whiptail --msgbox "$(seq 1 30)" 12 40` shows 1 to 6 and closes with Enter;
   `whiptail --scrolltext --msgbox "$(seq 1 30)" 12 40` stays open on Enter, without an arrow or
   a right border beside 1 to 6; Tab, then Enter closes it.
@@ -865,8 +874,8 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   `default` or `advanced`. The radio menu shows a device by its name in `/dev/serial/by-id/`;
   `ask_radio()` shortens a name longer than 72 characters to its first 34 and its last 35 with
   `...` between them (`ITEM_COLUMNS`), the vendor and the serial number, or, when another
-  device's name already shortens to the same, to `...` and its last 69, where serial numbers
-  differ.
+  device's name shortens to the same, both to `...` and their last 69, where serial numbers
+  differ: each row shows the digits that tell it from the other.
   `tests/test_dialog_texts.py` checks every row of every menu in every language with this rule,
   and `tests/manual/dialog_texts.py` compares it with whiptail. The checklists of channels and
   contacts are not checked: their rows are the radio's, and a contact's 64-digit key as its tag

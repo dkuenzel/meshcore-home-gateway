@@ -1137,14 +1137,28 @@ PLAN_LEFT: Final = "The service leaves alone:"
 PLAN_NOT_LISTED: Final = "contacts not listed here: {count} (see the installer's output)"
 
 
+def _fold_byte(char: str) -> bytes:
+    """What fits() gives fold for a character: a space whiptail breaks a line at as blanks, one
+    a cell (U+3000 two); one byte for a character below U+2300 but Hangul's (U+1100-U+11FF), as
+    an umlaut, and for U+FFFD, each of which takes one cell or none; any other its bytes, at
+    least 3, more than the cells it takes."""
+    code = ord(char)
+    if code > 0x7F and char in SPACES:
+        return b" " * max(cell_width(char), 1)
+    if (0x7F < code < 0x2300 and not 0x1100 <= code <= 0x11FF) or code == 0xFFFD:
+        return b"x"
+    return char.encode()
+
+
 @functools.cache
 def folded_lines(text: str, columns: int) -> int:
     """The lines `LC_ALL=C fold -s -w COLUMNS` makes of `text` and a final line break, as the
-    installer's fits() counts them: bytes, never fewer than a character's cells, and a break at
-    the last blank within the columns, never later than whiptail breaks."""
+    installer's fits() counts them, after each character became what _fold_byte() says: never
+    fewer columns than a character's cells, and a break at the last blank within the columns,
+    never later than whiptail breaks."""
     folded = subprocess.run(  # noqa: S603 - fold with our arguments
         ["fold", "-s", "-w", str(columns)],  # noqa: S607 - the system's fold, as the installer's
-        input=(clean_newlines(text) + "\n").encode(),
+        input=b"".join(map(_fold_byte, clean_newlines(text) + "\n")),
         capture_output=True,
         check=True,
         env={"LC_ALL": "C", "PATH": os.environ.get("PATH", "/usr/bin:/bin")},
@@ -1187,8 +1201,10 @@ class Plan:
 
     def listed(self, translate: Language, contacts: int) -> int:
         """How many of `contacts` contacts the installer lists in the box: all, or one fewer
-        until fits() says the box holds the text, or none (choose_profile)."""
-        listed = contacts
+        until fits() says the box holds the text, or none (choose_profile). Each contact listed
+        takes a line or more and the heading above them one: it starts at one fewer than the
+        box's lines at most."""
+        listed = min(contacts, PLAN_BOX.lines - 1)
         while listed > 0 and (
             folded_lines(self.text(translate, contacts, listed), PLAN_BOX.text_width)
             > PLAN_BOX.lines

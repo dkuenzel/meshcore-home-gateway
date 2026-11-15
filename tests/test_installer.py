@@ -2878,6 +2878,75 @@ def test_the_plan_lists_the_contacts_its_box_holds(
     assert result.stderr.count(name) == contacts  # the log lists every contact
 
 
+PLAN_SET = ("manual_add", "telemetry", "advert_location", "duty_cycle_percent")
+
+
+def plan_lines(contacts: list[str], settings: tuple[str, ...] = PLAN_SET) -> str:
+    """`probe --list profile` of a new radio with tested firmware, `settings` set and `contacts`
+    (their names) made favourites, as PROBE_PLAN takes it (printf %b)."""
+    values = {name: (live, wanted) for name, live, wanted in dialog_texts.PLAN_SETTINGS}
+    lines = ["name\tRadio", "tested\tyes", "writes\tyes"]
+    lines += [f"change\t{key}\t{values[key][0]}\t{values[key][1]}\tset" for key in settings]
+    lines += [f"contact\t{n:02x}{'0' * 62}\tfavourite\t{name}" for n, name in enumerate(contacts)]
+    return "".join(f"{line}\n" for line in lines).replace("\t", "\\t").replace("\n", "\\n")
+
+
+def test_the_plan_lists_every_contact_with_umlauts_its_box_holds(
+    tmp_path: Path, english_only: Path
+) -> None:
+    """The box lists every contact whiptail shows, also with names of umlauts that take more
+    bytes than cells (#190): on a new radio in German, contacts picked from the radio's own are
+    made favourites, each in a line of 77 bytes and 73 cells; 12 of them fill the box's 18 lines.
+    fits() counted bytes, two lines each, and listed 7."""
+    host = install_stubs(tmp_path)
+    names = [f"Funkgerät Mühlenhöhe Süd {n:02d}" for n in range(1, 13)]
+    assert {len(name.encode()) for name in names} == {31}
+    dialog = ["de", "default", str(host.serial), "broker.example.org", "no", "bridge", "pw"]
+    dialog += ["yes", "1", "", ""]
+    result = run_installer(host, dialog=dialog, env={"PROBE_PLAN": plan_lines(names)})
+    assert result.returncode == 0, result.stderr
+    (box,) = [c for c in host.calls("whiptail") if any("duty_cycle_percent" in a for a in c)]
+    text = box[-3]
+    assert [name for name in names if name in text] == names
+    assert "Hier nicht aufgeführte Kontakte" not in text
+    assert len(dialog_texts.PLAN_BOX.layout(text)) == dialog_texts.PLAN_BOX.lines
+
+
+def test_the_plan_is_measured_a_few_times_whatever_its_contacts(host: Host) -> None:
+    """choose_profile measures the plan with fits() no more often than the box can list
+    contacts: 120 contacts took 10 s before the box when it tried each number from 120 down
+    (#190). Each measure runs fold once."""
+    fold = shutil.which("fold")
+    assert fold is not None
+    stub = host.root / "bin" / "fold"
+    stub.write_text(
+        f'#!/usr/bin/env bash\nprintf "fold\\n" >>"$STUB/calls.log"\nexec {fold} "$@"\n'
+    )
+    stub.chmod(0o755)
+    names = [f"Handheld of a neighbour {n:04d}" for n in range(120)]
+    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pw", "yes", "1"]
+    result = run_installer(host, dialog=[*dialog, "", ""], env={"PROBE_PLAN": plan_lines(names)})
+    assert result.returncode == 0, result.stderr
+    (box,) = [c for c in host.calls("whiptail") if any("duty_cycle_percent" in a for a in c)]
+    assert "contacts not listed here: " in box[-3]
+    assert 1 <= len(host.calls("fold")) <= dialog_texts.PLAN_BOX.lines
+
+
+def test_the_box_lists_17_contacts_when_nothing_else_changes(host: Host) -> None:
+    """The most contacts the box can list: its heading and 17 contacts fill its 18 lines, when
+    the radio's settings are as the profile wants them (#190)."""
+    names = [f"Handheld of a neighbour {n:04d}" for n in range(17)]
+    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pw", "yes", "1"]
+    plan = plan_lines(names, settings=())
+    result = run_installer(host, dialog=[*dialog, "", ""], env={"PROBE_PLAN": plan})
+    assert result.returncode == 0, result.stderr
+    (box,) = [c for c in host.calls("whiptail") if any(names[0] in a for a in c)]
+    text = box[-3]
+    assert [name for name in names if name in text] == names
+    assert "contacts not listed here" not in text
+    assert len(dialog_texts.PLAN_BOX.layout(text)) == dialog_texts.PLAN_BOX.lines
+
+
 def test_the_menus_show_their_items_and_shorten_a_long_device_name(host: Host) -> None:
     """A menu shows its items without their tags (--notags), which are the answers' values: the
     setup's items start with the names the docs and the answers file give them. A device's name
@@ -2917,16 +2986,21 @@ def test_the_menus_show_their_items_and_shorten_a_long_device_name(host: Host) -
     assert rows["tcp"] == "radio with WiFi firmware (TCP, no authentication)"
 
 
-def test_two_devices_whose_names_differ_in_the_middle_get_two_rows(host: Host) -> None:
-    """ask_radio keeps a long name's start and end; two names that differ only between them, as
-    those of two CP2102N whose serial numbers differ in their first digits, would make two equal
-    rows: the second shows more of its end, where the serial numbers differ (#190)."""
+@pytest.mark.parametrize("starts", [("1a2b3c4d", "5e6f7a8b"), ("1a2b3c4d", "5e6f7a8b", "9c0d1e2f")])
+def test_devices_whose_names_differ_in_the_middle_show_their_ends(
+    host: Host, starts: tuple[str, ...]
+) -> None:
+    """ask_radio keeps a long name's start and end; names that differ only between them, as
+    those of CP2102N whose serial numbers differ in their first digits, would make equal rows:
+    each of them shows more of its end, where the serial numbers differ, so every row shows
+    the digits that tell it from the others; another long name keeps its start (#190)."""
     names = [
         f"usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_{start}9c2bec11a1c3e2a6a8b1c2d3"
         "-if00-port0"
-        for start in ("1a2b3c4d", "5e6f7a8b")
+        for start in starts
     ]
-    for name in names:
+    other = "usb-Example_Vendor_USB_to_UART_Bridge_Controller_" + "0123456789abcdef" * 2
+    for name in [*names, other]:
         (host.serial.parent / name).write_text("", encoding="utf-8")
     dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pw", "yes", "1"]
     result = run_installer(host, dialog=[*dialog, "", ""])
@@ -2934,11 +3008,12 @@ def test_two_devices_whose_names_differ_in_the_middle_get_two_rows(host: Host) -
     radio = [c for c in host.calls("whiptail") if "--menu" in c][1]
     start = radio.index("--menu") + 6
     rows = dict(zip(radio[start::2], radio[start + 1 :: 2], strict=True))
-    first, second = (rows[str(host.serial.parent / name)] for name in names)
-    assert first == f"{names[0][:34]}...{names[0][-35:]}"
-    assert second == f"...{names[1][-69:]}"
-    assert len(set(rows.values())) == len(rows) == 4  # the radios and TCP
-    assert max(len(first), len(second)) == 72
+    shown = [rows[str(host.serial.parent / name)] for name in names]
+    assert shown == [f"...{name[-69:]}" for name in names]
+    assert all(digits in row for digits, row in zip(starts, shown, strict=True))
+    assert rows[str(host.serial.parent / other)] == f"{other[:34]}...{other[-35:]}"
+    assert len(set(rows.values())) == len(rows) == len(names) + 3  # the other, ours and TCP
+    assert {len(row) for row in shown} == {72}
 
 
 def test_a_name_the_radio_cut_too_long_is_kept_as_found(host: Host) -> None:

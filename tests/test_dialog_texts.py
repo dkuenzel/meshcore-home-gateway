@@ -10,6 +10,9 @@ cases and over every text below, and compares it with the model.
 
 from __future__ import annotations
 
+import os
+import re
+import subprocess
 from collections.abc import Sequence
 from typing import Final
 
@@ -298,20 +301,97 @@ def test_the_plan_lists_the_contacts_its_box_holds(dialogs: list[model.Dialog]) 
             assert translate(model.PLAN_NOT_LISTED).split("{")[0] in text
 
 
+def _radio_name(space: str) -> str:
+    """The plan's line for a radio whose own name holds control characters, which the program
+    writes as \\u0001, and a space whiptail breaks a line at: a run of 74 bytes or more without
+    a blank, which whiptail breaks at that space (#190)."""
+    return '  name: "' + "\\u0001" * 11 + space + "\\u0001" * 8 + '" -> "MeshCore Gateway Hof"'
+
+
+# the spaces whiptail breaks a line at that are no ASCII blank
+_SPACES: Final = sorted(char for char in model.SPACES if ord(char) > 0x7F)
+# lines of narrow letters that take at most 74 cells, but more bytes: one line each, in fold too
+_NARROW: Final = (
+    "  Kontakt 0123456789ab Funkgerät Mühlenhöhe Süd 01: zum Favoriten gemacht",  # 77 bytes
+    "  contact 0123456789ab " + "\N{REPLACEMENT CHARACTER}" * 31 + ": made a favourite",
+    "Ω" * 74,
+    "Ж" * 74,
+    "\N{LATIN SMALL LETTER A WITH DOT BELOW}" * 74,
+    "\N{EM DASH}" * 74,
+    "„Grüße“ \N{EN DASH} „Straße“ … € → ≤ ≥ ≠ ™ " * 2,
+    "\N{THAI CHARACTER KO KAI}" * 74,
+    "\N{GEORGIAN LETTER AN}" * 74,
+)
+# texts whose lines fold must not count fewer of than whiptail shows
+_FOLDED: Final = (
+    "Schlüssel Funkgerät Überprüfung äöüÄÖÜß " * 6,
+    "漢字かな " * 40,
+    "a" * 73 + " " + "b" * 80,
+    "  " + "x" * 74 + "\n" + "y\N{EN QUAD}" * 50,
+    "word " * 15 + "\nnext line\\nafter the two characters",
+    *(_radio_name(space) for space in _SPACES),
+    *(
+        "a" * 73 + wide + "a" * 80
+        for wide in ("漢", "\N{GRINNING FACE}", "\N{FULLWIDTH DIGIT ONE}")
+    ),
+    "ä" * 80 + " " + "ö" * 80,
+    *_NARROW,
+)
+
+
 def test_fold_counts_no_fewer_lines_than_whiptail_shows() -> None:
     """The installer measures a text with fold (fits), which counts bytes and breaks at the last
     blank within the columns: never fewer lines than whiptail wraps the text into, for German
-    and wide letters, spaces whiptail breaks at and fold does not, and long words."""
+    and wide letters, a wide one where a long word breaks, every space whiptail breaks at, also
+    in a radio's name of control characters written as \\u0001, and long words."""
     box = model.PLAN_BOX
-    texts = [
-        "Schlüssel Funkgerät Überprüfung äöüÄÖÜß " * 6,
-        "漢字かな " * 40,
-        "a" * 73 + " " + "b" * 80,
-        "  " + "x" * 74 + "\n" + "y\N{EN QUAD}" * 50,
-        "word " * 15 + "\nnext line\\nafter the two characters",
-    ]
-    for text in texts:
+    for text in _FOLDED:
         assert model.folded_lines(text, box.text_width) >= len(box.layout(text + "\n")), text
+
+
+def test_fold_counts_a_narrow_letter_as_one_column() -> None:
+    """A line of umlauts, Greek, Cyrillic, Thai, Georgian, typographic signs or U+FFFD that takes
+    at most 74 cells is one line for fits(), as for whiptail, although it takes more bytes: the box
+    lists a contact with such a name as the one line whiptail shows (#190)."""
+    box = model.PLAN_BOX
+    for text in _NARROW:
+        assert len(box.layout(text + "\n")) == 1, text
+        assert len(text.encode()) > box.text_width, text
+        assert model.folded_lines(text, box.text_width) == 1, text
+
+
+def _installer_fits(cases: Sequence[tuple[str, int, int]]) -> list[bool]:
+    """The script's own fits TEXT COLUMNS LINES, for each case."""
+    script = model.SCRIPT.read_text(encoding="utf-8")
+    (function,) = re.findall(r"^fits\(\) \{.*?^\}\n", script, re.MULTILINE | re.DOTALL)
+    loop = 'while IFS= read -r -d "" text && read -r -d "" columns && read -r -d "" lines; do\n'
+    loop += '  if fits "$text" "$columns" "$lines"; then echo yes; else echo no; fi\ndone\n'
+    data = "".join(f"{text}\0{columns}\0{lines}\0" for text, columns, lines in cases)
+    answers = subprocess.run(  # noqa: S603 - bash with the script's function
+        ["bash", "-c", function + loop],  # noqa: S607 - the system's bash, as the installer's
+        input=data.encode(),
+        capture_output=True,
+        check=True,
+        env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
+    ).stdout.decode()
+    return [answer == "yes" for answer in answers.split()]
+
+
+def test_the_installer_measures_as_the_model_does() -> None:
+    """The script's fits() needs as many lines as the model's folded_lines(): yes with that many,
+    no with one fewer, for every text above and the realistic plans in every language."""
+    texts = list(_FOLDED)
+    plans = model.COMPOSED["plan_text"](model.Script(model.SCRIPT.read_text(encoding="utf-8")))
+    assert isinstance(plans, model.PlanBox)
+    for language, catalog in LANGUAGES.items():
+        translate = model.translator(catalog, language)
+        texts += [plan.text(translate, model.PLAN_CONTACTS, 9) for plan in plans.plans]
+    columns = model.PLAN_BOX.text_width
+    cases = []
+    for text in texts:
+        lines = model.folded_lines(text, columns)
+        cases += [(text, columns, lines), (text, columns, lines - 1)]
+    assert _installer_fits(cases) == [True, False] * len(texts)
 
 
 LANGUAGES: Final = model.catalogs()
@@ -331,6 +411,17 @@ def test_every_menu_item_shows_whole(dialogs: list[model.Dialog], language: str)
     and an item without a mark, also the security item of the radio menu (#190)."""
     found = model.cut_items(dialogs, {language: LANGUAGES[language]})
     assert not found, "\n".join(found)
+
+
+def test_the_german_menu_items_start_with_a_capital_letter(dialogs: list[model.Dialog]) -> None:
+    """German capitalises the first word of a menu's item, as its other items do: the setup
+    menu showed "Standard (empfohlen): ..." above "erweitert (alle Einstellungen): ..."."""
+    german = model.translator(LANGUAGES["de"], "de")
+    items = [item for dialog in dialogs for _, item in dialog.rows if list(item.msgids())]
+    assert len(items) >= 3  # the setups and the radio over TCP
+    for item in items:
+        for text in item.render(german):
+            assert text[:1].isupper(), text
 
 
 _TCP_ITEM = "radio with WiFi firmware (TCP, no authentication)"
