@@ -820,6 +820,15 @@ machinery and English only. Another language comes as a contribution of its cata
   given values and names only the fields of its English text; a text argparse %-formats (help and
   description texts, argparse's own words) only when its `%` directives equal the English ones.
   Otherwise the English text. The catalog checks hold the shipped catalogs to the same rules.
+* **Codes in documents, texts in catalogs** (since 2.3). A document or event publishes codes with
+  their parameters, never prose. Every code has a text in the program's catalog in every shipped
+  language, and every reader renders that text: the dashboard, the installer's review (through
+  `config review --list`) and later the strategy module. One guard test walks every enum the
+  gateway publishes and fails on a code without a text in a shipped language. 2.3 adds
+  `presence`, `position_state` and `motion` ([ADR 0035](decisions/0035-the-companion-state-model.md)),
+  the review's `kind`, `concern` and `effect`, `airtime_burst_source`
+  ([ADR 0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md)), and
+  the `contact` event `position_cleared`; the codes of later records join the same test.
 * **Home Assistant.** Every name goes through `ha_name` (`msgctxt "home assistant"`); entity IDs,
   unique IDs, event types, options, attribute keys and units stay. The default device name
   `MeshCore radio` is translated whenever the setting equals it. `[homeassistant] language` is
@@ -1469,10 +1478,10 @@ hand edits. It ships as four pre-releases, then a release candidate:
 
 | Slice | Content | Records |
 | --- | --- | --- |
-| 2.3.0a1: updates that ask | new installations stop pinning preference defaults; the settings registry with its recommendations and guard tests; the module for untrusted text and `clean_received = true`; `burst_s` derived from the radio's preset; the update review (`config review`, `broker acl`, the installer's dialogs, `--review`); release information checked daily by a unit of its own and shown as an update entity | [0034](decisions/0034-untrusted-text-from-the-mesh.md), [0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md), 0039 (to be written) |
+| 2.3.0a1: updates that ask | the installer stops pinning preference defaults; the settings registry with its recommendations and guard tests; the module for untrusted text and `clean_received = true`; `burst_s` derived from the radio's preset; the update review (`config review`, `broker acl`, the installer's dialogs, `--review`); release information checked daily by a unit of its own and shown as an update entity | [0034](decisions/0034-untrusted-text-from-the-mesh.md), [0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md), 0039 (to be written) |
 | 2.3.0a2: the companion state | presence, positions that age, confirmed movement and the automatic clear of old advert positions, in one module; the advert check that survives firmware which clears withdrawn positions; every companion's tracker announced from the start; why a contact is protected (`protected_as`) | [0035](decisions/0035-the-companion-state-model.md) |
 | 2.3.0a3: new data and privacy | forgetting a contact; the `counts` document and node details for the redesign; findings as codes; a restart at a quiet moment after Debian replaced Python or paho-mqtt, and the detection of a replugged radio; the boot messages of ESP32 radios | 0037 (to be written); an amendment of 0015 |
-| 2.3.0a4: *Enrolling* | a household mode that ends by itself: a zero-hop advert every 10 minutes for 30 minutes (up to 2 hours, at most 12 a day), new devices first in *Add heard node*, devices added meanwhile asked at once | 0038 (to be written) |
+| 2.3.0a4: *Enrolling* | a household mode that ends by itself: a zero-hop advert every 10 minutes, never with a position, for 30 minutes (up to 2 hours, at most 12 a day), new devices first in *Add heard node*, devices added meanwhile asked at once, with the device's own permission as the consent | 0038 (to be written) |
 
 a1 comes first: the review must exist before 2.3's own changed defaults ship. a2 comes before a4,
 because *Enrolling* reads the companion state. If 2.3 runs long, a3's findings, the restart, the
@@ -1487,14 +1496,16 @@ redesign shows them. 2.4 redesigns the dashboard once, with the commands and the
 2. **Household overrides** (values Home Assistant may change, kept beside the configuration):
    **open**. Recommended: defer until a setting that households change often needs them; the
    radio's name and transmit power go through the maintenance port meanwhile (ADR 0036).
-3. ***Enrolling*:** as designed above, behind `radio_controls`, kept across restarts, one
-   zero-hop advert after a new name inside the daily cap, and only a suggestion after a new radio
-   key. Decided.
+3. ***Enrolling*:** as designed above, behind `radio_controls`, kept across restarts, its adverts
+   zero hop and never with a position, one zero-hop advert after a new name inside the daily cap,
+   and only a suggestion after a new radio key. A device added during the window is asked at once:
+   the device's own permission stays the consent, and the per-person switch undoes it. Decided.
 4. ***Pause asking*:** deferred until a household asks. Decided.
 5. **The update review's consent rules:** as ADR 0036 lists them; *deletes* means stored data.
    Decided.
 6. **The update check:** a daily check in a sandboxed timer unit of its own, on for new
-   installations with a privacy note, offered to existing ones by the review. Decided.
+   installations with a privacy note, offered to existing ones by the review as a change that
+   widens (ADR 0036). Decided.
 7. **The maintenance port** (#187): in 2.4 after its spike, as designed, with the command
    catalogue without the answers' grammar and the firewall rule printed rather than written.
    Decided.
