@@ -294,6 +294,24 @@ builds the RP2040 ones), the phone app or Home Assistant. Home Assistant has its
 the maintainer's use; the rest is not checked before a release ([Release check](#release-check)).
 The nodes run in real time, so a scenario of an hour takes an hour.
 
+### Builds of the firmware
+
+The tests build one companion: the firmware's defaults with `MAX_CONTACTS=350` and
+`MAX_GROUP_CHANNELS=40` (`COMPANION_DEFS` in `tests/firmware/Makefile`), as most USB builds of
+nRF52 and ESP32 boards have them. They do not show what other builds set differently
+([Boards](deployment.md#boards)):
+
+* a default transmit power below the highest, as on the Heltec V4 (10 of 22; the test build has
+  20 of 20, the firmware's default);
+* a small contact table and few channels (100 contacts and 8 channels on some builds);
+* a deeper queue for messages while no client reads (256 on some builds; 16 by default);
+* the model a board reports, a slow start, and the ESP32's clock, which the simulated board does
+  not vary.
+
+Planned, without a release of its own: two more builds, `amplifier` (power 10 of 22) and
+`limits` (100 contacts, 8 channels, a queue of 256), and a marker that runs only the tests whose
+outcome depends on these flags on them, so the suite does not run twice (#180).
+
 ### Scenarios of the hardware checklist
 
 The scenarios play steps of the [hardware checklist](#hardware-checklist) with the gateway's
@@ -393,6 +411,45 @@ keys into the German dialogs. Whether whiptail draws a no-break space (U+00A0, U
 checked yet: until it is, the catalog checks refuse one in the command line's texts, which the
 installer's boxes show too.
 
+## The length of the installer's texts
+
+whiptail shows as many lines of a text as fit its box and cuts the rest without a mark
+([platform-notes.md](platform-notes.md#whiptail)). `tests/test_dialog_texts.py`, part of
+`make check`, reads every dialog from the installer: each `whiptail` call, each call of
+`show_dialog`, `ask`, `ask_advanced` and `ask_required`, and each error that `die` shows in a box,
+with its kind and size. It renders each text in English and in every catalog of
+`deploy/proxmox/locale/`, so a language added later is checked too, wraps it as whiptail 0.52.24
+does and fails when it needs more lines than its box shows. A value filled into a text is the
+script's own text where the script gives one, else the longest realistic value that
+`tests/dialog_texts.py` names with its reason (`FIELD_VALUES`, `EMBEDDED`, each form of a value
+a candidate). A value that is the program's message, such as what `check-config --broker`
+printed after a failed login, is built from the program's own catalog in the same language, as
+the installer runs it (`DIALOG_VALUES`). The final message is put together as the script does,
+in the combinations that can occur. The plan for the radio counts its contacts and lists none,
+and names the radio's name without its values, so its box has a worst case (`PlanBox`), whether
+the service sets the radio or only reports: every setting the managed profile manages with the
+values `probe --list profile` prints and in the form whose line takes the most lines, and each
+count of contacts with three digits. `tests/test_installer.py` checks that the installer's box
+shows the model's text in English and German, also with that worst case and with names of the
+radio that probe prints in up to 188 columns or with the two characters `\n`, which whiptail
+turns into a line break (`PLAN_HIDDEN_NAMES`). It also lays out the rows of every menu as
+whiptail does in a terminal of 80 columns, the rows the script fills into an array with their
+worst cases (`LIST_ROWS`), and fails when a tag or an item is shortened or runs over the box's
+border. A box with `--scrolltext` is exempt, as its text scrolls; the
+installer has none. A dialog the test cannot read, or a value without a worst case, fails it too.
+
+CI has no whiptail, so the wrapping is a model of newt's code. After changing the model, or to
+check another version of whiptail, compare the model with the real program:
+
+```sh
+.venv/bin/python -I tests/manual/dialog_texts.py
+```
+
+It needs whiptail and tmux (`apt install whiptail tmux`). It runs whiptail in tmux's pseudo
+terminal over every text and every menu of every language and over the cases the test measured,
+reads each screen, and exits non-zero when a line differs from the model, the box shows more or
+fewer lines, or whiptail cuts other rows of a menu than the model does.
+
 ## Release check
 
 A release is checked in three places, none of them a procedure by hand
@@ -456,7 +513,7 @@ adds it back).
 | 6 | Send a text longer than 160 bytes | truncated with `...` (or `rejected` if `truncate = false`) |
 | 7 | With `ascii_only = true`, send umlauts | B shows the transliteration |
 | 8 | Send the same text twice within the window | second is `duplicate` |
-| 9 | Set `budget_s_per_hour = 1` and `burst_s = 5` (`burst_s = 20` at SF 11 or 12 with 62.5 kHz, where one message takes longer than 5 s), send messages of about 100 characters at once until `airtime_available_s` in the state is below the `airtime_ms` of one (more than ten at fast presets) | those sent while airtime lasts, the rest `expired` (`airtime_budget`) without waiting |
+| 9 | Set `budget_s_per_hour = 1` and `burst_s = 5` (at a slow preset, where one message takes longer than 5 s, the `burst_s` that [Radio presets](configuration.md#radio-presets) names), send messages of about 100 characters at once until `airtime_available_s` in the state is below the `airtime_ms` of one (more than ten at fast presets) | those sent while airtime lasts, the rest `expired` (`airtime_budget`) without waiting |
 | 10 | B sends a direct message and a channel message | two `received` events with sender, SNR, path length |
 | 11 | B (allowlisted) sends `status` | `command` event `status`; `received` shows `accepted` |
 | 12 | A not allowlisted contact sends `status` | no `command` event; `received` shows `sender_not_allowed` |
@@ -534,6 +591,28 @@ Steps 55 and 56 need an authenticator app (any TOTP app) on B's owner's phone, s
 | 57 | A sensor (MeshCore's sensor firmware): `setperm <the gateway radio's key> 1` on it, add it as a contact, set `[telemetry] ask_types = ["chat", "sensor"]`, restart, switch its *Telemetry* on | its device gets *Telemetry*, *Telemetry state* and *Battery*; the state turns `no_position` (or `answering` with a GPS) after its first request |
 | 58 | Set `[homie] enabled = true` with the ACL lines of [mqtt-api.md](mqtt-api.md#homie-homiehomie_device), restart; in openHAB add the discovered device; send `Hi` with B's node's *Send*; then `systemctl kill -s KILL meshcore-home-gateway` | openHAB lists the device `meshcore-radio1` with the node *Gateway* and a node per contact, B's battery, position, last heard and telemetry state; B receives `Hi` and `delivery` confirms it; after the kill the device turns `lost` within 1.5 × `keepalive_s` (90 s), `ready` again after the restart |
 
+Steps 59 to 70 check a board, as radio A, for what only a board on a desk shows: run them for each
+kind of board the documentation calls checked ([Boards](deployment.md#boards)): a board with the
+ESP32-S3's own USB such as the Heltec V4 or a LilyGo T3-S3, one with a USB-UART bridge, and an
+nRF52 board to compare. Write the board, its build, the firmware version and the results into the
+pull request, and the boot time and the facts that differ from the table into
+[platform-notes.md](platform-notes.md#meshcore-companion-firmware).
+
+| # | Step | Expected |
+| --- | --- | --- |
+| 59 | Flash the build `<board>_companion_radio_usb` of the tested version; plug the board into the host; `ls -l /dev/serial/by-id`; then put it into its download mode (hold its boot button while it starts) and list again | one name that stays the same across replugs: on the ESP32-S3's own USB `ttyACM*` with Espressif and the chip's MAC address, behind a USB-UART bridge `ttyUSB*` after the bridge, on nRF52 `ttyACM*`; note whether the download mode shows the same name |
+| 60 | With the service stopped, `meshcore-home-gateway probe --serial <device>` five times in a row; watch the screen, and the radio's uptime (`meshcore-home-gateway status` after a start, or `stats`) | no restart at an open or a close: the uptime keeps counting; the model, firmware code 14, frequency, bandwidth, SF and CR as set in the app, the power as the build table says; its maximum, which `probe` does not show, in `max_tx_power` of `meshcli -s <device> infos` ([deployment.md](deployment.md#changing-the-radios-settings)) (Heltec V4: 10 of 22) |
+| 61 | Start the service, then power the board up; time from power to `radio connected` in the log | connected within the first steps of the back-off (1, 2, 4 … s); note the boot time |
+| 62 | With the service stopped, set the radio's clock a few minutes ahead (`time <epoch>` of MeshCore's command line client, [deployment.md](deployment.md#changing-the-radios-settings)), then start the service: it restarts the radio to set the clock back ([troubleshooting](deployment.md#5-troubleshooting)) | the radio is back under the same device name within a few seconds plus one step of the back-off; note whether the USB device disappeared and came back; the clock is moved forward afterwards |
+| 63 | Stop the service for 10 minutes while B sends messages; start it | the radio kept relaying (its counters rose); the messages that waited arrive, as many as its offline queue holds (16 on most builds); no broken frame reaches a document or the log beyond the discarded bytes at the start |
+| 64 | Send long messages at the highest power the board allows, from the host's USB port | no restart (the uptime keeps counting); after a brown-out the radio comes back with its firmware, not in its download mode |
+| 65 | With the gateway connected, press the board's reset button | the firmware starts again, not the download mode, and the gateway connects again; behind a USB-UART bridge note the outcome |
+| 66 | Unplug the board and plug it in again; in a container also with another USB serial device plugged in between | `disconnected`, then `connected`; after `pct reboot <id>` when the kernel numbered it anew ([deployment.md](deployment.md#5-troubleshooting)) |
+| 67 | On a board with a screen and a button: press the button | the screen shows the latest message for about 15 s; an advert the button sends is zero hop |
+| 68 | Read `battery_v` of a board without a battery, on USB power | note the value; it means nothing on USB power |
+| 69 | 24 hours with telemetry and messages | no stall and no reconnect but the clock's restarts |
+| 70 | Optional, with a power meter or an SDR: send at settings 0, 10 and 22 | the conducted power per setting; on a Heltec V4, write the measured gain into platform-notes.md |
+
 ### Where each step is checked
 
 | Steps | Checked by |
@@ -557,6 +636,7 @@ Steps 55 and 56 need an authenticator app (any TOTP app) on B's owner's phone, s
 | 55, 56 | `tests/firmware/test_commands.py` |
 | 57 | the unit tests of telemetry from sensors (`test_telemetry_poller.py`); MeshCore's sensor firmware: not checked |
 | 58 | the unit tests of the Homie documents (`test_homie.py`); openHAB: not checked, Homie is maintained by whoever uses it |
+| 59–70 | not checked before a release: they need the board itself. The tests against the real firmware run its source built for Linux ([below](#builds-of-the-firmware)); the transport's tests check that it asserts DTR and clears RTS (`test_transport.py`) |
 
 ### Steps 29–45 on the simulated air
 

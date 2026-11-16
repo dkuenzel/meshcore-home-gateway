@@ -56,7 +56,10 @@ flowchart LR
   telemetry fix, also at the check that shows a companion shares it again; an unchanged one does
   not. A position from telemetry expires ([design §6.11](design.md#611-telemetry)):
   `position_current` says whether it is current, and since 2.3 `position_state` how it ages; the
-  document keeps it. Nodes that are not contacts keep none.
+  document keeps it. Nodes that are not contacts keep none. A latitude outside ±90° or a longitude
+  outside ±180° is no position, from a record, a logged advert, the radio's own or a telemetry
+  answer: one check decides for all (`core.model.on_earth`), because the firmware passes on and
+  stores what a node sends (#179).
 * **Positions in adverts** ([ADR 0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md),
   `core/adverts.py`): the observer keeps each logged advert (at most 64, at most 40 s) and, at a
   contact's `ADVERT`, its pending advert with the key's logs. The next table read whose record

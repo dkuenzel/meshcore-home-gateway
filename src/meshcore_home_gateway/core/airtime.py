@@ -150,6 +150,14 @@ def self_advert_bytes(name_bytes: int) -> int:
     return HEADER_BYTES + PATH_LEN_BYTES + ADVERT_FIXED_BYTES + name
 
 
+def advert_reserve_s(name_bytes: int, text_bytes: int, p: LoRaParams) -> float:
+    """What the message budget must hold to pay this radio's advert: the advert and, beside it,
+    one flooded direct message of `text_bytes`, so that an alert after the advert goes out at
+    once (ADR 0033). A burst smaller than this pays no advert at all (#181)."""
+    advert = time_on_air_s(self_advert_bytes(name_bytes), p)
+    return advert + direct_attempt_airtime_s(text_bytes, 0, True, p)
+
+
 # --- telemetry requests (ADR 0018) --------------------------------------------------------------
 
 REQUEST_PLAINTEXT_BYTES = 13  # tag 4, type 1, reserved 4, random 4 (BaseChatMesh.cpp:693-698)

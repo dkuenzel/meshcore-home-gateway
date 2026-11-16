@@ -113,10 +113,11 @@ A pre-release has an installer of its own (its address is on the releases page).
 stored on the host: the program is downloaded inside the new container and checked against the
 release's `SHA256SUMS` and the digests the installer carries.
 
-In the default setup the script asks only for the radio (USB serial device or TCP address) and the
-broker; the advanced setup also asks for the container and topic settings. After a confirmation it
-creates an unprivileged Debian 13 container, passes the radio through, installs the service, reads
-the radio's channels and contacts so you can pick targets and command senders, and starts it.
+In the default setup the script asks only for the radio (USB serial device or TCP address), the
+broker, and the targets and command senders; the advanced setup also asks for the container and
+topic settings. After a confirmation it creates an unprivileged Debian 13 container, passes the
+radio through, installs the service, reads the radio's channels and contacts for the targets and
+command senders, and starts it.
 `--reconfigure` and `--update` keep the configuration. Details and the manual equivalent:
 [`docs/deployment.md`](docs/deployment.md).
 
@@ -180,7 +181,7 @@ the bus.
 | [`docs/home-assistant.md`](docs/home-assistant.md) | Entities, discovery, example automations |
 | [`docs/configuration.md`](docs/configuration.md) | Every setting with default and meaning |
 | [`docs/companions.md`](docs/companions.md) | Setting up the household's companions for telemetry |
-| [`docs/deployment.md`](docs/deployment.md) | Proxmox installer, manual installation, updates, operations |
+| [`docs/deployment.md`](docs/deployment.md) | Proxmox installer, manual installation, updates, operations; [what the gateway does by itself, and what is left to you](docs/deployment.md#what-the-gateway-does-by-itself-and-what-is-left-to-you) |
 | [`docs/protocol.md`](docs/protocol.md) | The companion protocol subset, with firmware sources |
 | [`docs/testing.md`](docs/testing.md) | Test suites and the release check |
 | [`docs/platform-notes.md`](docs/platform-notes.md) | What we verified about Proxmox VE, whiptail, Mosquitto, Home Assistant and the firmware, with the evidence |
@@ -197,9 +198,11 @@ companion interface, which hands the radio's private key to any client that reac
 [`docs/threat-model.md`](docs/threat-model.md), [`docs/design.md#7-security`](docs/design.md#7-security)
 and [`SECURITY.md`](SECURITY.md).
 
-Radio regulation is your responsibility. In the EU band 869.40–869.65 MHz a device may transmit
-at most 10 % of the time; the gateway's default budget uses 1 %, but the radio's own limit is a
-separate setting on the radio.
+Radio regulation is your responsibility. The gateway restricts no radio setting by region or
+law: follow the rules for your band ([local rules](docs/configuration.md#local-rules)). In the EU
+band 869.40–869.65 MHz, for example, a device may transmit at most 10 % of the time; there the
+managed radio profile sets the radio's own limit to 10 % by default, and the gateway's default
+budget uses 1 %.
 
 ## Privacy
 

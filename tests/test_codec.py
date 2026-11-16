@@ -282,6 +282,33 @@ def test_a_new_advert_from_older_firmware_without_the_record_has_none() -> None:
     assert codec.decode(h("8A" + PEER.hex())) == codec.Advert(PEER, new=True, record=None)
 
 
+@pytest.mark.parametrize(
+    ("latitude_e6", "longitude_e6", "expected"),
+    [
+        (90_000_000, 180_000_000, Position(90.0, 180.0)),  # a pole and the antimeridian are places
+        (-90_000_000, -180_000_000, Position(-90.0, -180.0)),
+        (90_000_001, 0, None),
+        (0, -180_000_001, None),
+        (2_000_000_000, -2_000_000_000, None),  # the security audit's record (#179)
+        (-(2**31), 2**31 - 1, None),
+    ],
+)
+def test_a_position_off_the_globe_is_no_position(
+    latitude_e6: int, longitude_e6: int, expected: Position | None
+) -> None:
+    """#179 (SEC-3): the firmware stores what an advert carries without a check
+    (src/helpers/AdvertDataHelpers.cpp:47-49, src/helpers/BaseChatMesh.cpp:193-196), so a
+    contact record, the radio's own self info and a logged advert may hold any int32 pair. One
+    outside ±90° latitude or ±180° longitude is no position, as in a telemetry answer."""
+    assert codec.position(latitude_e6, longitude_e6) == expected
+    record = codec.ContactRecord(
+        PEER, 1, 0, 0xFF, "Bob", TS, TS, b"", latitude_e6, longitude_e6, b""
+    )
+    assert record.position == expected
+    me = codec.SelfInfo(SELF, "radio1", 22, 22, 869_525, 250_000, 11, 5, False)
+    assert replace(me, latitude_e6=latitude_e6, longitude_e6=longitude_e6).position == expected
+
+
 def test_channel_info_ignores_bytes_after_the_name() -> None:
     frame = (
         "3E 32 00 12 00 50 75 62 6C 69 63 00 "

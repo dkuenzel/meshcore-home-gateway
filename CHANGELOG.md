@@ -8,6 +8,125 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [2.2.1rc1] - 2026-11-16
+
+The release candidate of 2.2.1: the fixes from the maintainer's use of 2.2.0rc2 and from a review
+of names and texts from the mesh, #166, #168, #174, #175, #176, #179, #181 and #190. It has had no
+release check yet: 2.2.1 ships this program after the maintainer has used this candidate.
+
+For the administrator: make the dashboard again after the update to get its texts. At a slow
+radio preset, set `[airtime] burst_s` to the value that the log or `probe` names, and restart the
+service (#181). Switching on `[messages] clean_received` is recommended (#179). Nothing else
+changes; the configuration and the public interfaces stay as in 2.2.0.
+
+Known limits: on a 360x800 phone, the newest message of a full chat stands behind the field
+until the page is scrolled (#149). Of a refusal and an accepted command within one second, the
+dashboard's *Latest of each kind* can show the refusal again after a restart of Home Assistant or
+its reconnect to the broker (#160). Removing a contact keeps its chats and its history, which the
+dashboard now says (#166); a chat's target or a command sender cannot be removed from Home
+Assistant (#167). The advert reaches only the radios in direct range
+([ADR 0033](docs/decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)); at a
+slow preset none goes until `burst_s` is raised, which the log and `probe` now name (#181). The
+installer's checklists of target contacts and command senders show about six letters of each
+name in an 80x24 terminal (#191).
+
+CI, with the Home Assistant contract tests on 2026.10.2 and 2026.11.0 and the tests against the
+real firmware, checked it; the browser check of #166 and #168 ran on 2026.10.2 and 2026.11.0, and
+every dialog of the installer was checked against the real whiptail in English and German
+(#190).
+
+### Fixed
+
+- At a slow radio preset, where the radio's advert and a long message do not fit into
+  `[airtime] burst_s` together, an advert sent on request was refused every time
+  (`airtime_budget`) and nothing said why. Each connect now warns in the log and names the
+  `burst_s` that holds both; `probe` prints the same on its line `burst`, against the
+  configuration's `burst_s`. The new section *Radio presets* of
+  [configuration.md](docs/configuration.md#radio-presets) gives the times and the `burst_s` for
+  common presets, also where a long message alone exceeds the default. At such a preset, set
+  `[airtime] burst_s` to the value the log or `probe` names and restart the service (#181).
+- Removing a contact keeps its chat and what the gateway's history holds of it, but the
+  dashboard did not say so, and privacy.md named removing a contact as the way to stop keeping
+  it. The question before *Remove*, the fold *What removing does* and *Help* now say that the
+  chat and the history stay, and the fold tells the administrator where the guide says what can
+  be deleted at once; privacy.md, the guide and mqtt-api.md say what a removal keeps and what
+  `contacts telemetry --forget KEY off` deletes. Make the dashboard again to get the texts
+  (#166).
+- A direct message from a sender with a code secret that starts with a command word and ends in
+  no code, such as chat ("Arm wrestling tonight?"), counted as a wrong code: five within an hour
+  locked that sender's commands until the first of them was an hour old, and the log warned that
+  someone may be guessing its codes. Such a message makes no guess at the code. It is still
+  refused as `code_missing` and listed among the refused commands, but it no longer counts
+  toward the lock; 5 wrong codes within an hour lock a sender as before. The guide's new section
+  [Commands from a companion](docs/home-assistant.md#commands-from-a-companion) tells the
+  household how to send a command, with its code, what the answers and refusals mean and what
+  locks a sender; *Help*'s line on commands links to it. Make the dashboard again to get the
+  link (#176).
+- A position outside ±90° latitude or ±180° longitude in a contact's record, in an advert or in
+  the radio's own self info was taken as it came: the firmware stores what a node sends without a
+  check. The contact document published it, Home Assistant's tracker took it and computed a
+  distance to home, and the map got an impossible marker. Such a pair is now no position, by the
+  same check that already dropped one from a telemetry answer; an advert that carries one still
+  counts as carrying a position, as one with 0, 0 does (#179).
+- A companion no longer heard, such as one flashed again, kept the warning of a position
+  broadcast to everyone on *Overview* for good, and the first line and the card said the same
+  twice. A companion whose *Last heard* is more than a day old, while the gateway has run for
+  more than a day, now leaves that problem: most likely it broadcasts nothing. After a start of
+  the gateway every companion counts for a day, as the gateway did not hear what came while it
+  was stopped. The card names who and what to do, not the problem again, and lists each device
+  with its state and when it was last heard; a silent one as not heard for so many days, since
+  when, with the fact that its adverts carried its position until then, muted. With only silent
+  devices the card is a blue note. Make the dashboard again to get it (#168).
+- The installer cut off a text longer than its box without a mark. In German, the question before
+  a radio over TCP without authentication ended at "TCP trotzdem verwenden": the question with
+  `tcp_unauthenticated = true` and what *Nein* does were not shown. Its yes/no boxes of 12 rows
+  now have 14 and show 8 lines instead of 6. After a refused login, the program's message with
+  its warnings and hint pushed the question whether to enter the broker settings again out of
+  its box; the question now comes first, in a box of 24 rows, and the message is also logged.
+  The radio menu cut its item "radio with WiFi firmware (TCP, no authentication)" after "no aut"
+  as soon as a serial device was there, and the device's path and name to 37 columns: the menus
+  now show their items without their tags, a device's name longer than 72 characters keeps its
+  start and its end (each more of its end when two would read the same), and the setup's
+  items start with the names the docs and an answers file give them, default and advanced.
+  The plan for the radio's settings lost its last lines, contacts and the settings left alone,
+  with the values the radio reports already with four contacts, and a radio's name with `\n` in
+  it broke its line; its box now has 24 rows, counts the contacts instead of listing them and
+  shows the radio's name without its values (the installer's output above it lists each contact
+  and shows the names). The final message could lose the end of its warning about a radio over
+  TCP: in German when the login and the self-test took two lines each or the radio's IPv6
+  address was written out in full, and in both languages with a broker user
+  name longer than the suggested one; three of its results are shorter, and the line about the
+  radio now follows the message's first line, before the rows that a long user name, address or
+  command makes longer. A new test wraps every text of every dialog in every
+  language as whiptail does, with the longest realistic values and the program's messages in
+  that language, lays out the rows of every menu, and fails when a text needs more lines than
+  its box shows or a menu cuts a row. Nothing to do: the installer of this release shows them at
+  the next installation or `--reconfigure`; `--update` asks nothing and shows no final message
+  (#190).
+- The dashboard stated one region's rule as a fact: *Gateway*'s fold *What the graph shows* and
+  the row *Airtime budget* on *Settings* said that the law allows a radio only a share of each
+  hour, and *Settings* spoke of settings that protect the law. The gateway restricts no radio
+  setting by region or law; whoever runs it follows the rules for their band
+  ([Local rules](docs/configuration.md#local-rules)). The texts now say what the budget is, the
+  airtime the gateway gives its own messages in an hour and at once, which *Settings* names by
+  its keys `[airtime] budget_s_per_hour` and `burst_s`, and that local rules may limit a radio's
+  airtime, which the administrator follows. Make the dashboard again to get the texts (#174,
+  #175).
+
+### Security
+
+- The documentation says what Home Assistant and its companion app make of names and texts from
+  the mesh, and what to do: the more-info dialog turns an attribute that starts with `http` into
+  a link (a message's `text` and `sender_name`, a *New node*'s `name`); the app renders HTML in
+  a notification's message on Android and acts on a message that is one of its command words,
+  for which the guide gives a recipe that keeps a forwarded text a text; Home Assistant exposes the
+  temperature and humidity sensors of companions' telemetry, named as their owners chose, to its
+  conversation agent by default, and so to a language model behind it. It recommends
+  `[messages] clean_received = true`, which drops control and direction characters from names
+  and texts where they enter; the default stays `false`. development.md and the threat model no
+  longer say that names are always cleaned or that nothing from the mesh reaches an entity ID
+  (#179).
+
 ## [2.2.0] - 2026-11-16
 
 The radio sends its advert to the radios nearby on request, also from a button in Home

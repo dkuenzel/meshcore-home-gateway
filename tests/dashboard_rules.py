@@ -35,7 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / "docs" / "home-assistant.md"
 # the guide of a release: the guide the gateway's device page links to, at the release's tag
 GUIDE_URL = DOCUMENTATION_URL.replace("/blob/main/", "/blob/v{version}/")
-VERSION = "2.2.0"
+VERSION = "2.2.1rc1"
 NODE = "radio1"
 GW = "meshcore_home_gateway_radio1"
 # rule 18: a chat page's thread, and its refused line, which alone reads the delivery event
@@ -126,6 +126,10 @@ QUOTES: dict[str, tuple[str, ...]] = {
     ): ("Settings",),
     "To write back from here, add that person under Add a contact.": ("Add a contact",),
     "Remove: the contact leaves the radio; to talk again, add it again.": ("Remove",),
+    (
+        "The chat and the gateway's history of the contact stay: messages, positions and readings, "
+        "until they are older than Settings shows."
+    ): ("Settings",),
     "Show again brings back all hidden contacts.": ("Show again",),
     (
         "Other people's radios that this home's radio heard in the last 7 days. Add one under Add "
@@ -153,7 +157,10 @@ QUOTES: dict[str, tuple[str, ...]] = {
     ("On Contacts: paste a key or a contact link from the MeshCore app, then tap Return (↵)."): (
         "Contacts",
     ),
-    "On Contacts: takes a contact off the radio. It asks first.": ("Contacts",),
+    (
+        "On Contacts: takes a contact off the radio; its chat and the gateway's history of it "
+        "stay. It asks first."
+    ): ("Contacts",),
     ("On Contacts: brings back every contact whose device was deleted in Home Assistant."): (
         "Contacts",
     ),
@@ -270,7 +277,8 @@ PLAIN: dict[str, tuple[str, ...]] = {
     "Contacts added only by hand": ("Contacts",),
     (
         "A switch here would work for everyone who uses Home Assistant, children and guests "
-        "included. Settings that protect people, the radio or the law stay with the administrator."
+        "included. Settings that protect people or the radio, or that local rules may limit, stay "
+        "with the administrator."
     ): ("Settings",),
     "Contacts managed by the gateway": ("Contacts",),
     "Contacts with a device": ("Contacts",),

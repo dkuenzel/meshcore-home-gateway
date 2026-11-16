@@ -42,14 +42,51 @@ msgstr "Beim nächsten Verbinden setzt der Dienst am Funkgerät:"
 msgid "Base topic"
 msgstr "Basis-Topic"
 
+#. the values start in one column; they are commands to copy, but {login} and
+#. {posture} (how the broker connection is secured) and {selftest} (the result of the
+#. gateway's own check after the start).
+#, python-brace-format
+msgid ""
+"Broker:       {login} ({posture})\n"
+"Self-test:    {selftest}\n"
+"Logs:         {logs}\n"
+"Check:        {check}\n"
+"Reconfigure:  {reconfigure}\n"
+"Update:       {update}"
+msgstr ""
+"Broker:          {login} ({posture})\n"
+"Selbsttest:      {selftest}\n"
+"Protokoll:       {logs}\n"
+"Prüfen:          {check}\n"
+"Neu einrichten:  {reconfigure}\n"
+"Aktualisieren:   {update}"
+
 msgid "Channels to send to"
 msgstr "Kanäle, an die gesendet wird"
 
 msgid "Command words, comma-separated (e.g. status,arm,disarm)"
 msgstr "Befehlswörter, durch Kommas getrennt (z. B. status,arm,disarm)"
 
+#. {count} is a number of contacts; the installer's output above the box lists
+#. each of them.
+#, python-brace-format
+msgid "Contacts added as favourites: {count}"
+msgstr "Als Favoriten hinzugefügte Kontakte: {count}"
+
 msgid "Contacts allowed to send commands (direct messages only)"
 msgstr "Kontakte, die Befehle senden dürfen (nur Direktnachrichten)"
+
+#, python-brace-format
+msgid "Contacts made favourites: {count}"
+msgstr "Zu Favoriten gemachte Kontakte: {count}"
+
+#, python-brace-format
+msgid "Contacts not on the radio: {count}"
+msgstr "Kontakte, die nicht auf dem Funkgerät sind: {count}"
+
+#, python-brace-format
+msgid "Contacts that are no favourites: {count}"
+msgstr "Kontakte, die keine Favoriten sind: {count}"
 
 msgid "Contacts to send to"
 msgstr "Kontakte, an die gesendet wird"
@@ -200,17 +237,13 @@ msgstr "Die Verbindung zum Broker hat {what}: Jeder Client, der den Broker errei
 #. {reason} is the program's message, in this language too.
 #, python-brace-format
 msgid ""
-"The broker login failed:\n"
+"The broker login failed. Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes the settings later.)\n"
 "\n"
-"{reason}\n"
-"\n"
-"Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes the settings later.)"
+"{reason}"
 msgstr ""
-"Die Anmeldung am Broker ist fehlgeschlagen:\n"
+"Die Anmeldung am Broker ist fehlgeschlagen. Die Broker-Einstellungen erneut eingeben? (Nein: weiter; der Dienst versucht es weiter, --reconfigure korrigiert die Einstellungen später.)\n"
 "\n"
-"{reason}\n"
-"\n"
-"Die Broker-Einstellungen erneut eingeben? (Nein: weiter; der Dienst versucht es weiter, --reconfigure korrigiert die Einstellungen später.)"
+"{reason}"
 
 #. {reason} is the program's message, in this language too.
 #, python-brace-format
@@ -231,10 +264,16 @@ msgstr ""
 "Der Container startet nur, solange das Funkgerät eingesteckt ist.\n"
 "Nach erneutem Einstecken des Funkgeräts: {command}"
 
+#. the last line of the plan's box, below the counts of contacts: the
+#. installer's output before the box lists each contact with the start of its key and its
+#. name.
+msgid "The installer's output above lists every contact."
+msgstr "Die Ausgabe des Installers oben führt jeden Kontakt auf."
+
 #. security text (docs/translations.md): translate all of it, add nothing.
 #, python-brace-format
-msgid "The radio is reached over TCP ({address}) without authentication: whoever reaches it can control it and read its private key."
-msgstr "Das Funkgerät wird über TCP ({address}) ohne Authentifizierung erreicht: Wer es erreicht, kann es steuern und seinen privaten Schlüssel lesen."
+msgid "The radio is reached over TCP without authentication ({address}): whoever reaches it can control it and read its private key."
+msgstr "Das Funkgerät wird über TCP ohne Authentifizierung erreicht ({address}): Wer es erreicht, kann es steuern und seinen privaten Schlüssel lesen."
 
 #. security text (docs/translations.md): translate all of it, add nothing.
 msgid "The radio's TCP interface has no authentication: anyone who reaches it can control the radio and read its private key, which decrypts every direct message of the radio, also earlier ones recorded from the air. Use it only in a network that only the gateway reaches, never the household's WiFi. Use TCP anyway (tcp_unauthenticated = true)? No: choose the radio again."
@@ -244,7 +283,7 @@ msgid ""
 "The radio's firmware is not tested: the service only reports what differs\n"
 "(radio.profile.manage = always sets it anyway):"
 msgstr ""
-"Die Firmware des Funkgeräts ist nicht getestet: Der Dienst meldet nur, was abweicht\n"
+"Ungetestete Firmware des Funkgeräts: Der Dienst meldet nur, was abweicht\n"
 "(radio.profile.manage = always setzt es trotzdem):"
 
 msgid "The service leaves alone:"
@@ -260,8 +299,8 @@ msgstr "Mit radio.profile.manage = observe meldet der Dienst nur, was abweicht:"
 msgid "a radio over TCP needs radio.tcp_unauthenticated = true; for USB, install a new container"
 msgstr "ein Funkgerät über TCP braucht radio.tcp_unauthenticated = true; für USB installiere einen neuen Container"
 
-msgid "all settings: container, network, topics, Home Assistant"
-msgstr "alle Einstellungen: Container, Netzwerk, Topics, Home Assistant"
+msgid "advanced (all settings): container, network, topics, Home Assistant"
+msgstr "Erweitert (alle Einstellungen): Container, Netzwerk, Topics, Home Assistant"
 
 #, python-brace-format
 msgid "answers file line {line}: expected key=value"
@@ -338,23 +377,6 @@ msgstr "die Version des Checkouts {path} ist nicht lesbar"
 msgid "command failed at line {line}"
 msgstr "Befehl in Zeile {line} fehlgeschlagen"
 
-#. {contact} is the start of a contact's key and its name.
-#, python-brace-format
-msgid "contact {contact}: added as a favourite"
-msgstr "Kontakt {contact}: als Favorit hinzugefügt"
-
-#, python-brace-format
-msgid "contact {contact}: made a favourite"
-msgstr "Kontakt {contact}: zum Favoriten gemacht"
-
-#, python-brace-format
-msgid "contact {contact}: no favourite"
-msgstr "Kontakt {contact}: kein Favorit"
-
-#, python-brace-format
-msgid "contact {contact}: not on the radio"
-msgstr "Kontakt {contact}: nicht auf dem Funkgerät"
-
 msgid "container ID must be a number of at least 100"
 msgstr "die Container-ID muss eine Zahl ab 100 sein"
 
@@ -397,6 +419,9 @@ msgstr "Erstellen von Container {ctid} fehlgeschlagen (siehe oben)"
 msgid "creating the service user failed"
 msgstr "Anlegen des Dienstbenutzers fehlgeschlagen"
 
+msgid "default (recommended): asks only for the radio, broker and targets"
+msgstr "Standard (empfohlen): fragt nur nach Funkgerät, Broker und Zielen"
+
 msgid "disk size and memory must be whole numbers"
 msgstr "Datenträgergröße und Arbeitsspeicher müssen ganze Zahlen sein"
 
@@ -416,7 +441,7 @@ msgid "limiting the journal in container {ctid} failed (see above)"
 msgstr "Begrenzen des Journals in Container {ctid} fehlgeschlagen (siehe oben)"
 
 msgid "login accepted"
-msgstr "Anmeldung akzeptiert"
+msgstr "angemeldet"
 
 msgid "login failed (see above), the service keeps trying"
 msgstr "Anmeldung fehlgeschlagen (siehe oben), der Dienst versucht es weiter"
@@ -428,28 +453,9 @@ msgstr "Anmeldung nicht geprüft"
 msgid "meshcore-home-gateway from {ref} was not installed in container {ctid} (see above)"
 msgstr "meshcore-home-gateway aus {ref} wurde nicht in Container {ctid} installiert (siehe oben)"
 
-#. the values start in one column; they are commands to copy, but {login} and
-#. {posture} (how the broker connection is secured) and {selftest} (the result of the
-#. gateway's own check after the start).
 #, python-brace-format
-msgid ""
-"meshcore-home-gateway {version} runs in container {ctid}.\n"
-"\n"
-"Broker:       {login} ({posture})\n"
-"Self-test:    {selftest}\n"
-"Logs:         {logs}\n"
-"Check:        {check}\n"
-"Reconfigure:  {reconfigure}\n"
-"Update:       {update}"
-msgstr ""
-"meshcore-home-gateway {version} läuft in Container {ctid}.\n"
-"\n"
-"Broker:          {login} ({posture})\n"
-"Selbsttest:      {selftest}\n"
-"Protokoll:       {logs}\n"
-"Prüfen:          {check}\n"
-"Neu einrichten:  {reconfigure}\n"
-"Aktualisieren:   {update}"
+msgid "meshcore-home-gateway {version} runs in container {ctid}."
+msgstr "meshcore-home-gateway {version} läuft in Container {ctid}."
 
 #, python-brace-format
 msgid "meshcore-home-gateway {version} was not installed in container {ctid} (see above)"
@@ -494,11 +500,11 @@ msgid "not checked (version {version} cannot; check after --update)"
 msgstr "nicht geprüft (Version {version} kann das nicht; nach --update prüfen)"
 
 msgid "not run (the broker login failed)"
-msgstr "nicht ausgeführt (die Anmeldung am Broker ist fehlgeschlagen)"
+msgstr "nicht ausgeführt (Anmeldung am Broker fehlgeschlagen)"
 
 #, python-brace-format
 msgid "not run (version {version} has no doctor command)"
-msgstr "nicht ausgeführt (Version {version} hat keinen Befehl doctor)"
+msgstr "nicht ausgeführt (Version {version} ohne Befehl doctor)"
 
 msgid "package pve-container not found"
 msgstr "Paket pve-container nicht gefunden"
@@ -528,9 +534,6 @@ msgstr "Funkgerät mit WLAN-Firmware (TCP, keine Authentifizierung)"
 #, python-brace-format
 msgid "radio.profile.name: 1 to 31 bytes, got '{name}'"
 msgstr "radio.profile.name: 1 bis 31 Bytes, erhalten: '{name}'"
-
-msgid "recommended: asks only for the radio, the broker and the targets"
-msgstr "empfohlen: fragt nur nach Funkgerät, Broker und Zielen"
 
 msgid "run as root on the Proxmox host"
 msgstr "als root auf dem Proxmox-Host ausführen"
@@ -596,6 +599,12 @@ msgstr "{device} ist schon an einen anderen Container durchgereicht (ID {ctids})
 msgid "{device} is already passed through to another container (ID {ctids}): a radio takes one client at a time"
 msgstr "{device} ist schon an einen anderen Container durchgereicht (ID {ctids}): Ein Funkgerät bedient immer nur einen Client"
 
+#. the radio's name in the plan's box, in each of its sections; the
+#. installer's output before the box shows the radio's name and the one the service wants.
+#, python-brace-format
+msgid "{setting}: differs (the installer's output above shows the names)"
+msgstr "{setting}: weicht ab (die Ausgabe des Installers oben zeigt die Namen)"
+
 #. a setting of the radio and its value, as the radio names them.
 #, python-brace-format
 msgid "{setting}: {live} (changed on the radio; kept)"
@@ -603,12 +612,12 @@ msgstr "{setting}: {live} (am Funkgerät geändert; beibehalten)"
 
 #, python-brace-format
 msgid "{setting}: {live}, not {wanted} (compiled out of the radio's firmware)"
-msgstr "{setting}: {live}, nicht {wanted} (nicht in die Firmware des Funkgeräts kompiliert)"
+msgstr "{setting}: {live}, nicht {wanted} (nicht in die Firmware kompiliert)"
 
 #. a setting of the radio, its value and the one the service had set.
 #, python-brace-format
 msgid "{setting}: {live}, not {wanted} (did not take effect; no longer set)"
-msgstr "{setting}: {live}, nicht {wanted} (nicht wirksam geworden; wird nicht mehr gesetzt)"
+msgstr "{setting}: {live}, nicht {wanted} (ohne Wirkung; nicht mehr gesetzt)"
 
 #, python-brace-format
 msgid "{setting}: {live}, not {wanted} (the firmware does not support it)"

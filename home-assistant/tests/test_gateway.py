@@ -9,6 +9,7 @@ line does) and 14 (Settings from the configuration the gateway announces, and wi
 
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -16,11 +17,9 @@ from typing import Any
 
 import pytest
 from freezegun.api import FrozenDateTimeFactory
-from ha_plugin import async_fire_time_changed
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import TrackTemplate, async_track_template_result
 from homeassistant.helpers.template import Template
-from homeassistant.util import dt as dt_util
 from test_contract import RADIO, fire, make_config, problems, state_document
 from test_overview import health
 from visibility import household_viewer
@@ -707,6 +706,7 @@ async def test_the_cards_that_read_the_registry_show_a_new_tracker_within_a_minu
     hass: HomeAssistant,
     mqtt: Any,
     hass_ws_client: Any,
+    freezer: FrozenDateTimeFactory,
     *,
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
@@ -745,7 +745,11 @@ async def test_the_cards_that_read_the_registry_show_a_new_tracker_within_a_minu
     broker, mesh = Broker(), household(ALICE_NODE, Node(BOB, "Bob", COMPANION, position=HOME))
     contacts_of(config, tmp_path, broker).update(mesh)
     await deliver(hass, config, broker, mesh)
-    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=1, seconds=1))
+    # the clock moves on and the loop runs the timers then due after what it has ready:
+    # async_fire_time_changed would run them first, the 10 s timeout of a discovery
+    # subscription Home Assistant still makes before its waiting acknowledgement ("No ACK")
+    freezer.tick(timedelta(minutes=1, seconds=1))
+    await asyncio.sleep(0)
     await hass.async_block_till_done()
     for subscription in subscriptions:
         subscription.async_remove()

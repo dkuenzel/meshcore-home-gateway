@@ -40,6 +40,7 @@ pins, the release check against a real installation ([testing.md](testing.md#rel
 
 | Gateway | Contract tests | Release check |
 | --- | --- | --- |
+| 2.2.1rc1 | 2026.10.2, and 2026.11.0 from its own environment | the browser check of #166 and #168 on 2026.10.2 and 2026.11.0; the maintainer's use before 2.2.1 |
 | 2.2.0, the program of 2.2.0rc2 | 2026.10.2, and 2026.11.0 from its own environment | the maintainer's use of 2.2.0rc2 on Home Assistant 2026.11.1 (Home Assistant OS 18.4, frontend 20261028.5) |
 | 2.2.0rc2 | 2026.10.2, and 2026.11.0 from its own environment | the browser check of 2.2.0rc1 on 2026.10.2 and 2026.11.0; the maintainer's use before 2.2.0 |
 | 2.2.0rc1 | 2026.10.2, and 2026.11.0 from its own environment | the browser check of #157, #159 and #163 on 2026.10.2 and 2026.11.0; not finished: a fix of the MQTT client followed in 2.2.0rc2 |
@@ -249,6 +250,104 @@ Writing grants nothing new: every user can send with the notify entities already
 `homeassistant.controls = false` changes neither. The topics, the request forms and the rules are
 in [mqtt-api.md](mqtt-api.md#drafts-of-home-assistants-chats-homeassistantdraftkindchat).
 
+## Commands from a companion
+
+A command is a direct message from a companion that starts one of this home's automations. The
+gateway carries out none itself: it passes the command to Home Assistant, whose automations
+decide what happens ([an example](#examples)). Commands come only from the contacts the
+administrator chose, the command senders, and only with the words the administrator set. The
+dashboard's *Settings* shows how many senders there are and whether codes are on, never the
+words: ask the administrator for them. The rules in full are in
+[configuration.md](configuration.md#commands), the events in
+[mqtt-api.md](mqtt-api.md#commands-command).
+
+**How to send one.** In the MeshCore app, write a direct message to this home's radio, in its
+chat, not on a channel: the command word first, then what the automation reads, if anything,
+and, with a code secret, the 6-digit code from the authenticator app last, each after a space.
+Alice, a command sender in a home with the words `status` and `gate-open`:
+
+| Alice sends | Alice has a code secret | What happens |
+| --- | --- | --- |
+| `status` | no | the command `status`, with `args` empty |
+| `gate-open now` | no | the command `gate-open`, with `args` `now` |
+| `status 492039` | yes | the command `status`, if 492039 is her app's current code; `args` empty, without the code |
+| `gate-open now 492039` | yes | the command `gate-open`, with `args` `now` |
+| `status` | yes | refused: `code_missing` |
+| `Status of the bus?` | no | the command `status`, with `args` `of the bus?` |
+| `Status of the bus?` | yes | refused: `code_missing`; it counts toward no lock |
+| `Status of order 482913` | yes | refused: `code_invalid`, unless 482913 is her app's current code; it counts toward the lock |
+| `/status`, `status,`, `statusnow` | either | no command: a chat message |
+
+The word must stand alone and first; upper and lower case do not matter. What follows it reaches
+the automation as `args`, which the automation should check. Every direct message whose first
+word is a command word is a command, also one meant as chat (below).
+
+**The code.** If the administrator gave you a code secret, every command of yours ends with a
+code; without one, a command needs none, except while the administrator's codes file holds a
+secret that the gateway ignores (`code_missing` below).
+
+* The administrator runs `meshcore-home-gateway commands enrol` with your companion's key and
+  shows you a QR code, or a line of text. You add it once to an authenticator app on your phone
+  (one for 6-digit codes that change every 30 seconds, TOTP). The secret is then in your app and
+  in the gateway's codes file; Home Assistant and the dashboard never see it.
+* A code serves once, until about a minute after your app first shows it: the gateway takes the
+  code of its current 30 seconds and of those just before and after, and none older than the
+  last code you used. Your phone's clock and the gateway's must agree within 30 seconds; phones
+  set theirs from the network.
+* A code shows that your app made it at that time; it does not bind the rest of the message
+  ([design §7.4](design.md#74-residual-risks)). It stays visible in your chat and in the
+  history, where a used code serves nobody.
+* A new phone: the administrator enrols you again, which ends the old secret. A lost phone: tell
+  the administrator at once, who revokes it.
+
+**The answer.** Whether the gateway answers is the administrator's choice (`[commands] reply`):
+by default it does not, and the automation may answer itself, as the [example](#examples) does.
+With `accepted` the gateway answers `ok: status` once the command reached the automations; with
+`all` it also answers a refusal with its reason, such as `rejected: code_invalid`, except those
+that the table below says get no answer. `ok` says that the command was passed on, not what the
+automation did. An answer is a message to your companion like any other: it waits for airtime,
+and with `[messages] confirm_nonce` it ends in a short code such as `#1a2b3c4d`. The dashboard's
+*Gateway* view shows the newest command, accepted or refused, under *Latest of each kind*.
+
+**When a command is refused.** The reason shows in the answer (with `reply = "all"`), in
+*Refused commands* and on the dashboard, whose *Help* explains each one under *Why a command was
+refused*. Send a command again as a new message: a copy of the same message, as a companion
+sends when an acknowledgement got lost, is dropped without an answer.
+
+| Reason | What it means | What to do |
+| --- | --- | --- |
+| `code_missing` | no 6-digit code at the end; without a code secret: the administrator's codes file holds a secret that the gateway ignores | send it again with the current code last; without a code secret, tell the administrator |
+| `code_invalid` | not your current code: a wrong entry in the app, a clock that is off, or a command that waited in the mesh too long | check your phone's clock, then send it again with a new code |
+| `code_reused` | that code, or an older one, served already | wait for the next code |
+| `code_locked` | 5 wrong codes within the hour (below) | wait; tell the administrator |
+| `replay`, `too_old`, `from_the_future` | a copy of an earlier command, or a clock off by more than 15 minutes (the default of `max_age_s`) | send it again; if it repeats, the administrator checks the clocks |
+| `state_unwritable`, `broker_unavailable` | the gateway could not keep it safe from copies, or not pass it on | send it again a little later; tell the administrator if it repeats |
+| `sender_unverified` | the gateway could not check the sender, such as while it connected to the radio after a restart; no answer | send it again a minute later |
+| `sender_unknown`, `sender_ambiguous`, `sender_not_allowed` | your companion is no contact of this home's radio or no command sender here, or another node's key starts like yours; no answer | ask the administrator |
+
+**What locks a sender.** Five wrong codes (`code_invalid`) of one sender within an hour lock its
+commands: each is refused as `code_locked`, without a look at its code, until the first of the
+five is an hour old. A restart of the gateway does not end it, and its log warns that someone may
+be guessing the codes. These count toward no lock: a message without a code (`code_missing`),
+such as chat that starts with a command word (since 2.2.1, #176); a code that served already
+(`code_reused`); a command that came late with the right code of the time it was sent (it waited
+in the mesh or in the radio); and the commands refused while the lock holds. Chat that does not
+end in a 6-digit number cannot lock you.
+
+**Keeping chat from commanding.** The gateway cannot tell a command from chat that starts with
+the same word: from a sender, "Status of the bus?" is the command `status`.
+
+* Start a message to this home's radio with a command word only when you mean the command.
+* The administrator can choose words nobody starts a sentence with, such as `gate-open` instead
+  of `open`, and let each automation act only on the `args` it expects
+  ([configuration.md](configuration.md#commands)).
+* With a code secret, chat commands nothing. Chat that does not end in a 6-digit number is
+  refused as `code_missing` and counts toward no lock; it still shows among the refused
+  commands.
+* With a code secret, a message that starts with a command word and ends in a 6-digit number,
+  such as "Status of order 482913", is checked as a code: a wrong one is refused as
+  `code_invalid` and counts toward the lock.
+
 ## Adding and removing contacts
 
 The gateway adds contacts to the radio and removes them on request, so a new handheld needs
@@ -296,6 +395,18 @@ it fail with `unknown_contact`, and its device goes; while it counts as heard, i
 in *Add heard node*, and adding it back restores the device with its name, area and labels.
 *Delete* on the device page is something else: it hides the contact in Home Assistant only
 ([Contacts](#contacts)), and the contact stays on the radio.
+
+**What a removal keeps.** Removing takes the contact off the radio and out of Home Assistant; it
+deletes nothing the gateway recorded. The chat stays in *Message history*, so in *Chats* and
+*Latest chats* of the dashboard, and the gateway's history keeps the contact's messages,
+positions and readings until they are older than `[history]` allows, 30 days by default
+([configuration.md](configuration.md#history)). Whether the contact was included in telemetry
+stays too: added again, it is asked as before. To delete its readings and its positions from
+telemetry at once, exclude it with `meshcore-home-gateway contacts telemetry --forget KEY off`,
+which also works for a key no longer on the radio (added again, it then stays excluded until
+its *Telemetry* is switched on); its messages and the positions its adverts carried stay until
+they age out, and no command deletes them alone. Home Assistant's recorder keeps the history of
+the contact's entities on its own terms ([Privacy](#privacy)).
 
 **The gateway in the MeshCore app.** The radio drops direct messages from nodes it has not
 added, and the app on a phone does the same: the phone's owner adds the gateway by scanning its
@@ -616,6 +727,44 @@ and shows a person instead of a tracker that is the person's current source.
 
 An entities card shows an attribute, such as the text of the last message, without YAML.
 
+### Names and texts from the mesh
+
+Message texts and names come from other people: anyone in range names their radio as they like,
+anyone with a channel's key writes on it, and a contact renames itself with each advert. Home
+Assistant shows them as text, with these exceptions:
+
+* **Links in the more-info dialog.** An attribute that starts with `http` and reads as a web
+  address is shown as a link, which opens in a new tab when clicked: the `text` and `sender_name`
+  of *Message* and of a contact's *Message*, and, with `[contacts] heard_nodes = "full"`, the
+  default, the `name` of *New node*, which any radio in range chooses
+  ([platform notes](platform-notes.md#home-assistant-dashboards)). Nothing loads until it is
+  clicked, and the link shows the address it opens. Do not follow a link from the mesh unless
+  you know who sent it. The generated dashboard shows texts and names as text, never as links.
+  Channels that are not targets are not published (`[messages] publish_channels = "targets"`,
+  the default), and `heard_nodes = "keys"` keeps strangers' names out of Home Assistant
+  ([configuration.md](configuration.md#contacts)).
+* **Characters that change how a name reads.** With `[messages] clean_received = false`, the
+  default, names and texts keep control and direction characters: a right-to-left override can
+  make a contact's device name read as another contact's, without the key digits that mark a
+  name another device has. Set `clean_received = true`: the gateway then drops them from texts
+  and names where they enter ([configuration.md](configuration.md#messages)). Invisible
+  characters, such as zero-width spaces and Unicode tag characters, stay even then.
+* **Notifications to a phone.** An automation that passes a mesh text or name to the companion
+  app hands it to an app that interprets its message: on Android it renders HTML tags in it, and
+  a message that is exactly one of its command words, such as `request_location_update` or
+  `command_screen_on`, makes the phone act instead of showing it
+  ([platform notes](platform-notes.md#home-assistant-companion-app)). Use the recipe in
+  [Examples](#examples), which keeps the text a text.
+* **Assist and language models.** Home Assistant exposes some new entities to its conversation
+  agent by default: switches, and sensors of temperature, humidity and a few more classes, unless
+  they have an entity category ([platform notes](platform-notes.md#home-assistant-mqtt)). Of the
+  gateway's entities, those are the temperature and humidity sensors that a companion's
+  telemetry adds (such as `sensor.mesh_alice_ch2_temperature`), named after the contact's device,
+  whose name its owner chose. An agent backed by a language model reads those names, also
+  characters a person does not see. Unless the household asks Assist for them, take them out on
+  the *Expose* tab of Home Assistant's voice assistant settings, and switch off exposing new
+  entities there if contacts come and go.
+
 ## First steps
 
 Once the gateway runs, its device is under *Settings → Devices & services → MQTT*, named after
@@ -769,7 +918,16 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   position broadcast to everyone says to make sure in the MeshCore app that sharing the location
   in adverts is off, then to send an advert near this home's radio: until the gateway has read a
   device's newest advert, it goes by the position the radio remembers, so the card can come back
-  after an update or a restart ([companions.md](companions.md#positions-in-adverts)).
+  after an update or a restart ([companions.md](companions.md#positions-in-adverts)). It lists
+  each device with its state and when it was last heard. The first line names the problem, the
+  card who and what to do. A device whose *Last heard* is more than a day old does not count
+  (#168): most likely it broadcasts nothing now. Its row says how long it has not been heard and
+  since when, with the fact that its adverts carried its position until then, muted; with only
+  such devices the card turns blue, and the first line counts it as a note. For a day after the
+  gateway starts (the state of its *Configuration*), every device counts, as the gateway did not
+  hear what came while it was stopped. An advert the radio took whose report did not reach the
+  gateway, such as one dropped over TCP, does not move *Last heard*: the card's fold says to send
+  an advert from a device listed as not heard that is on.
   *Latest chats* shows the three chats with the newest messages, each a link to its page, "new"
   for a message received in the last 15 minutes, and a message not sent yet as on its way.
   *Where everyone is* lists the contacts with a position, in words, and links to the map.
@@ -820,7 +978,9 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   gone out ([advert nearby](#advert-nearby)); with `radio_controls` or `controls` off a blue line
   says so instead. Its help names the first digits of the radio's key to compare with, and,
   unless `radio_controls` or `controls` is off, that everyone here can send it. Then a *Remove*
-  for each contact, which asks first, and *Hidden contacts* with *Show again*; and
+  for each contact, which asks first and says that the chat and the gateway's history of the
+  contact stay ([what a removal keeps](#adding-and-removing-contacts)), and *Hidden contacts*
+  with *Show again*; and
   *Nodes heard nearby*, the nodes you can add. While the
   controls cannot act, a line above them says why: the gateway offline or the radio disconnected
   (in red, as on *Overview*), `controls = false`, contact management off, the radio not reported
@@ -862,9 +1022,9 @@ it, every page but a chat's and *Help* ends in *What this view is for*, which li
   versions of the dashboard, the gateway and the
   radio. A gateway before 2.1 reports no settings, and the page says so and shows only what it
   can tell; offline, it says that instead.
-* *Help*: what the gateway does, the pages, every button and switch, the kinds of messages, what
-  the dashboard cannot do, what each word of the cards means, who sees what, and what the
-  administrator does.
+* *Help*: what the gateway does, the pages, every button and switch, the kinds of messages (with a
+  link to [Commands from a companion](#commands-from-a-companion)), what the dashboard cannot do,
+  what each word of the cards means, who sees what, and what the administrator does.
 
 It uses only the gateway's entities and the cards of Home Assistant, no custom card. Its texts
 follow `homeassistant.language`; entity IDs, reason codes and names from the mesh stay as they
@@ -1048,6 +1208,12 @@ actions:
 mode: queued
 ```
 
+Every direct message of an allowed sender that starts with the word is the command, also a chat
+such as "status of the bus?": choose words and check `args` as
+[configuration.md](configuration.md#commands) says (*A command word at the start of a chat*).
+What the household needs to know to send a command: [Commands from a
+companion](#commands-from-a-companion).
+
 Get told when a message could not be delivered:
 
 ```yaml
@@ -1071,6 +1237,42 @@ mode: queued
 
 Do not report a failed delivery over the mesh to the same target: when the radio cannot reach it,
 the report fails too and uses airtime.
+
+Forward a direct message to a phone with the companion app (write your phone's notify action):
+
+```yaml
+alias: Phone notice of a mesh message
+triggers:
+  - trigger: event.received
+    target:
+      entity_id: event.meshcore_home_gateway_radio1_message
+    options:
+      event_type: [contact]
+actions:
+  - action: notify.mobile_app_my_phone
+    data: >-
+      {% set a = trigger.to_state.attributes %}
+      {% set who = (a.sender_name or a.sender_prefix or '?') | string %}
+      {% set text = (a.text or '') | string %}
+      {{ {'title': 'Mesh message',
+          'message': ('Mesh · ' ~ who ~ ': ' ~ text)
+                     | replace('&', '&amp;') | replace('<', '&lt;')} }}
+mode: queued
+```
+
+The name and the text are someone else's ([names and texts from the
+mesh](#names-and-texts-from-the-mesh)), so the recipe keeps them inert. The fixed start means the
+message is never one of the app's command words, on Android and on an iPhone. The recipe is
+written for Android, which renders some HTML tags in a message: with `&` and `<` replaced, it
+shows them as typed. The app's documentation describes HTML formatting for Android only. For an
+iPhone, leave out `| replace('&', '&amp;') | replace('<', '&lt;')`: where the message is shown
+as plain text, `Fish & chips` would otherwise read `Fish &amp; chips`. None of this was tried
+on a phone ([platform notes](platform-notes.md#home-assistant-companion-app)). One template for
+the whole `data` keeps a text such as `None`, `[1, 2]` or `1.10` a text
+([platform notes](platform-notes.md#home-assistant-mqtt)). The title is fixed: keep names and
+texts out of `title` and out of the keys the app acts on, such as `url`, `clickAction`, `image`
+and `icon_url`. A channel's messages come from anyone with its key: for them, add `channel` to
+`event_type` only for a channel of the household's own.
 
 Send a message to a contact target and wait until it is confirmed, as a script (paste it in the
 script editor, *Edit in YAML*). It sends through the target's notify entity, takes the `id` of

@@ -6,6 +6,7 @@ External links are not fetched (the tests run offline); the documents cite them 
 from __future__ import annotations
 
 import importlib.util
+import math
 import re
 import sys
 from datetime import UTC, datetime
@@ -14,6 +15,14 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+
+from meshcore_home_gateway.core.airtime import (
+    MAX_ADVERT_NAME_BYTES,
+    advert_reserve_s,
+    direct_attempt_airtime_s,
+    meshcore_lora,
+)
+from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES
 
 ROOT = Path(__file__).resolve().parent.parent
 BUILD_OUTPUT = {"build", "dist"}  # generated files, e.g. dist/release-notes.md of `make release`
@@ -591,3 +600,35 @@ def test_rule_2_names_every_mapping_macro_the_rules_check() -> None:
     development = _words((ROOT / "docs" / "development.md").read_text(encoding="utf-8"))
     rule = development.partition("2. A mapping macro (")[2].partition(")")[0]
     assert set(re.findall(r"`(\w+)`", rule)) == set(MAPPINGS)
+
+
+def test_the_radio_presets_table_says_what_the_airtime_functions_compute() -> None:
+    """#181: each row's times on air, with the longest name the advert carries, and what the
+    default burst admits are computed by core/airtime.py as the gateway computes them at the
+    connect, so the table cannot drift; it names EU/UK Narrow and a row of each outcome."""
+    text = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
+    section = text.split("\n## Radio presets\n", 1)[1].split("\n## ", 1)[0]
+    rows = [line for line in section.splitlines() if re.match(r"\| [\d.]+ kHz", line)]
+    outcomes = set()
+    for row in rows:
+        cells = [cell.strip() for cell in row.strip().strip("|").split("|")]
+        preset = re.fullmatch(r"([\d.]+) kHz, SF (\d+), CR 4/(\d)(?: \(EU/UK Narrow\))?", cells[0])
+        assert preset is not None, row
+        lora = meshcore_lora(float(preset[1]) * 1000, int(preset[2]), int(preset[3]))
+        message = direct_attempt_airtime_s(MAX_TEXT_BYTES, 0, True, lora)
+        both = advert_reserve_s(MAX_ADVERT_NAME_BYTES, MAX_TEXT_BYTES, lora)
+        if both <= 10:
+            outcome = "both fit"
+        elif message <= 10:
+            outcome = f"no advert; `burst_s = {math.ceil(both)}`"
+        else:
+            outcome = f"no long message, no advert; `burst_s = {math.ceil(both)}`"
+        assert cells[1:] == [
+            f"{message:.2f} s",
+            f"{both - message:.2f} s",
+            f"{both:.2f} s",
+            outcome,
+        ]
+        outcomes.add(outcome.split(";")[0])
+    assert any("(EU/UK Narrow)" in row for row in rows)
+    assert outcomes == {"both fit", "no advert", "no long message, no advert"}

@@ -458,7 +458,9 @@ sequenceDiagram
    waits until the budget allows it; if the wait would exceed the remaining time to live, the
    message expires. A packet longer than `burst_s` could never be sent: it fails at once
    (`exceeds_airtime_burst`), and the bridge warns at connect if the radio's settings make long
-   messages that slow.
+   messages that slow, or if its advert and a long message beside it do not fit into `burst_s`
+   together, which no advert on request could then pass (ADR 0033); that warning names the
+   `burst_s` that holds both ([Radio presets](configuration.md#radio-presets)).
 7. **Send and confirm.** Channel messages are final at `sent`. Direct messages wait for the
    acknowledgement: 1.2 times the radio's estimate from `SENT`, bounded to 5..60 s, like the
    MeshCore Python client. Without an acknowledgement the bridge retries with the **same
@@ -1048,10 +1050,9 @@ the apps compute it. After the checks above, the last word must be the code of t
 clock's step or of the step before or after (`code_missing`, `code_invalid`), of a step newer
 than the sender's last accepted code (`code_reused`); `args` leaves it out. The step is stored
 with the timestamp, before the event goes out, so a code serves once, also across a restart.
-After 5 wrong codes of a sender within an hour (`code_missing` and `code_invalid`; not the
-`code_missing` of a sender without a secret while one is ignored, below), its commands
-are refused without a look at the code (`code_locked`, RFC 4226 section 7.3) until the first of
-them is an hour old, and the log warns each time the sender reaches the limit; their times are
+After 5 wrong codes of a sender within an hour (`code_invalid`), its commands are refused
+without a look at the code (`code_locked`, RFC 4226 section 7.3) until the first of them is an
+hour old, and the log warns each time the sender reaches the limit; their times are
 in the state file, so a restart does not end it (§7.4). A command that came late (it waited in
 the radio through a restart, an update or a re-plug, or in the mesh) ends with the sender's code
 of the time it was sent, which the bridge clock no longer accepts. It is refused as
@@ -1059,7 +1060,11 @@ of the time it was sent, which the bridge clock no longer accepts. It is refused
 its own timestamp, or the step before or after, and that step is older than those the bridge
 accepts. A guess that hits such a code gains nothing: the command is refused all the same, and
 the code of a past step serves no later command. A step ahead of the bridge's never counts as
-late, so the count tells a guesser no code it could use once its time came.
+late, so the count tells a guesser no code it could use once its time came. A `code_missing`
+is no guess either: the code is read from the last word only, so a command without one (chat
+that starts with a command word, #176) tells nothing about the secret. It is refused and does
+not count; counting it locked a sender out after five casual messages and warned of guessing
+where nobody guessed.
 The code shows that the sender's app made it in that time window, whatever frame carries it: it
 comes from the secret, which neither the radio, the link nor the mesh carries. It does not bind
 the text (§7.4). The secret is 160 random bits from
@@ -1068,7 +1073,7 @@ stops the service rather than let commands pass without codes. The secret of a k
 in `senders` is ignored, with a warning at the start: removing a lost phone's sender ends its
 commands, and `commands revoke` removes its secret. A sender's key corrected by hand leaves its
 secret behind the same way, and the corrected key has none. So while a secret is ignored, the
-commands of each sender without one are refused (`code_missing`, not counted as a wrong code),
+commands of each sender without one are refused (`code_missing`, no wrong code),
 and the warnings name it, until `commands revoke` removes the ignored secret or `commands enrol`
 gives the sender one, and the service restarts. 2.0 did not start then (exit 78); now the rest
 of the gateway keeps running, and the commands still fail closed. The revoke of the last ignored
@@ -1267,7 +1272,7 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   [`deployment.md`](deployment.md)): `deploy/proxmox/meshcore-home-gateway-lxc.sh` runs on the host
   (Proxmox VE 9, or 8 with a `pve-container` that supports Debian 13), straight from its address
   (`bash -c "$(wget -qO- URL)"`); the host keeps nothing. A default setup asks only for the radio,
-  the broker and the targets, an advanced one for everything. After a confirmation it creates an
+  the broker, the targets and the command senders, an advanced one for everything. After a confirmation it creates an
   unprivileged Debian 13 container with nesting, passes the USB serial device through (`dev0`,
   group `dialout` as seen in the container; refused when another container of the host already
   passes it through), installs `python3` and `python3-paho-mqtt` from Debian and the program
@@ -1345,7 +1350,7 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
 | Contract | discovery, payloads, the documented automations, the names in every language and the generated dashboard in Home Assistant | the real MQTT integration of a pinned Home Assistant release, in its own environment (`make ha-test`); a pseudo-language marks every name and text; a hostile corpus of names and texts, whose cards a copy of the pinned frontend's Markdown pipeline renders in CI (§6.14) |
 | Firmware | the gateway against MeshCore's own companion and repeater firmware | the pinned release built natively on stand-ins, nodes as processes on a simulated LoRa air, the gateway on a pseudo terminal; scenarios of the hardware checklist run the gateway's service against it: messages, commands, codes and replies, an unreachable contact and the radio profile (steps 3–6, 10–14, 55 and 56), steps 29, 30, 33, 34, 35 and 39 and parts of steps 41 and 43 (the check for positions in adverts), and a test pins down the firmware's part of step 31 (`make firmware-test`, [which parts](testing.md#where-each-step-is-checked), [ADR 0026](decisions/0026-gateway-tested-against-the-real-firmware-built-natively.md)) |
 | Service manager | the zipapp and the systemd unit as installed | on CI's runner, thrown away after the job: the service under systemd as its user, with an emulated radio and a private broker; readiness, the unit's sandbox, `doctor`, a broker restart, the watchdog (`make unit-run`) |
-| Installer | Proxmox host script | runs with stub commands for `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query` and `whiptail`, which answer in the formats of Proxmox VE 9 and parse options like the real whiptail; a manual check drives the real whiptail |
+| Installer | Proxmox host script | runs with stub commands for `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query` and `whiptail`, which answer in the formats of Proxmox VE 9 and parse options like the real whiptail; a model of whiptail's line wrapping checks that every text fits its box and every menu row its line in every language; manual checks drive the real whiptail |
 | Static | style, types, shell, workflows, unit file, translations | ruff, mypy --strict, shellcheck, zizmor, systemd-analyze (verify, exposure score); the catalog checks of `tools/i18n.py` as tests, the compiler against GNU `msgfmt` |
 | Installation | every real installation | the installer's self-test: `doctor` in the container after an installation, a reconfiguration and an update, until it passes ([deployment.md](deployment.md#install)) |
 | Release | the release candidate on the maintainer's installation | its self-test and the maintainer's use of Home Assistant ([testing.md](testing.md#release-check), [ADR 0030](decisions/0030-release-checked-by-ci-self-test-and-use.md)); the hardware checklist describes the behaviour on real radios and is no longer run before a release |

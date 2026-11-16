@@ -182,7 +182,7 @@ Details that matter:
 | 2 | 1 | transmit power, int8 dBm |
 | 3 | 1 | maximum transmit power |
 | 4 | 32 | own public key |
-| 36, 40 | 4 + 4 | latitude, longitude, int32 × 10⁻⁶ degrees; 0, 0 is none. A board with GPS updates it from its fix (`src/helpers/sensors/EnvironmentSensorManager.cpp:939-947`), otherwise it is the position set with `SET_ADVERT_LATLON` (`MyMesh.cpp:981, 1266-1280`) |
+| 36, 40 | 4 + 4 | latitude, longitude, int32 × 10⁻⁶ degrees; 0, 0 is none, and so to the gateway is a pair outside ±90° or ±180°. A board with GPS updates it from its fix (`src/helpers/sensors/EnvironmentSensorManager.cpp:939-947`), otherwise it is the position set with `SET_ADVERT_LATLON` (`MyMesh.cpp:981, 1266-1280`) |
 | 44 | 1 | extra acknowledgements (`multi_acks`) |
 | 45 | 1 | advert location policy: 0 adverts carry no position, 1 they carry this one (`MyMesh.cpp:1299-1303, 2436-2442`; `NodePrefs.h:11-12`) |
 | 46 | 1 | telemetry modes: bits 0–1 base (battery), 2–3 location, 4–5 environment; each 0 deny, 1 by the requesting contact's flags, 2 allow everyone (`MyMesh.cpp:1101-1102`, `NodePrefs.h:7-9`) |
@@ -213,7 +213,10 @@ path (36–99), name (100–131), last advert (132), latitude (136), longitude (
 * **Path:** of the 64 path bytes only hops × hash size are in use; the rest is stale buffer.
 * **Position:** an advert updates it only when it carries one (`BaseChatMesh.cpp:114-116,
   193-196`), so a contact keeps the position of its last advert with one; 0, 0 is none. A record
-  in `NEW_ADVERT` has the position of that advert, if any (`BaseChatMesh.cpp:108-120`).
+  in `NEW_ADVERT` has the position of that advert, if any (`BaseChatMesh.cpp:108-120`). Neither
+  the advert's parser nor the record checks the range (`src/helpers/AdvertDataHelpers.cpp:47-49`):
+  the gateway takes a latitude outside ±90° or a longitude outside ±180° for no position, as in a
+  telemetry answer (#179).
 * **Last advert** is the node's clock at its newest advert; the radio drops an advert of a contact
   that is not newer (replay protection, `BaseChatMesh.cpp:131-136`). **Last modified** is the
   radio's clock.
@@ -486,7 +489,8 @@ fail when one does not:
   a type and big-endian values. A companion's own readings are on channel 1 (voltage 116, GPS
   136, temperature 103, …); sensors on further channels. GPS is three 24-bit two's complement
   values: latitude and longitude × 10⁴ (truncated toward zero, so a position is off by up to one
-  cell of 11 m), altitude × 100 in metres. Voltage (116) and current (117) are signed, although
+  cell of 11 m), altitude × 100 in metres; 0, 0 and a pair outside ±90° or ±180° are no position
+  to the gateway, which checks adverts and records the same way. Voltage (116) and current (117) are signed, although
   the header's comments say otherwise. The AES padding is 0 to 15 zero bytes, and channel 0 is
   never used, so a reading on channel 0 ends the data. An unknown type has no known size: the
   rest cannot be read. An answer starts with the battery, the channel 1 voltage, then the board's

@@ -1067,6 +1067,7 @@ async def test_every_control_works_for_a_user_who_is_no_administrator(
     (advert,) = [r["tap_action"] for r in walk(view) if r.get("entity") == SEND_ADVERT]
     assert "confirmation" not in advert
     assert remove["confirmation"]["text"].startswith("Bob can then no longer write")
+    assert "The chat and the gateway's history of Bob stay." in remove["confirmation"]["text"]
     assert "confirmation" not in show
     options = hass.states.get(f"select.{PREFIX}_add_node").attributes["options"]
     alerts, switch = f"{PREFIX}_write_alerts", "switch.mesh_bob_telemetry"

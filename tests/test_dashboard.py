@@ -406,6 +406,49 @@ def test_the_switches_and_remove_buttons_are_guarded_rows_of_the_state(tmp_path:
     assert "type: conditional" not in text
 
 
+KEPT = (
+    "The chat and the gateway's history of the contact stay: messages, positions and readings, "
+    "until they are older than Settings shows."
+)
+# what `contacts telemetry --forget KEY off` deletes: the readings and the positions from
+# telemetry; the positions from adverts stay (history.forget_telemetry)
+FORGET = (
+    "For your administrator: the gateway deletes the history of a removed contact only as it "
+    "ages; the readings and positions it asked the contact for can go at once."
+)
+
+
+@pytest.mark.parametrize("removable", [True, False])
+def test_removing_says_that_the_chat_and_the_history_stay(tmp_path: Path, removable: bool) -> None:
+    """#166: Remove takes a contact off the radio and its device out of Home Assistant; the
+    gateway keeps its chat, messages, positions and readings until they age out. The question
+    and the fold What removing does say so, with a row to remove and without; the line for the
+    administrator links the guide's steps to delete what can go at once."""
+    announced = {ALICE: {"slug": "alice", "cmps": {"remove": "button"}}} if removable else {}
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({"ha_contact_devices": {"announced": announced}}), encoding="utf-8")
+    text, _ = dashboard.dashboard(config(), tmp_path)
+    contacts = next(v for v in rules.load(text)["views"] if v["path"] == "contacts")
+    rows = [n["row"] for n, _ in rules.nodes(contacts) if isinstance(n, dict) and "row" in n]
+    asked = [r["tap_action"]["confirmation"]["text"] for r in rows if "tap_action" in r]
+    assert asked == (
+        [
+            (
+                "Alice can then no longer write to this home, and nobody here can write to "
+                "Alice. The chat and the gateway's history of Alice stay. You can add Alice "
+                "again later."
+            )
+        ]
+        if removable
+        else []
+    )
+    (fold,) = [t for t in rules.texts(contacts) if "What removing does" in t]
+    assert f"<li>{KEPT}</li>" in fold
+    guide = rules.GUIDE_URL.format(version=rules.VERSION)
+    link = f'<a href="{guide}#adding-and-removing-contacts">How, in the guide</a>'
+    assert f"<li>{FORGET} {link}</li>" in fold
+
+
 def test_the_generator_takes_no_fixed_list_of_controls() -> None:
     """Design §6.1: the flag `controls` and `["@controls@"]` of 2.0 are gone; the switches and
     buttons are the items of `switches` and `removes`."""
@@ -787,6 +830,10 @@ _OPENS = {
     "<details>": "</details>",
     "<ha-qr-code": "</ha-qr-code>",
 }
+# <ha-qr-code> opens no CommonMark HTML block, so marked parses its line as Markdown: a value
+# stays inert only in its data attribute, part of the raw tag; as its content it would be parsed
+# (#179, SEC-7). One element, no content, the other attributes without a value.
+_QR_LINE = re.compile(r'<ha-qr-code data="(?P<data>[^"]*)"(?: [a-z-]+="[^"{}]*")*></ha-qr-code>')
 
 
 @dataclass
@@ -985,6 +1032,8 @@ def _card_findings(block: Block) -> list[str]:  # noqa: PLR0912
             opening = next((tag for tag in _OPENS if text.startswith(tag)), None)
             if opening is None or not text.endswith(_OPENS[opening]):
                 found.append(f"{number}: a value outside one whole element of _OPENS")
+            elif opening == "<ha-qr-code" and not _qr_line(text):
+                found.append(f"{number}: a value of <ha-qr-code> outside its data attribute")
     expected = _mappings()
     for name, (parameter, lines) in macros.items():
         if name not in expected:
@@ -999,6 +1048,15 @@ def _card_findings(block: Block) -> list[str]:  # noqa: PLR0912
         if not any(line.endswith(f"{{%- else -%}}{a}") for line in lines for a in added):
             found.append(f"{name}: no m({parameter}) for a value added later")
     return found
+
+
+def _qr_line(text: str) -> bool:
+    """One <ha-qr-code> element without content whose values all stand in its data attribute."""
+    match = _QR_LINE.fullmatch(text)
+    if match is None:
+        return False
+    rest = text[: match.start("data")] + text[match.end("data") :]
+    return not _TAG.search(rest) and '_("' not in rest
 
 
 def _lines(template: str) -> Iterator[tuple[int, str]]:
@@ -1042,6 +1100,14 @@ def test_the_shipped_template_keeps_its_rules() -> None:
 
 SETTINGS = '            heading: _("Settings")\n'
 LISTED = "{%- macro listed(v) -%}{%- for k in v[:3] -%}{{ who(k) }}"
+QR = '<ha-qr-code data="{{ m(link) }}" scale="4"></ha-qr-code>'
+QR_ = "a value of <ha-qr-code> outside its data attribute"
+TITLE = (
+    "<div><b>{{ m('@chats.title@') }}</b>{% if chan >= 0 %} · "
+    '_("channel · everyone with the channel\'s key reads it"){% elif fresh %} · '
+    '_("heard {heard}"){% endif %}</div>'
+)
+OUTSIDE = "a value outside one whole element"
 
 
 @pytest.mark.parametrize(
@@ -1089,6 +1155,13 @@ LISTED = "{%- macro listed(v) -%}{%- for k in v[:3] -%}{{ who(k) }}"
         ('title: _("Mesh")', 'title: _("Mesh {node}")', "a field in a whole value"),
         ("<table><tr><th>", "<p><tr><th>", "a value outside one whole"),
         ("<table><tr><th>", '<table role="presentation"><tr><th>', "a value outside one whole"),
+        # marked parses Markdown on a line that opens no HTML block (#179, SEC-7): an escaped
+        # value there still becomes an image, a link or an autolink
+        (QR, '<ha-qr-code data="x" scale="4">{{ m(link) }}</ha-qr-code>', QR_),
+        (QR, '<ha-qr-code data="x" scale="{{ m(link) }}"></ha-qr-code>', QR_),
+        (QR, QR.replace("></ha-qr-code>", "></ha-qr-code>{{ m(link) }}</ha-qr-code>"), QR_),
+        (TITLE, TITLE.replace("<div><b>", "<b>", 1).removesuffix("</div>"), OUTSIDE),
+        (TITLE, TITLE.replace("<div><b>", "<span><b>", 1).replace("</div>", "</span>"), OUTSIDE),
         ("views:\n", "views:\n\n", "a blank line"),
     ],
 )
@@ -1926,7 +1999,13 @@ def test_every_link_resolves_to_a_page_of_this_dashboard() -> None:
     assert {link for link in links if link.startswith("./{{")} == {"./{{ m(r.path) }}"}
     # the guide's section, of this dashboard's version (D-30)
     guide = rules.GUIDE_URL.format(version=rules.VERSION)
-    sections = {guide + "#a-second-gateway", guide + "#privacy"}
+    anchors = (
+        "#a-second-gateway",
+        "#privacy",
+        "#adding-and-removing-contacts",
+        "#commands-from-a-companion",
+    )
+    sections = {guide + anchor for anchor in anchors}
     assert {link for link in links if link.startswith("http")} == sections
     assert rules.rule_6(shipped(), None, loaded, rules.HOUSEHOLD) == []
 
@@ -3132,6 +3211,52 @@ def test_settings_name_each_key_by_its_section_and_its_name_so_the_tables_fit_a_
     assert max(len(w) for w in words) <= CODE_LETTERS, max(words, key=len)
 
 
+# the words that would say what the law allows a radio, in each language shipped: the gateway
+# restricts no radio setting by region or law, and whoever runs it follows the rules for their
+# band (docs/configuration.md, Local rules; #174, #175)
+LAW = {
+    "en": r"\b(?:laws?|legal(?:ly)?|regulations?)\b",
+    "de": r"\b(?:gesetz(?:e|es)?|gesetzlich\w*|rechtlich\w*)\b",
+}
+LOCAL_RULES = "Local rules may limit a radio's airtime; your administrator follows them."
+
+
+@pytest.mark.real_catalogs
+@pytest.mark.parametrize("language", sorted(LAW))
+def test_no_text_says_what_the_law_allows_a_radio(language: str, tmp_path: Path) -> None:
+    """The gateway restricts no radio setting by region or law: the rules differ by country and
+    band, and whoever runs the gateway follows those for their band (docs/configuration.md,
+    Local rules; #174, #175). Gateway's fold What the graph shows and Settings' row Airtime
+    budget said that the law allows a radio only a share of each hour, one region's rule as a
+    fact, and Settings' fold Why can't I change this here? spoke of settings that protect the
+    law. No text of the dashboard speaks of a law, in any language shipped."""
+    text, _ = dashboard.dashboard(
+        config(more=f'[homeassistant]\nlanguage = "{language}"\n'), tmp_path
+    )
+    assert re.findall(LAW[language], text, re.IGNORECASE) == []
+
+
+def test_airtime_says_what_the_budget_is_and_that_local_rules_may_limit_it() -> None:
+    """What the law's place says (#174, #175): the airtime budget is the airtime the gateway
+    gives its own messages, which wait when it is used up; the radio's own traffic is beyond it
+    (the graph's second line). Local rules may limit a radio's airtime, and the administrator
+    follows them: one text, after either branch of Gateway's fold and in Settings' row, which
+    names its keys as the other rows do (`[airtime] budget_s_per_hour`, `burst_s`)."""
+    (fold,) = [t for t in rules.texts(view_of("gateway")) if "What the graph shows" in t]
+    item = fold.partition("<li>")[2].partition("</li>")[0]
+    with_hour, _, without = item.partition("{% else %}")
+    assert "Airtime: the gateway keeps its own messages within {{ hour }} s an hour" in with_hour
+    assert "Airtime: the gateway keeps its own messages within its budget" in without
+    assert item.endswith("{% endif %} " + LOCAL_RULES)
+    (table,) = [t for t in rules.texts(view_of("settings")) if "<td>Airtime budget</td>" in t]
+    row = table.partition("<td>Airtime budget</td>")[2].partition("</tr>")[0]
+    assert row.endswith(
+        "How much airtime the gateway gives its own messages in an hour and at once; they wait "
+        f"when it is used up. {LOCAL_RULES} <code>[airtime]</code> <code>budget_s_per_hour</code> "
+        "<code>burst_s</code></td>"
+    )
+
+
 # DR-14: what Help names, besides the titles and the names rule 8 finds by themselves
 HELP_TOPICS = (
     "What this gateway does",
@@ -3149,13 +3274,63 @@ HELP_TOPICS = (
 def test_help_says_what_the_gateway_goes_by_for_a_position_broadcast_to_everyone() -> None:
     """The second place that states the warning as certain (owner feedback on 2.1.0): Help's
     words for Overview's first line say, as the card does, that the gateway goes by the position
-    the radio remembers until it has read the device's newest advert."""
+    the radio remembers until it has read the device's newest advert; and that a device not
+    heard for a day, while the gateway has run for a day, does not count (#168)."""
     said = " ".join(rules.texts(view_of("help")))
     assert (
         "<li><b>a position broadcast to everyone</b>: A person's device tells everyone in range "
         "where it is. Until the gateway has read the device's newest advert, it goes by the "
-        "position this home's radio still remembers for it.</li>"
+        "position this home's radio still remembers for it. A device not heard for over a day, "
+        "while the gateway has run for over a day, does not count: the card lists it as not "
+        "heard, with the time it was last heard.</li>"
     ) in said
+
+
+SILENT_FROM = (
+    "{#- who is silent: not heard for a day, by its Last heard, while the gateway has run for a "
+    "day; the same lines in the status line and in the card of a position broadcast to everyone "
+    "(#168) -#}"
+)
+
+
+def _silent_lines(card: list[str]) -> list[str]:
+    """The lines that tell the silent companions from the others, up to the count beyond the
+    gateway's list."""
+    start = card.index(SILENT_FROM)
+    end = next(n for n in range(start, len(card)) if card[n].startswith("{%- set beyond = "))
+    return card[start : end + 1]
+
+
+def test_the_status_line_and_its_card_tell_a_silent_companion_alike() -> None:
+    """#168: a companion not heard for a day leaves the problem a position broadcast to
+    everyone; the status line and its card decide it by the same lines. From the gateway's list
+    of companions whose adverts carry their position, each one's Last heard, found by its
+    device's serial number; older than a day is silent, but only while the gateway's start
+    (its Configuration) is older than a day too: it did not hear what came while it was stopped,
+    so after a start every listed companion has a day to be heard. One never heard, one without
+    a device, one beyond the list and any while the start is unknown count as heard: the list
+    errs to warn (ADR 0025). The status line no longer takes the gateway's binary sensor alone
+    for the problem."""
+    cards = list(_cards(shipped()))
+    (status,) = [c for c in cards if "{%- macro problem(v) -%}" in c]
+    (advert,) = [c for c in cards if c[0] == "{#- problem: advert_position -#}"]
+    lines = _silent_lines(status)
+    assert lines == _silent_lines(advert)
+    block = "\n".join(lines)
+    assert "timedelta(days=1)" in block
+    assert "select('match', 'sensor\\\\.\\\\w+_last_heard(_\\\\d+)?$')" in block
+    assert "device_attr(d, 'serial_number') == k" in block
+    assert "state_attr(e, 'total')" in block
+    start = "{%- set start = states('sensor.@gw@_configuration') | as_datetime(default=none) -%}"
+    assert start in lines
+    assert (
+        "{%- if t is not none and start is not none and clock - t > timedelta(days=1) and clock "
+        "- start > timedelta(days=1) -%}"
+    ) in block
+    whole = "\n".join(status)
+    assert "is_state('binary_sensor.@gw@_advert_position', 'on') -%}{%- set ns.yellow" not in whole
+    assert "q.heard or beyond > 0 -%}{%- set ns.yellow = ns.yellow + ['advert_position']" in whole
+    assert "q.silent -%}{%- set ns.blue = ns.blue + 1" in whole
 
 
 def test_help_names_every_page_and_every_control() -> None:

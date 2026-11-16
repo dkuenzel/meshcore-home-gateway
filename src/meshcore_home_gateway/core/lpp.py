@@ -17,7 +17,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from meshcore_home_gateway.core.model import Position
+from meshcore_home_gateway.core.model import MAX_LATITUDE, MAX_LONGITUDE, Position, on_earth
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +60,7 @@ TYPES: Mapping[int, LppType] = MappingProxyType(
         142: LppType("switch", (1,), (1,), False),
     }
 )
-MAX_LATITUDE_CELLS, MAX_LONGITUDE_CELLS = 900_000, 1_800_000
+CELLS_PER_DEGREE = TYPES[GPS].divisors[0]  # of GPS latitude and longitude: 1e-4 degrees
 BATTERY_V, MCU_TEMPERATURE_C = "battery_v", "mcu_temperature_c"  # document keys, history quantities
 VOLTAGE, TEMPERATURE = 116, 103
 # the single-value types 1.18 companions send and the unit their key ends in ("" for none); GPS is
@@ -175,7 +175,7 @@ def position(payload: LppPayload) -> LppPosition | None:
         if reading.lpp_type != GPS or reading.channel != SELF_CHANNEL:
             continue
         lat, lon, alt = reading.raw
-        if abs(lat) > MAX_LATITUDE_CELLS or abs(lon) > MAX_LONGITUDE_CELLS or lat == lon == 0:
+        if lat == lon == 0 or not on_earth(lat / CELLS_PER_DEGREE, lon / CELLS_PER_DEGREE):
             continue
         found.add((lat, lon, alt))
     if len(found) != 1:
@@ -186,13 +186,13 @@ def position(payload: LppPayload) -> LppPosition | None:
 
 def centre(lat_cells: int, lon_cells: int) -> Position:
     """The middle of a cell: the encoder truncates toward zero (CayenneLPP.cpp:847-866)."""
-    return Position(_centre(lat_cells, 90.0), _centre(lon_cells, 180.0))
+    return Position(_centre(lat_cells, MAX_LATITUDE), _centre(lon_cells, MAX_LONGITUDE))
 
 
 def _centre(cells: int, limit: float) -> float:
     if cells == 0:
         return 0.0
-    middle = (cells + (0.5 if cells > 0 else -0.5)) / 10_000
+    middle = (cells + (0.5 if cells > 0 else -0.5)) / CELLS_PER_DEGREE
     return round(max(-limit, min(limit, middle)), 5)
 
 

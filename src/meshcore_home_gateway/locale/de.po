@@ -1027,6 +1027,36 @@ msgstr "beim nächsten Verbinden als Favorit hinzugefügt"
 msgid "airtime    factor {factor:g}: the radio sends at most {duty:.3g} %"
 msgstr "Sendezeit   Faktor {factor:g}: das Funkgerät sendet höchstens {duty:.3g} %"
 
+#. a line of probe's report, its value in the column of the other lines: whether
+#. the radio's advert, sent on request, and a long message (160 bytes, flooded) fit into the
+#. setting airtime.burst_s together, at the radio's settings; {advert} and {message} are their
+#. times on air in seconds, {burst} the setting, {needed} the setting that would hold both. Without
+#. room for both, the gateway sends no advert; a long message beyond the burst fails
+#: src/meshcore_home_gateway/cli/probe.py
+#, python-brace-format
+msgid "burst      a long message ({message:.2f} s) takes more than airtime.burst_s ({burst:g} s): long messages fail and no advert nearby can go; set burst_s to {needed}"
+msgstr "Burst       eine lange Nachricht ({message:.2f} s) braucht mehr als airtime.burst_s ({burst:g} s): lange Nachrichten schlagen fehl, und kein Advert in der Nähe kann gesendet werden; burst_s auf {needed} setzen"
+
+#. a line of probe's report, its value in the column of the other lines: whether
+#. the radio's advert, sent on request, and a long message (160 bytes, flooded) fit into the
+#. setting airtime.burst_s together, at the radio's settings; {advert} and {message} are their
+#. times on air in seconds, {burst} the setting, {needed} the setting that would hold both. Without
+#. room for both, the gateway sends no advert; a long message beyond the burst fails
+#: src/meshcore_home_gateway/cli/probe.py
+#, python-brace-format
+msgid "burst      an advert nearby ({advert:.2f} s) and a long message ({message:.2f} s) fit into airtime.burst_s ({burst:g} s)"
+msgstr "Burst       ein Advert in der Nähe ({advert:.2f} s) und eine lange Nachricht ({message:.2f} s) passen zusammen in airtime.burst_s ({burst:g} s)"
+
+#. a line of probe's report, its value in the column of the other lines: whether
+#. the radio's advert, sent on request, and a long message (160 bytes, flooded) fit into the
+#. setting airtime.burst_s together, at the radio's settings; {advert} and {message} are their
+#. times on air in seconds, {burst} the setting, {needed} the setting that would hold both. Without
+#. room for both, the gateway sends no advert; a long message beyond the burst fails
+#: src/meshcore_home_gateway/cli/probe.py
+#, python-brace-format
+msgid "burst      an advert nearby ({advert:.2f} s) and a long message ({message:.2f} s) take more than airtime.burst_s ({burst:g} s): no advert nearby can go; set burst_s to {needed}"
+msgstr "Burst       ein Advert in der Nähe ({advert:.2f} s) und eine lange Nachricht ({message:.2f} s) brauchen zusammen mehr als airtime.burst_s ({burst:g} s): kein Advert in der Nähe kann gesendet werden; burst_s auf {needed} setzen"
+
 #. what the gateway does about a setting of the radio that differs from the
 #. managed profile, in brackets after the setting's line
 #: src/meshcore_home_gateway/cli/probe.py
@@ -1818,6 +1848,28 @@ msgstr "Einem Dashboard einer anderen Version können neue Karten fehlen, oder e
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "A device not heard for over a day, no advert, no message, no answer, is listed as not heard: most likely it broadcasts nothing now, and it is no problem. The line under it says that its adverts carried its position until it was last heard; the time beside it says when that was. It may be switched off, out of range, or flashed again with a new key; once it is heard again, the gateway reads its next advert."
+msgstr "Ein Gerät, das seit über einem Tag nicht gehört wurde, kein Advert, keine Nachricht, keine Antwort, steht als nicht gehört in der Liste: Sehr wahrscheinlich sendet es jetzt nichts, und es ist kein Problem. Die Zeile darunter sagt, dass seine Adverts seine Position enthielten, bis es zuletzt gehört wurde; die Zeit daneben sagt, wann das war. Es kann ausgeschaltet sein, außer Reichweite oder mit einem neuen Schlüssel neu geflasht; sobald es wieder gehört wird, liest das Gateway sein nächstes Advert."
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "A device not heard for over a day, while the gateway has run for over a day, does not count: the card lists it as not heard, with the time it was last heard."
+msgstr "Ein Gerät, das seit über einem Tag nicht gehört wurde, während das Gateway seit über einem Tag läuft, zählt nicht: Die Karte führt es als nicht gehört, mit der Zeit, zu der es zuletzt gehört wurde."
+
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "A device not listed here: its adverts carry its position"
+msgstr "Ein hier nicht aufgeführtes Gerät: Seine Adverts enthalten seine Position"
+
+#. in blue, for information: the devices listed under it were not heard for over a day, so the position in their last adverts is no problem now
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "A device the gateway has not heard for that long most likely broadcasts nothing now. When it is heard again, the gateway reads its next advert."
+msgstr "Ein Gerät, das das Gateway so lange nicht gehört hat, sendet jetzt sehr wahrscheinlich nichts. Sobald es wieder gehört wird, liest das Gateway sein nächstes Advert."
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "A device whose position is not current has no marker, only its line, whose last dot is where it was last, until that is more than 24 hours ago."
 msgstr "Ein Gerät, dessen Position nicht aktuell ist, hat keine Markierung, nur seine Linie, deren letzter Punkt zeigt, wo es zuletzt war, bis das mehr als 24 Stunden her ist."
 
@@ -1913,8 +1965,8 @@ msgstr "Ein Sensor liefert Messwerte, wenn das Gateway ihn abfragt; die Admins e
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "A switch here would work for everyone who uses Home Assistant, children and guests included. Settings that protect people, the radio or the law stay with the administrator."
-msgstr "Ein Schalter hier wäre für alle bedienbar, die Home Assistant nutzen, Kinder und Gäste eingeschlossen. Einstellungen, die Menschen oder das Funkgerät schützen oder das Gesetz einhalten, bleiben Sache der Admins."
+msgid "A switch here would work for everyone who uses Home Assistant, children and guests included. Settings that protect people or the radio, or that local rules may limit, stay with the administrator."
+msgstr "Ein Schalter hier wäre für alle bedienbar, die Home Assistant nutzen, Kinder und Gäste eingeschlossen. Einstellungen, die Menschen oder das Funkgerät schützen oder durch Vorschriften vor Ort begrenzt sein können, bleiben Sache der Admins."
 
 #. the help on writing. Return (↵) is the keyboard's key: the word the phone keyboards of your language show, with the sign ↵, and the same word as in the name beside the Send button (Return, then Send); Send and Write to {name} as their labels are translated. name is the chat's title; minutes, room, window and seconds are whole numbers
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2056,15 +2108,15 @@ msgstr "Verbleibende Sendezeit in dieser Stunde"
 #. hour is a whole number of seconds, such as 36
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "Airtime: the law allows a radio only a share of each hour. The gateway keeps its own messages within its budget; messages wait when it is used up."
-msgstr "Sendezeit: Das Gesetz erlaubt einem Funkgerät nur einen Teil jeder Stunde. Das Gateway hält seine eigenen Nachrichten innerhalb seines Budgets; Nachrichten warten, wenn es aufgebraucht ist."
+msgid "Airtime: the gateway keeps its own messages within its budget, a share of each hour; messages wait when the budget is used up."
+msgstr "Sendezeit: Das Gateway hält seine eigenen Nachrichten innerhalb seines Budgets, eines Teils jeder Stunde; Nachrichten warten, wenn das Budget aufgebraucht ist."
 
 #. hour is a whole number of seconds, such as 36
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
-msgid "Airtime: the law allows a radio only a share of each hour. The gateway keeps its own messages within {hour} s an hour; messages wait when it is used up."
-msgstr "Sendezeit: Das Gesetz erlaubt einem Funkgerät nur einen Teil jeder Stunde. Das Gateway hält seine eigenen Nachrichten innerhalb von {hour} s pro Stunde; Nachrichten warten, wenn diese Zeit aufgebraucht ist."
+msgid "Airtime: the gateway keeps its own messages within {hour} s an hour; messages wait when that time is used up."
+msgstr "Sendezeit: Das Gateway hält seine eigenen Nachrichten innerhalb von {hour} s pro Stunde; Nachrichten warten, wenn diese Zeit aufgebraucht ist."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -2615,6 +2667,11 @@ msgstr "Firmware"
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "For a day after the gateway starts, every device counts, as the gateway did not hear what was sent while it was stopped. An advert this home's radio took but did not pass on to the gateway, as can happen over a network link, does not count as heard: if a device listed as not heard is on, send an advert from it near this home's radio."
+msgstr "Einen Tag lang nach dem Start des Gateways zählt jedes Gerät, denn das Gateway hat nicht gehört, was gesendet wurde, während es gestoppt war. Ein Advert, das das Funkgerät dieses Zuhauses empfangen, aber nicht an das Gateway weitergegeben hat, wie es über eine Netzwerkverbindung vorkommen kann, zählt nicht als gehört: Ist ein Gerät, das als nicht gehört in der Liste steht, eingeschaltet, sende in der Nähe des Funkgeräts dieses Zuhauses ein Advert von ihm."
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "For whoever looks after the gateway: each part with its state, the radio and its settings, and the newest events."
 msgstr "Für alle, die sich um das Gateway kümmern: jeder Teil mit seinem Status, das Funkgerät und seine Einstellungen und die neuesten Ereignisse."
 
@@ -2661,6 +2718,11 @@ msgstr "Für Admins: Erstelle dieses Dashboard neu nach einem Update des Gateway
 msgctxt "dashboard"
 msgid "For your administrator: on this gateway, this contact's control has another entity ID: {real}. Rename it in Home Assistant's Settings › Devices & services › Entities, or set a contact prefix for this gateway."
 msgstr "Für Admins: Auf diesem Gateway hat das Bedienelement dieses Kontakts eine andere Entitäts-ID: {real}. Benenne es in Home Assistant unter Einstellungen › Geräte & Dienste › Entitäten um, oder setze ein Kontaktpräfix für dieses Gateway."
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "For your administrator: the gateway deletes the history of a removed contact only as it ages; the readings and positions it asked the contact for can go at once."
+msgstr "Für Admins: Das Gateway löscht den Verlauf eines entfernten Kontakts erst, wenn die Einträge alt genug sind; die Messwerte und Positionen, die es bei dem Kontakt abgefragt hat, lassen sich sofort löschen."
 
 #. the menus and words of Home Assistant as its own translation names them
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -2846,6 +2908,12 @@ msgstr "So funktionieren Chats"
 msgctxt "dashboard"
 msgid "How many messages may wait, for how long, and how often a direct message is tried."
 msgstr "Wie viele Nachrichten warten dürfen, wie lange und wie oft eine Direktnachricht versucht wird."
+
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "How much airtime the gateway gives its own messages in an hour and at once; they wait when it is used up."
+msgstr "Wie viel Sendezeit das Gateway seinen eigenen Nachrichten pro Stunde und am Stück gibt; Nachrichten warten, wenn sie aufgebraucht ist."
 
 #. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -3091,6 +3159,13 @@ msgctxt "dashboard"
 msgid "List of people not to ask"
 msgstr "Liste „Nicht abfragen“"
 
+#. hour is a whole number of seconds, such as 36
+#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Local rules may limit a radio's airtime; your administrator follows them."
+msgstr "Vorschriften vor Ort können die Sendezeit eines Funkgeräts begrenzen; die Admins halten sie ein."
+
 #. security text (docs/translations.md): what a tick proves and what it does not; a confirmation that came too soon may be forged
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -3327,6 +3402,12 @@ msgctxt "dashboard"
 msgid "Not asked: the radio has no way to it now. A message or an advert from it brings it back."
 msgstr "Nicht abgefragt: Das Funkgerät hat gerade keinen Weg dorthin. Eine Nachricht oder ein Advert des Geräts ändert das wieder."
 
+#. in blue, for information: the devices listed under it were not heard for over a day, so the position in their last adverts is no problem now
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "Not heard for over a day."
+msgstr "Seit über einem Tag nicht gehört."
+
 #. names are contacts' names, separated by commas
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -3430,8 +3511,8 @@ msgstr "Unter Kontakte: Füge einen Schlüssel oder Kontaktlink aus der MeshCore
 #. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
-msgid "On Contacts: takes a contact off the radio. It asks first."
-msgstr "Unter Kontakte: nimmt einen Kontakt vom Funkgerät. Vorher kommt eine Rückfrage."
+msgid "On Contacts: takes a contact off the radio; its chat and the gateway's history of it stay. It asks first."
+msgstr "Unter Kontakte: nimmt einen Kontakt vom Funkgerät; sein Chat und der Verlauf des Gateways von ihm bleiben. Vorher kommt eine Rückfrage."
 
 #. Write to … is the label of a chat's message field without the chat's name: write it as you translated Write to {name}; Return (↵) is the keyboard's key, the same word as in the name beside the Send button (Return, then Send); Advert to radios nearby and Send name the row under Let someone add this home on Contacts and its button, as written there
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -3445,18 +3526,18 @@ msgctxt "dashboard"
 msgid "On Gateway: the radio's airtime over the last 24 hours."
 msgstr "Unter Gateway: die Sendezeit des Funkgeräts in den letzten 24 Stunden."
 
+#. the card of a position broadcast to everyone: the first line of Overview names the problem, this card what to do; the devices are listed under it
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "On each device whose adverts carry its position, make sure in the MeshCore app that sharing the location in adverts is off, then send an advert near this home's radio."
+msgstr "Stelle auf jedem Gerät, dessen Adverts (Ankündigungen) seine Position enthalten, in der MeshCore-App sicher, dass das Teilen des Standorts in Adverts aus ist, und sende dann in der Nähe des Funkgeräts dieses Zuhauses ein Advert."
+
 #. the text of a message on its way from this home: the gateway took it and has not sent it, or waits for its confirmation
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
 msgid "On its way: {text}"
 msgstr "Unterwegs: {text}"
-
-#. names are the names of contacts, or the first digits of their keys
-#: src/meshcore_home_gateway/dashboard.yaml
-msgctxt "dashboard"
-msgid "On that device, make sure in the MeshCore app that sharing the location in adverts is off, then send an advert near this home's radio."
-msgstr "Stelle auf diesem Gerät in der MeshCore-App sicher, dass das Teilen des Standorts in Adverts (Ankündigungen) aus ist, und sende dann in der Nähe des Funkgeräts dieses Zuhauses ein Advert."
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -4082,6 +4163,11 @@ msgstr "Die Änderung wirkt jetzt, aber das Gateway konnte sie nicht speichern. 
 
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
+msgid "The chat and the gateway's history of the contact stay: messages, positions and readings, until they are older than Settings shows."
+msgstr "Der Chat und der Verlauf des Gateways von dem Kontakt bleiben: Nachrichten, Positionen und Messwerte, bis sie älter sind, als unter Einstellungen steht."
+
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
 msgid "The chat does not exist on the gateway or on the radio; your administrator checks the configuration."
 msgstr "Den Chat gibt es auf dem Gateway oder dem Funkgerät nicht; die Admins prüfen die Konfiguration."
 
@@ -4357,12 +4443,6 @@ msgstr "Die Sprache der Entitätsnamen und dieses Dashboards."
 msgctxt "dashboard"
 msgid "The last 50 messages are kept here, fewer when they are long."
 msgstr "Die letzten 50 Nachrichten werden hier aufbewahrt, weniger, wenn sie lang sind."
-
-#. the settings of the radio; budget and burst are seconds, such as 36 and 2.5, written with this language's decimal mark
-#: src/meshcore_home_gateway/dashboard.yaml
-msgctxt "dashboard"
-msgid "The law allows a radio only a share of each hour; messages wait when it is used up."
-msgstr "Das Gesetz erlaubt einem Funkgerät nur einen Teil jeder Stunde; Nachrichten warten, wenn er aufgebraucht ist."
 
 #. security texts (docs/translations.md): the items on the key, on the position and on who can send it (shown only while Home Assistant's users can); key is the first 8 hex digits of this home's radio's key
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -4940,6 +5020,12 @@ msgctxt "dashboard"
 msgid "What this view is for"
 msgstr "Wofür diese Ansicht ist"
 
+#. the card of a position broadcast to everyone: the first line of Overview names the problem, this card what to do; the devices are listed under it
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "What to do:"
+msgstr "Was zu tun ist:"
+
 #. the help on writing. Return (↵) is the keyboard's key: the word the phone keyboards of your language show, with the sign ↵, and the same word as in the name beside the Send button (Return, then Send); Send and Write to {name} as their labels are translated. name is the chat's title; minutes, room, window and seconds are whole numbers
 #: src/meshcore_home_gateway/dashboard.yaml
 msgctxt "dashboard"
@@ -5328,6 +5414,7 @@ msgctxt "dashboard"
 msgid "an old command again"
 msgstr "Wiederholung eines alten Befehls"
 
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
 #. the settings of the chats; more, n, window, seconds, size, minutes and tries are whole numbers
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -5579,6 +5666,7 @@ msgctxt "dashboard"
 msgid "heard for the first time"
 msgstr "zum ersten Mal gehört"
 
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
 #. heard is a time, such as 10:31 or yesterday 10:31
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -5616,6 +5704,18 @@ msgstr "ungültige Anfrage"
 msgctxt "dashboard"
 msgid "it starts within the hour"
 msgstr "Start innerhalb der nächsten Stunde"
+
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "its adverts carried its position until then"
+msgstr "seine Adverts enthielten bis dahin seine Position"
+
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "its adverts carry its position"
+msgstr "seine Adverts enthalten seine Position"
 
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -5818,6 +5918,19 @@ msgstr "noch nicht abgefragt"
 msgctxt "dashboard"
 msgid "not asked: look-alike"
 msgstr "nicht abgefragt: ähnlicher Schlüssel"
+
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
+#: src/meshcore_home_gateway/dashboard.yaml
+msgctxt "dashboard"
+msgid "not heard for a day"
+msgstr "seit einem Tag nicht gehört"
+
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
+#: src/meshcore_home_gateway/dashboard.yaml
+#, python-brace-format
+msgctxt "dashboard"
+msgid "not heard for {days} days"
+msgstr "seit {days} Tagen nicht gehört"
 
 #. the privacy settings; messages, positions and readings are whole numbers of days
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -6097,6 +6210,7 @@ msgctxt "dashboard"
 msgid "shown again"
 msgstr "wieder angezeigt"
 
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
 #. since is a time, such as 10:31 or yesterday 10:31
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
@@ -6404,12 +6518,12 @@ msgctxt "dashboard"
 msgid "{mins} min"
 msgstr "{mins} min"
 
-#. names are the names of contacts, or the first digits of their keys
+#. a device per row: its name, then its state, then a time. heard and since are times, such as 10:31 or yesterday 10:31: when the device was last heard; more is a whole number of further devices, beyond those the gateway lists (2 or more in the text that says devices not listed here); days is a whole number, 2 or more
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
-msgid "{names} and {more} more broadcast their position to everyone in range."
-msgstr "Position an alle in Reichweite gesendet von: {names} und {more} weiteren."
+msgid "{more} devices not listed here: their adverts carry their position"
+msgstr "{more} hier nicht aufgeführte Geräte: Ihre Adverts enthalten ihre Position"
 
 #. names are the names of contacts, or the first digits of their keys
 #: src/meshcore_home_gateway/dashboard.yaml
@@ -6422,13 +6536,6 @@ msgstr "Steuerung des Funkgeräts dieses Zuhauses über Funk erlaubt für: {name
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
-msgid "{names} broadcast their position to everyone in range."
-msgstr "Position an alle in Reichweite gesendet von: {names}."
-
-#. names are the names of contacts, or the first digits of their keys
-#: src/meshcore_home_gateway/dashboard.yaml
-#, python-brace-format
-msgctxt "dashboard"
 msgid "{names} may control this home's radio over the air."
 msgstr "Steuerung des Funkgeräts dieses Zuhauses über Funk erlaubt für: {names}."
 
@@ -6436,8 +6543,8 @@ msgstr "Steuerung des Funkgeräts dieses Zuhauses über Funk erlaubt für: {name
 #: src/meshcore_home_gateway/dashboard.yaml
 #, python-brace-format
 msgctxt "dashboard"
-msgid "{name} can then no longer write to this home, and nobody here can write to {name}. You can add {name} again later."
-msgstr "{name} kann diesem Zuhause dann nicht mehr schreiben, und niemand hier kann an {name} schreiben. Du kannst {name} später wieder hinzufügen."
+msgid "{name} can then no longer write to this home, and nobody here can write to {name}. The chat and the gateway's history of {name} stay. You can add {name} again later."
+msgstr "{name} kann diesem Zuhause dann nicht mehr schreiben, und niemand hier kann an {name} schreiben. Der Chat und der Verlauf des Gateways von {name} bleiben. Du kannst {name} später wieder hinzufügen."
 
 #. name is a person's name; hidden: someone deleted the contact's device in Home Assistant, which hides the contact
 #: src/meshcore_home_gateway/dashboard.yaml

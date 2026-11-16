@@ -47,13 +47,15 @@ no position into its adverts, and in the EU band 869.40–869.65 MHz limits itse
 cycle (airtime factor 9). At every connect, before it reads the contact table, it compares the
 radio with this profile and writes only what differs, one command per setting; the radio rewrites
 its preferences file for each. Nothing else is ever written: frequency, bandwidth, spreading
-factor, coding rate, transmit power and the radio's keys stay as they are.
+factor, coding rate, transmit power and the radio's keys stay as they are. The 10 % is a default
+that `duty_cycle_percent` can change (10–100); the gateway sets no legal limit
+([Local rules](#local-rules)).
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `manage` | `auto` | `auto` writes on tested firmware only (companion 1.18) and only reports on other firmware; `observe` never writes; `always` writes on any firmware |
 | `name` | as found | the radio's name in the mesh, 1–31 bytes of UTF-8. Written when this setting changes; a name changed on the radio later (the phone app) is kept and reported |
-| `duty_cycle_percent` | 10 in 869.40–869.65 MHz, else as found | the radio's own transmit limit, 10–100 (the firmware cannot limit below 10 %; the gateway's own budget is `[airtime]`) |
+| `duty_cycle_percent` | 10 in 869.40–869.65 MHz, else as found | the radio's own transmit limit, 10–100 (the firmware cannot limit below 10 %; the gateway's own budget is `[airtime]`); the default follows the band, the value set here wins ([Local rules](#local-rules)) |
 | `protect_contacts` | `true` | keep the contact targets and command senders on the radio as favourites; a missing one is added, named after its alias (a command sender without one `sender-` and its first four key digits) until its next advert names it |
 
 At the first connect of a radio its differences are written: a new or replaced radio, the first
@@ -160,7 +162,7 @@ suffix of a direct message too, and duplicates are judged on the text without it
 | `flood_after` | `2` | unacknowledged attempts after which the stored path is reset, so the next attempt floods; 1 to `max_attempts` (equal to it: never floods) |
 | `ignore_channels` | `[]` | channel indices (0–255) whose messages are not published (busy public channels); they do not hold telemetry back |
 | `publish_channels` | `targets` | `targets`: only the messages of channels that are a [target](#targetsalias) are published and kept in the history, the others are dropped like those of `ignore_channels` (the *Public* channel's key is in the firmware: there, most messages are strangers'); at every start the gateway deletes from the history, for good, the messages received on the other channels that an earlier version or `all` kept, and those of the ignored ones; its own messages stay, and a mistyped `channel_index` of a target deletes the received messages of the channel it was meant to name ([privacy](privacy.md#other-people)); `all`: every channel's, and the start deletes nothing |
-| `clean_received` | `false` | drop control and direction characters (escape sequences, the right-to-left override) from received texts before they are published and kept in the history, as from outgoing ones, and so from the name a channel message claims; since 2.2 also from the names of contacts and heard nodes, on one line, wherever the gateway publishes or keeps them (documents, events, the history, Home Assistant's device names and labels, Homie); the radio's table keeps them as they came. Off, texts and names are data and stay as they came ([mqtt-api.md](mqtt-api.md#received-messages-received)). Recommended: with `heard_nodes = "full"`, the default since 2.2, strangers' names reach Home Assistant |
+| `clean_received` | `false` | drop control and direction characters (escape sequences, the right-to-left override) from received texts before they are published and kept in the history, as from outgoing ones, and so from the name a channel message claims; since 2.2 also from the names of contacts and heard nodes, on one line, wherever the gateway publishes or keeps them (documents, events, the history, Home Assistant's device names and labels, Homie); the radio's table keeps them as they came. Off, texts and names are data and stay as they came ([mqtt-api.md](mqtt-api.md#received-messages-received)). Recommended: set it to `true`. With `heard_nodes = "full"`, the default since 2.2, strangers' names reach Home Assistant, and off, a right-to-left override in a contact's name can make its device name read as another contact's ([names and texts from the mesh](home-assistant.md#names-and-texts-from-the-mesh)). It does not remove invisible characters such as zero-width spaces or Unicode tag characters |
 | `confirm_nonce` | `false` | end every direct message with a random suffix, ` #` and 8 hex digits, the same on each attempt, which the recipient sees: the acknowledgement is a hash of the text, so then only a radio that received the message can send it, not one that guesses a fixed text such as an alarm's ([mqtt-api.md](mqtt-api.md#what-confirmed-proves)). A direct text is then limited to 150 bytes. The suffix is the only secret of the acknowledgement, so the gateway publishes it only once the delivery ended: in the final delivery event and the history, which carry the text as sent; `queued`, `sent` and `pending` show the text without it. Since 2.2 each entry of the history says whether its message got the suffix (`nonce`, [mqtt-api.md](mqtt-api.md#history-history)): the dashboard cuts it there and nowhere else, so switching the setting leaves the messages sent before as they were sent (a message of 2.1 goes by the setting of now). Duplicates are judged without the suffix |
 | `alert_targets` | `[]` | [targets](#targetsalias) whose messages leave before the others: an alert overtakes the waiting messages, also one taken out of the queue that waits for the radio or for airtime before its first attempt, and goes between two attempts of one in flight, which continues after it. A request chooses by its target, so a second target for the same recipient gives a client both ([design §6.2](design.md#62-outbound-path)) |
 
@@ -169,7 +171,7 @@ suffix of a direct message too, and duplicates are judged on the text without it
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `budget_s_per_hour` | `36` | seconds of transmission per hour for the gateway's messages (1 % of the hour), 0.001–3600; telemetry has its own lanes (`[telemetry]`) |
-| `burst_s` | `10` | seconds that may be spent at once, 5–3600 (a long packet at SF 8 / 62.5 kHz takes about 2 s) |
+| `burst_s` | `10` | seconds that may be spent at once, 5–3600 (a long message takes 2.1 s at EU/UK Narrow; slower presets need more: [Radio presets](#radio-presets)) |
 
 The airtime the gateway counts over any interval *T* stays below
 `burst_s + budget_s_per_hour × T / 3600`. The count is exact for direct sends and for flooded
@@ -179,9 +181,82 @@ level is kept in `state.json` across restarts: a start takes it back, refilled f
 stopped, but at least what a long direct message needs at the radio's settings, so that the first
 alert after a restart goes out at once; a restart adds at most that much, not a burst.
 The radio's own traffic (acknowledgements it sends, adverts) is not counted; in the EU band
-869.40–869.65 MHz the device limit is 10 % of every hour. The radio has its own limiter, the
-*airtime factor*, which the firmware sets to 50 % and the managed profile to 10 % in that band
-(`[radio.profile]`, protocol.md section 7).
+869.40–869.65 MHz the device limit is 10 % of every hour, and other bands have other rules
+([Local rules](#local-rules)). The radio has its own limiter, the *airtime factor*, which the
+firmware sets to 50 % and the managed profile to 10 % in that band (`[radio.profile]`,
+protocol.md section 7).
+
+## Radio presets
+
+How long a packet takes on air depends on the radio's preset: its bandwidth, spreading factor
+(SF) and coding rate (CR). Two rules of the gateway depend on it:
+
+* A message that needs more airtime than `[airtime] burst_s` fails at once
+  (`exceeds_airtime_burst`): the budget could never pay it.
+* An advert sent on request goes only while the budget still holds one long message beside it,
+  so that an alert after the advert goes out at once
+  ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)). Where the
+  advert and a long message do not fit into `burst_s` together, no advert can go
+  (`advert` refused with `airtime_budget`, also with a full budget).
+
+At each connect the gateway computes both at the radio's settings, with the radio's name as it
+is, and warns in its log when `burst_s` is too small: "a long direct message takes … s", and "an
+advert nearby and a long direct message take … s …; set burst_s to N", N the burst that holds
+both, rounded up. `meshcore-home-gateway probe` prints the same on its line `burst`, against
+the `burst_s` of the file `--config` names, or the default without one. `check-config` does not
+read the radio and cannot say it.
+
+The table gives the times for some presets: a long message is 160 bytes, flooded, with the path
+packet the radio sends back after its acknowledgement; the advert carries a name of 31 bytes,
+the longest (a shorter name takes a little less). The last column says what the default
+`burst_s = 10` lets through, and the `burst_s` that holds both. `tests/test_docs.py` computes
+every number with the gateway's own functions (`core/airtime.py`), so the table follows the
+code.
+
+| Preset | A long message | The advert | Both | With `burst_s = 10` |
+| --- | --- | --- | --- | --- |
+| 62.5 kHz, SF 7, CR 4/5 | 0.82 s | 0.49 s | 1.31 s | both fit |
+| 62.5 kHz, SF 7, CR 4/8 | 1.20 s | 0.73 s | 1.93 s | both fit |
+| 62.5 kHz, SF 8, CR 4/8 (EU/UK Narrow) | 2.13 s | 1.30 s | 3.43 s | both fit |
+| 250 kHz, SF 11, CR 4/5 | 2.06 s | 1.26 s | 3.32 s | both fit |
+| 62.5 kHz, SF 9, CR 4/8 | 3.61 s | 2.20 s | 5.81 s | both fit |
+| 62.5 kHz, SF 10, CR 4/5 | 5.35 s | 3.25 s | 8.60 s | both fit |
+| 62.5 kHz, SF 10, CR 4/6 | 6.23 s | 3.81 s | 10.04 s | no advert; `burst_s = 11` |
+| 62.5 kHz, SF 10, CR 4/8 | 8.00 s | 4.92 s | 12.92 s | no advert; `burst_s = 13` |
+| 125 kHz, SF 11, CR 4/8 | 7.22 s | 4.40 s | 11.61 s | no advert; `burst_s = 12` |
+| 125 kHz, SF 12, CR 4/5 | 9.06 s | 5.35 s | 14.41 s | no advert; `burst_s = 15` |
+| 125 kHz, SF 12, CR 4/8 | 13.39 s | 8.00 s | 21.39 s | no long message, no advert; `burst_s = 22` |
+| 62.5 kHz, SF 11, CR 4/5 | 9.72 s | 5.84 s | 15.56 s | no advert; `burst_s = 16` |
+| 62.5 kHz, SF 11, CR 4/8 | 14.43 s | 8.79 s | 23.22 s | no long message, no advert; `burst_s = 24` |
+| 62.5 kHz, SF 12, CR 4/5 | 18.12 s | 10.70 s | 28.82 s | no long message, no advert; `burst_s = 29` |
+| 62.5 kHz, SF 12, CR 4/8 | 26.77 s | 16.01 s | 42.78 s | no long message, no advert; `burst_s = 43` |
+
+`burst_s` shapes only the short peaks of what the gateway asks the radio to send: over any time
+*T* it sends at most `burst_s + budget_s_per_hour × T / 3600` ([`[airtime]`](#airtime)). A
+larger burst lets a slow preset send an alert of 160 bytes and an advert at all; it does not
+raise the hourly budget. The radio's own limiter, the airtime factor that the managed profile
+sets to 10 % in the band 869.40–869.65 MHz, stays the bound of what the radio sends
+([`[radio.profile]`](#radioprofile)).
+
+## Local rules
+
+The gateway restricts no radio setting by region or law: neither the preset, the frequency and
+the transmit power, nor the share of each hour the radio may send. It is an international
+project. The rules differ by country and band, and a limit such as 500 mW e.r.p. counts the
+antenna's gain, which the gateway cannot know ([design §4.3](design.md#43-constraints)).
+Whoever runs the gateway follows the rules for their band (#174, #175).
+
+* **A default that comes from a band is a recommendation, not a limit.** In 869.40–869.65 MHz,
+  whose 10 % duty cycle comes from ERC Recommendation 70-03
+  ([design §4.3](design.md#43-constraints)), the managed profile sets the radio's own limit to
+  10 %, unless `duty_cycle_percent` says otherwise ([`[radio.profile]`](#radioprofile)); in other
+  bands it keeps what it finds. `[airtime] budget_s_per_hour` is the gateway's own pace, 1 % of
+  the hour by default, not a legal figure ([`[airtime]`](#airtime)).
+* **The gateway never writes the preset, the frequency or the transmit power**
+  ([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md)). They are set with
+  MeshCore's own tools ([deployment.md](deployment.md#changing-the-radios-settings)). The power
+  the radio reports is its radio chip's setting: a board with an amplifier sends more at the same
+  number ([Boards](deployment.md#boards)).
 
 ## `[commands]`
 
@@ -195,6 +270,27 @@ The radio's own traffic (acknowledgements it sends, adverts) is not counted; in 
 
 Commands also need a sender timestamp newer than that sender's last accepted command; the gateway
 keeps these timestamps in `/var/lib/meshcore-home-gateway/state.json`.
+
+What a household member needs to know to send a command, with examples, the answers and the
+refusals: [home-assistant.md](home-assistant.md#commands-from-a-companion).
+
+**A command word at the start of a chat.** The gateway takes every direct message whose first
+word is a configured word as a command, also one meant as chat; a command needs no mark of its
+own, and a slash before the word makes it another word (`/arm` is no command). From an allowed
+sender, "Arm wrestling tonight?" is the command `arm` with `args` `wrestling tonight?`, and the
+automations of `arm` run. The word must stand alone: `arm,` or `armchair` is no command. From a
+sender with a code secret such a message ends in no code: it is refused as `code_missing` and
+listed among the refused commands. It makes no guess at the code, so it counts toward no lock
+and draws no warning of guessing, however often it comes (below). From a contact that is no
+sender it is refused as `sender_not_allowed` and listed among the refused commands. The message
+is published and kept as a chat message in each case ([mqtt-api.md](mqtt-api.md#commands-command)).
+To keep chat from commanding:
+
+* choose words nobody starts a sentence with, such as `gate-open` instead of `open`; a word may
+  hold any character but a space or a line break;
+* let each automation check `args` against the few values it expects (`args` empty, or `now`),
+  as the strings they are, and do nothing for any other;
+* give the senders code secrets: a chat message then commands nothing.
 
 **Answers.** With `reply`, the sender learns on its phone whether the command reached the
 automations, without an automation of its own. The answer goes to the sender's full key as any
@@ -218,15 +314,17 @@ code does not bind the text: whoever reads a command before the gateway does, su
 can send another text with its code, once, within about 90 seconds
 ([design §7.4](design.md#74-residual-risks)). Senders without a secret keep the rules above,
 except while a secret is ignored (below).
-After 5 wrong codes of a sender within an hour, a command without a code included (but not
-the refusals of a sender without a secret while one is ignored, below), the gateway
-refuses that sender's commands without a look at the code (`code_locked`) until the first of
-them is an hour old, and its log warns: someone may be guessing the codes. A restart does not
-end it. So a guess wins with at most 3 in a million, and 5 guesses an hour are all there are
-([design §7.4](design.md#74-residual-risks)). A command that waited in the radio (a restart, an
-update, a re-plug) or in the mesh carries the code of the time it was sent: it is refused as
-`code_invalid` when it comes too late, but it does not count as a wrong code. To
-give one a secret (or a new one, which ends the old):
+After 5 wrong codes of a sender within an hour, the gateway refuses that sender's commands
+without a look at the code (`code_locked`) until the first of them is an hour old, and its log
+warns: someone may be guessing the codes. A restart does not end it. So a guess wins with at
+most 3 in a million, and 5 guesses an hour are all there are
+([design §7.4](design.md#74-residual-risks)). A command whose last word is no 6-digit code
+(`code_missing`) is no wrong code: it makes no guess, as chat that starts with a command word
+and ends in no 6-digit number makes none (#176); chat that ends in one is checked as a code. A
+command that waited in the radio (a restart, an update, a re-plug) or in the mesh carries the
+code of the time it was sent: it is refused as `code_invalid` when it comes too late, but it
+does not count as a wrong code. To give one a secret (or a new one,
+which ends the old):
 
 ```sh
 # once: codes_file = "/etc/meshcore-home-gateway/command-codes" under [commands]

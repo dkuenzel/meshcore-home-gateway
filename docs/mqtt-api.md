@@ -210,7 +210,11 @@ takes them from the radio: in `sender_name`, `command` events, `refused_commands
 `pending`, the contacts' documents, `nodes`, the `node`, `contact` and `telemetry` events, the
 device names in Home Assistant and Homie (#137). Messages the history kept before keep their
 names. Without it, a contact's name stays as its adverts gave it; the command line prints such
-characters escaped in JSON and as spaces in lists and CSV (#114).
+characters escaped in JSON and as spaces in lists and CSV (#114). Turning it on is recommended:
+a right-to-left override in a name can make it read as another, and Home Assistant shows device
+names, attributes and events as they come
+([names and texts from the mesh](home-assistant.md#names-and-texts-from-the-mesh)). It removes
+no invisible characters such as zero-width spaces or Unicode tag characters.
 
 ```json
 {"event_type": "contact", "text": "status please", "text_type": "plain",
@@ -248,7 +252,9 @@ a plain direct message whose first word (ended by any whitespace, also a line br
 `commands.words`, from a contact whose full key is
 in `commands.senders`, newer than the last accepted command of that sender and within
 `max_age_s` of the gateway clock; from a sender with a code secret, also ending with a fresh code
-([configuration.md](configuration.md#commands)), which `args` then leaves out.
+([configuration.md](configuration.md#commands)), which `args` then leaves out. Any such message
+is a command, also one meant as chat ("Arm wrestling tonight?" is `arm` with `args`
+`wrestling tonight?`): see [a command word at the start of a chat](configuration.md#commands).
 
 ```json
 {"event_type": "arm", "args": "now", "sender_key": "a1b2…", "sender_name": "Alice",
@@ -269,10 +275,10 @@ without their words, in [`refused_commands`](#refused-commands-refused_commands)
 | `broker_unavailable` | the gateway knew the broker was unreachable: the command event would have reached the automations only after the reconnect, at any later time; the sender can send it again |
 | `replay` | not newer than the last accepted command of this sender |
 | `too_old`, `from_the_future` | outside `max_age_s` of the gateway clock; with `max_age_s = 0`, more than a day ahead |
-| `code_missing` | the sender has a code secret, and the last word is no 6-digit code; or the sender has none while the gateway ignores the code secret of a key that is no sender, which is no wrong code ([configuration.md](configuration.md#commands)) |
+| `code_missing` | the sender has a code secret, and the last word is no 6-digit code; or the sender has none while the gateway ignores the code secret of a key that is no sender. Neither is a wrong code: it makes no guess ([configuration.md](configuration.md#commands)) |
 | `code_invalid` | not the sender's code for the gateway clock, nor for the 30 seconds before or after (a wrong secret, the phone's clock or the host's off, or a command that came late: it waited in the radio or the mesh) |
 | `code_reused` | a code of 30 seconds whose code this sender already used, or of earlier ones: a code serves once |
-| `code_locked` | this sender sent 5 wrong codes within the last hour (`code_missing` or `code_invalid`, except the sender's code of the time it sent a command that came late, and the `code_missing` of the time it had no secret while the gateway ignored one): its commands are refused without a look at the code until the first of them is an hour old, also across a restart ([configuration.md](configuration.md#commands)) |
+| `code_locked` | this sender sent 5 wrong codes within the last hour (`code_invalid`, except the sender's code of the time it sent a command that came late): its commands are refused without a look at the code until the first of them is an hour old, also across a restart ([configuration.md](configuration.md#commands)) |
 
 An identical copy of a command's packet, also of a rejected one, is dropped as a repeat: it is
 the sender's retry after a lost acknowledgement or a replay, which cannot be told apart. To have
@@ -483,10 +489,10 @@ all ([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)).
 | `path_known`, `path_hops` | whether the radio has a direct path, and its repeaters; without one it floods. After a path reset (a message's flood fallback) `false` at once |
 | `last_advert_at` | the contact's clock at its newest advert |
 | `heard_at`, `heard_via`, `hops`, `snr_db`, `rssi_dbm` | when and how the gateway last heard from it (`advert`, `message`, `telemetry`): its telemetry answers move `heard_at` at most once an hour; `hops`, `snr_db` and `rssi_dbm` are those of its last advert or message (an answer reports none), `hops` `null` for a direct route, `rssi_dbm` only from adverts. For an advert, while the radio's receive delay is 0 (its default), they come only from its own log, all three `null` without it; with a delay above 0, or one the radio does not report, from a log of its key within 10 s ([design §6.6](design.md#66-observer-documents-and-history)) |
-| `latitude`, `longitude`, `altitude_m`, `position_at`, `position_source` | its newest known position: from its adverts (`advert`) while the radio's record holds one and its last checked advert, if any, carried one (`null` after a checked advert without one, unless telemetry gives one; before a first check, and for repeaters, room servers and sensors, which are not checked, the record's position), or reported by itself (`telemetry`). `position_at` is when the position last changed (for telemetry: moved 20 m or more; from adverts: at a run's first table read, at an exclusion that drops one from telemetry, and when a checked advert brings it back after one without, the time of the newest advert; the time of the table read when it replaces one from telemetry, or appears or moves while the last check carries or before a first check), never when the companion took it: a position in an advert or an answer can be one the companion saved long ago, and neither carries the fix's age. A position from telemetry expires (`position_current`); the document keeps it |
+| `latitude`, `longitude`, `altitude_m`, `position_at`, `position_source` | its newest known position: from its adverts (`advert`) while the radio's record holds one and its last checked advert, if any, carried one (`null` after a checked advert without one, unless telemetry gives one; before a first check, and for repeaters, room servers and sensors, which are not checked, the record's position), or reported by itself (`telemetry`). `position_at` is when the position last changed (for telemetry: moved 20 m or more; from adverts: at a run's first table read, at an exclusion that drops one from telemetry, and when a checked advert brings it back after one without, the time of the newest advert; the time of the table read when it replaces one from telemetry, or appears or moves while the last check carries or before a first check), never when the companion took it: a position in an advert or an answer can be one the companion saved long ago, and neither carries the fix's age. A position from telemetry expires (`position_current`); the document keeps it. A latitude outside ±90° or a longitude outside ±180°, which the firmware passes on unchecked, is no position from either source |
 | `position_accuracy_m` | 15 for a position from telemetry (the 0.0001° cell it is sent in, and the receiver's own error), else `null` |
 | `position_received_at` | the newest telemetry answer that carried a position (also when it did not move); after a restart from the saved schedule (`null` if the clock went back meanwhile) |
-| `advert_position` | the radio's record of the contact holds a position from one of its adverts. The radio keeps it after the contact stops sharing, until an advert with another one; an advert that shares 0, 0 (a companion that never had a position) clears it, and a contact just added by the gateway has none until its next advert. Whether the newest advert carries one is `advert_carries_position` |
+| `advert_position` | the radio's record of the contact holds a position from one of its adverts (within ±90° and ±180°: the gateway takes any other pair for none). The radio keeps it after the contact stops sharing, until an advert with another one; an advert that shares 0, 0 (a companion that never had a position) clears it, and a contact just added by the gateway has none until its next advert. Whether the newest advert carries one is `advert_carries_position` |
 | `advert_carries_position` | for a companion: its newest advert carries its position (flag 0x10, also 0, 0 from a companion that never had one), which everyone in range can read, as the gateway checked it ([ADR 0025](decisions/0025-positions-in-adverts-checked-from-the-packet-log.md)). While its newest advert is not checked (before the first check, or an advert the gateway missed: `advert_checked_at` is `null` or older than `last_advert_at`), the last check's flag, or `true` when the radio's record holds a position from an earlier advert: it errs to warn. `null` for repeaters, room servers and sensors, which share theirs by design |
 | `advert_checked_at` | the contact's clock at the newest advert the gateway checked (for a companion it added after hearing it: that advert); `null` before a check, and for repeaters, room servers and sensors. Older than `last_advert_at` when a newer advert could not be checked (its report or log lost, or the gateway stopped) |
 | `telemetry_state` | its telemetry state ([below](#telemetry-states)); `null` for a repeater or room server, which are never asked, and for a sensor unless `[telemetry] ask_types` names sensors |
@@ -891,7 +897,12 @@ nor has one still queued when the gateway stops; otherwise every request has exa
 What follows a removal: the radio drops the node's direct messages; messages queued to it fail
 with `unknown_contact`; a removed look-alike of a command sender keeps that sender
 `sender_ambiguous` for 24 hours (ADR 0009). A removed contact is offered again among the heard
-nodes while it counts as heard.
+nodes while it counts as heard. A removal deletes nothing the gateway recorded: the contact's
+entries in `history` and its messages, positions and readings in the history stay until they
+age out ([`[history]`](configuration.md#history)), and so does its mark in
+`telemetry-excluded.json`; `contacts/<key>/telemetry` with `forget` deletes its readings and its
+positions from telemetry at once, also for a key that is no longer on the radio
+([excluding](#excluding-a-contact-from-telemetry-contactskeytelemetry)).
 
 ## Excluding a contact from telemetry: `contacts/<key>/telemetry`
 
@@ -1015,7 +1026,7 @@ event, and nothing reaches the radio:
 | `busy` | another request is between its checks and its outcome |
 | `too_soon` | an advert was written to the radio less than 10 minutes ago; `next_at` says when the next may go. The gateway keeps that time in memory only, so a restart allows the next advert at once |
 | `messages_waiting` | a message is queued or being delivered: the radio is half-duplex, and messages have the first claim on the airtime budget |
-| `airtime_budget` | the message budget cannot pay the advert's estimated time on air at once and still hold one long message beside it, so that an alert after it goes out at once. Where the advert and a long message do not fit into `burst_s` together (slow presets), no advert goes until `burst_s` is raised |
+| `airtime_budget` | the message budget cannot pay the advert's estimated time on air at once and still hold one long message beside it, so that an alert after it goes out at once. Where the advert and a long message do not fit into `burst_s` together (slow presets), no advert goes until `burst_s` is raised; the log names the `burst_s` that holds both at each connect ([Radio presets](configuration.md#radio-presets)) |
 | `rate_limited` | the requests that passed these checks asked the radio too often: each reads its clock, also when it is then refused; 10 in a row, then one a minute, as the contact requests' radio work |
 | `clock_unknown` | the radio answered the read of its clock with an error: the gateway sends no advert with a clock it did not check |
 | `clock_ahead` | the radio's clock, read just then, is more than 60 s ahead of the host's: nodes keep the newest advert time of a contact and would ignore the radio's later adverts; a clock behind the host's is no reason |
@@ -1083,7 +1094,7 @@ What the managed profile found and did at the last connect
 | `settings.<name>.live`, `.desired` | after the writes; `desired` is `null` for a setting left as found, `live` `null` for one the firmware does not report |
 | `settings.<name>.state` | `ok`, `written` (set and read back), `drift`, `differs`, `failed` (refused by the radio), `not_taken` (written, but reads back otherwise), `not_converging` (no longer written: it did not take at three connects in a row), `unsupported` (the firmware does not know the command: not written to that firmware again), `disabled` (the command is compiled out of the radio's firmware: not written to it again either), `unmanaged` (left as found), `unknown` (the firmware does not report it) |
 | `autoadd` | `overwrite_oldest` and the contact types the radio adds by itself |
-| `own_position` | the radio keeps a position of its own (reported, never cleared by the gateway) |
+| `own_position` | the radio keeps a position of its own (within ±90° and ±180°: the gateway takes any other pair for none; reported, never cleared by the gateway) |
 | `protected_contacts` | keys added to the radio, made favourites, refused by the radio (`failed`, usually a full table), and while only observing: missing from the radio, or on it but no favourite (`not_favourite`) |
 
 `setting` reports what happened as an event, with `setting`, `reason` for `written`, `failed`

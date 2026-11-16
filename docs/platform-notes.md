@@ -11,7 +11,8 @@ Linux](#debian-systemd-and-linux), [Python](#python), [GNU gettext](#gnu-gettext
 [GitHub](#github), [whiptail](#whiptail),
 [Mosquitto](#mosquitto), [Home Assistant Mosquitto add-on](#home-assistant-mosquitto-add-on),
 [paho-mqtt](#paho-mqtt), [Home Assistant MQTT](#home-assistant-mqtt), [Home Assistant
-dashboards](#home-assistant-dashboards), [openHAB Homie binding](#openhab-homie-binding),
+dashboards](#home-assistant-dashboards), [Home Assistant companion
+app](#home-assistant-companion-app), [openHAB Homie binding](#openhab-homie-binding),
 [MeshCore companion firmware](#meshcore-companion-firmware), [MeshCore's command line client and
 Python library](#meshcores-command-line-client-and-python-library).
 
@@ -82,7 +83,9 @@ One line per fact, by section.
 * `--yes-button`, `--no-button`, `--ok-button` and `--cancel-button` set the labels of every box kind and keep the exit status.
 * In a password or input box, Tab moves the focus to the buttons instead of being typed, and what is typed after it is lost.
 * whiptail takes every argument that starts with `-` for an option, also a text, a menu tag or a list item, unless it follows `--`.
-* A message box shows as many lines as fit its height and cuts the rest without a mark; with `--scrolltext` the text scrolls, but Enter no longer closes the box.
+* A message box shows as many lines as fit its height and cuts the rest without a mark; with `--scrolltext` the text scrolls, but Enter no longer closes the box, and nothing marks the text below.
+* A menu shows as many lines of its text as fit above its list and cuts the rest without a mark; a checklist one line more.
+* A menu shortens its tags and items to fit a line of the terminal, without a mark; with `--notags` it writes each item whole, and one wider than the box takes every row over its border.
 
 **[Mosquitto](#mosquitto)**
 
@@ -186,6 +189,7 @@ One line per fact, by section.
 * Home Assistant's MQTT integration speaks MQTT 3.1, 3.1.1 and 5, and connects with 5 unless its broker options say otherwise.
 * paho keeps a QoS 1 publish made while it is disconnected and sends it after the reconnect, while Home Assistant raises on the publish's result: the user sees an error for a message that still goes out later. A QoS 0 publish is not kept.
 * A broker passes the messages of one client on to a subscriber in the order it received them only for the same topic and QoS; messages on two topics may arrive in another order.
+* Home Assistant exposes a new entity to its conversation agent by default when it is a switch (or of another listed domain), a binary sensor of a listed class (door, motion, presence …) or a sensor of temperature, humidity, CO, CO₂, PM, VOC or air quality, unless it has an entity category or is hidden.
 
 **[Home Assistant dashboards](#home-assistant-dashboards)**
 
@@ -212,6 +216,11 @@ One line per fact, by section.
 * A view without `icon` shows its title alone in the tab bar; one with `icon` shows the icon alone, the title only as its tooltip, unless `show_icon_and_title: true`; a subview gets no tab.
 * A section of a sections view hides while all its cards are hidden; since frontend `20261028.4` (Home Assistant 2026.11) while all its cards, badges and sections are.
 * On Home Assistant 2026.10 the first load of a YAML dashboard whose file was written again while Home Assistant ran can report `this._layoutElement.setConfig is not a function`; the page still shows its cards. Frontend `20261028.4` (2026.11) does not.
+* The more-info dialog shows a string attribute that starts with `http` and parses as an `http:` or `https:` address as a link, which opens in a new tab (`target="_blank"`, `rel="noopener noreferrer"`); every other string stays text.
+
+**[Home Assistant companion app](#home-assistant-companion-app)**
+
+* The companion app interprets a notification's `message`: Android renders some HTML tags in it, and a `message` that is exactly a command word, such as `request_location_update`, `clear_badge`, `command_screen_on` or `command_update_sensors`, makes the phone carry out the command instead of showing a notification.
 
 **[openHAB Homie binding](#openhab-homie-binding)**
 
@@ -780,20 +789,112 @@ installer calls it; the three versions behaved alike. Source lines are from newt
   refuses such arguments as popt does. *Check:* `whiptail --msgbox '-x' 10 40; echo $?`, then the
   same with `--` before `'-x'`.
 * **A message box shows as many lines as fit its height and cuts the rest without a mark; with
-  `--scrolltext` the text scrolls, but Enter no longer closes the box.** A box of height 12 shows
-  6 lines, one of height 22 shows 16. With `--scrolltext` the text has the focus, also when it
-  fits: Enter and space do nothing, Tab moves to Ok, and Enter then closes the box. *Verified:*
-  experiment, all three versions; the text of the final message for each source, with
-  0.52.24-2ubuntu2; newt `textbox.c:121-125` (a scrolling text box takes the focus). *Here:*
-  `summary()` shows the final message in a box of height 22 without `--scrolltext`. The message
-  fits for an installation from a release, a pre-release, `main` or a clone at a path of up to 130
-  characters; with `--ref`, its commands wrap onto more lines and the last line can be cut. The
-  same text is logged to standard error before the box; with an xterm-like `TERM`, whiptail draws
-  on the terminal's alternate screen, so the text shows again when the box closes (with
-  `TERM=linux` the box stays on the screen instead). *Check:*
+  `--scrolltext` the text scrolls, but Enter no longer closes the box, and nothing marks the text
+  below.** A box of height 12 shows 6 lines, one of height 22 shows 16. With `--scrolltext` the
+  text has the focus, also when it fits: Enter and space do nothing, Tab moves to Ok, and Enter
+  then closes the box. While the text is longer than the box, 0.52.24 draws no scroll bar and no
+  arrow, and leaves out the box's right border beside the text; a text that fits gets an arrow
+  (`↓`) at its last line. *Verified:* experiment, all three versions; the text of the final
+  message for each source, with 0.52.24-2ubuntu2; the marks on 2026-11-15 with 0.52.24-2ubuntu2
+  alone, in tmux 3.4 and in pyte; newt `textbox.c:121-125` (a scrolling text box takes the
+  focus). *Here:*
+  `summary()` shows the final message in a box of height 24 (18 lines) without `--scrolltext`.
+  `tests/test_dialog_texts.py` checks that it fits in every language with each command that runs
+  the installer again: the latest release's, a pre-release's, `main`'s and a clone's at a path of
+  120 characters; with a container ID of four digits, a broker user name of 39 characters and a
+  radio over TCP at an IPv6 address written out in full with its port (46 characters). The line
+  about the radio, the warning about a radio over TCP above all, follows the message's first
+  line, before the rows: what does not fit cuts the end of the last command, never the warning.
+  A user name of up to 71 characters, or with one of 39 an address of up to 75 characters with
+  its port (a host name of 70), keeps the message at 18 lines in English and German. With
+  `--ref` and a ref of five characters or more, the commands take a line more and the message's
+  last line is cut. The same text is logged to
+  standard error before the box; with an xterm-like `TERM`, whiptail draws on the terminal's
+  alternate screen, so the text shows again when the box closes (with `TERM=linux` the box stays
+  on the screen instead). `check_broker()` does the same with the program's message after a
+  failed login: it logs it, then asks in a yes/no box of 24x78 (18 lines) with the question
+  before the message, which holds the start warnings, the error and the hint of a refused login
+  without a user name and TLS in German (17 lines); a longer message loses its own end, not the
+  question. The plan for the radio's settings is a message box of 24x78 too, without
+  `--scrolltext`, and it lists no contact and no name: `choose_profile()` shows the settings
+  the service sets, only reports or leaves alone, the radio's name without its values
+  ("name: differs (the installer's output above shows the names)"), one line for each kind of
+  contact with its count ("Contacts made favourites: 12"), and a last line saying that the
+  installer's output above lists every contact; the log before the box shows the names and
+  lists each contact with the start of its key and its name. The radio holds any name of up to
+  31 bytes, and probe prints a backslash as `\\`, a quote as `\"`, a control character as a
+  `\u` escape and a format character outside the basic plane, as each tag character of the
+  flag of Wales, as two of them: a name of 31 bytes takes up to 188 columns with its quotes. And
+  whiptail turns the two characters `\n` into a line break, also after another backslash, so a
+  name of `\n`s takes a line for each. So the box's text has a bound only without the name's
+  values, and nothing is measured at run time: `tests/test_dialog_texts.py` lays out its worst
+  case in every language, every setting the managed profile manages with the values
+  `probe --list profile` prints (every kind of node added automatically, every telemetry mode,
+  every duty cycle from 10 to 100 %) and in the form whose line takes the most lines, and each
+  count with three digits. It takes 17 lines in English and in German (#190). *Check:*
+  `whiptail --msgbox 'a\\nb' 8 20` shows `a\` and `b` on two lines;
   `whiptail --msgbox "$(seq 1 30)" 12 40` shows 1 to 6 and closes with Enter;
-  `whiptail --scrolltext --msgbox "$(seq 1 30)" 12 40` stays open on Enter; Tab, then Enter
-  closes it.
+  `whiptail --scrolltext --msgbox "$(seq 1 30)" 12 40` stays open on Enter, without an arrow or
+  a right border beside 1 to 6; Tab, then Enter closes it.
+* **A menu shows as many lines of its text as fit above its list and cuts the rest without a
+  mark; a checklist one line more.** A menu's text gets the box's height less 7 lines and less
+  the list's height: a menu of 20x78 with a list of 3 shows 10 lines, with a list of 10 it shows
+  3, and one of 24x78 with a list of 3 shows 14. A checklist of the same size shows 11, 4 and 15.
+  The list and the buttons stay whole, and nothing marks the cut. With `--fb` (full buttons) the
+  text gets 2 lines less. A yes/no box lays out its text as a message box does (above): a box of
+  height 12 shows 6 lines, one of height 22 shows 16. *Verified:* on 2026-11-15, unlike the
+  entries above, with 0.52.24-2ubuntu2 alone: a script drove the real program in a pseudo
+  terminal under `LC_ALL=C.UTF-8`, menus and checklists of 16x60, 20x78 and 24x78 with lists of
+  3, 5 and 10, and yes/no boxes of 12x72 and 22x78, each with a text of 30 numbered lines; newt
+  `r0-52-24` `whiptail.c:555-556` (the window is the box less 2 lines), `dialogboxes.c:318` (a
+  menu's text gets the window's height less 4, the button row and the list), `:464` (a
+  checklist's less 3), `:23` and `:604-612` (the button row is 1 line, 3 with `--fb`). *Here:*
+  the installer's menus and checklists are 20x78 with a list of 10 (`show_dialog()`), which
+  leaves 3 and 4 lines of text, and each of their texts is a single line. `show_dialog()`'s
+  yes/no boxes are 14x72 and show 8 lines; the confirmation is 18x78 (12 lines) and the question
+  after a failed login 24x78 (18 lines). Up to 2.2.0 `show_dialog()`'s were 12x72 and showed 6:
+  the German question before a radio over TCP without authentication needs 7 and was cut after
+  "TCP trotzdem verwenden": the setting `tcp_unauthenticated = true`, the question mark and what
+  *Nein* (No) does were not shown (#190). `tests/test_dialog_texts.py` wraps every text of every
+  dialog in every language as whiptail does, with the longest realistic values, and fails when
+  one needs more lines than its box shows; `tests/manual/dialog_texts.py` compares that model with
+  the real whiptail ([testing.md](testing.md#the-length-of-the-installers-texts)). On
+  2026-11-15 the two agreed on every text of the installer's 122 dialogs in English and German,
+  with 0.52.24-2ubuntu2. *Check:*
+  `whiptail --menu -- "$(seq 1 30)" 20 78 3 a A b B c C` shows 1 to 10 above the list; with
+  `--fb` before `--menu`, 1 to 8.
+* **A menu shortens its tags and items to fit a line of the terminal, without a mark; with
+  `--notags` it writes each item whole, and one wider than the box takes every row over its
+  border.** The list is as wide as the widest tag and the widest item and a space, at most the
+  terminal's columns less 6 (74 in 80), 2 more when it scrolls. With tags, the tag column and the
+  item column are shortened in turn, the wider first, until a row fits: beside a tag of 60
+  characters, as a device's path in `/dev/serial/by-id/`, each keeps 37 columns, and the item
+  "radio with WiFi firmware (TCP, no authentication)" shows as "radio with WiFi firmware (TCP, no
+  aut". With `--notags` the tags are not shown and the items are not shortened; the list is
+  centred in the box, so in a box of 78 columns an item of up to 75 fits, 72 when the list has
+  more rows than its height and scrolls (its bar takes 3 columns). A wider item widens the list,
+  and every row runs over the box's right border. A checklist writes each row as its tag, padded
+  to the widest, two spaces and its item, and shortens neither. *Verified:* on 2026-11-15 with
+  0.52.24-2ubuntu2 alone, as above, menus of 20x78 with a list of 10 in a terminal of 80x24:
+  with tags, device paths of 63 and 74 characters and the TCP item in English and German; with
+  `--notags`, items of 72 to 76 columns with and without a scrolling list, and the device names
+  of a CP2102 (69 characters) and a CP2102N with a serial number of 32 hex digits (98); and a
+  checklist with two contacts, their keys of 64 hex digits as tags, which showed six letters of
+  each name and no right border. newt `r0-52-24` `dialogboxes.c:329-347` (the list's width, its
+  position and the shortening), `:349-367` (each row, with and without tags), `:477-480` (a
+  checklist's row). *Here:* `show_dialog()` gives every menu `--notags`: the tag is the value an
+  answers file names, the item says what it is; the setup's items start with the setup's name,
+  `default` or `advanced`. The radio menu shows a device by its name in `/dev/serial/by-id/`;
+  `ask_radio()` shortens a name longer than 72 characters to its first 34 and its last 35 with
+  `...` between them (`ITEM_COLUMNS`), the vendor and the serial number, or, when another
+  device's name shortens to the same, both to `...` and their last 69, where serial numbers
+  differ: each row shows the digits that tell it from the other.
+  `tests/test_dialog_texts.py` checks every row of every menu in every language with this rule,
+  and `tests/manual/dialog_texts.py` compares it with whiptail. The checklists of channels and
+  contacts are not checked: their rows are the radio's, and a contact's 64-digit key as its tag
+  leaves a few letters of its name in 80 columns (#191). *Check:*
+  `whiptail --menu -- Radio 20 78 10 /dev/serial/by-id/usb-Example_USB_Single_Serial_0123456789-if00 x tcp 'radio with WiFi firmware (TCP, no authentication)'`
+  shows the item cut after "no aut"; with `--notags` before `--menu`, whole.
 
 ## Mosquitto
 
@@ -1740,6 +1841,21 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   the history holds, so a swap of the two loses the message for one render and never shows it
   twice. *Check:* `make ha-test`.
 
+* **Home Assistant exposes a new entity to its conversation agent by default when it is a switch
+  (or of another listed domain), a binary sensor of a listed class (door, motion, presence …) or a
+  sensor of temperature, humidity, CO, CO₂, PM, VOC or air quality, unless it has an entity
+  category or is hidden.** An agent backed by a language model gets the names of the exposed
+  entities. *Verified:* read only, Home Assistant 2026.11.0,
+  `homeassistant/components/homeassistant/exposed_entities.py` lines 32-69 (the domains and
+  classes, and `conversation` exposing new entities by default) and 329-360
+  (`_is_default_exposed`); not tried with an agent. *Here:* a contact's *Telemetry* switch is a
+  configuration entity and its *MCU temperature* diagnostic, so neither is exposed; the reading
+  sensors of temperature and humidity (`sensor.mesh_alice_ch2_temperature`) have no category and
+  are, named after the contact's device, whose name its owner chose. The guide says how to keep
+  them out ([names and texts from the mesh](home-assistant.md#names-and-texts-from-the-mesh)).
+  *Check:* the file above, or the *Expose* tab of the voice assistant settings after a companion's
+  first reading of temperature.
+
 ## Home Assistant dashboards
 
 * **A Markdown card parses what its template puts out as Markdown, after the template's own
@@ -1768,7 +1884,9 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   the card escapes the text and the sender name, replaces their line breaks with spaces, and keeps
   them in a `<div>` on one line; each card of the generated dashboard prints every value it reads
   from Home Assistant through one macro that does the same, on a line that is one `<div>`,
-  `<table>` or `<ha-qr-code>` element. `test_the_markdown_card_keeps_a_hostile_text_inert` and
+  `<table>` or `<details>` element, or in the `data` attribute of an `<ha-qr-code>` element
+  without content, which opens no HTML block (#179).
+  `test_the_markdown_card_keeps_a_hostile_text_inert` and
   `home-assistant/tests/test_dashboard.py` (hostile names, three with line breaks, in every place
   a name reaches) check the form of their output. *Check:* `printf
   '![](https://example.org/p.png)' | npx marked@18.0.14` prints an `<img>`; `printf
@@ -2084,6 +2202,38 @@ src() { curl -s "https://raw.githubusercontent.com/home-assistant/core/$1/homeas
   '.\{45\}(this\._ignoreNextUpdateEvent=!0)' hass_frontend/frontend_latest/*.js` in the
   `home-assistant-frontend` wheel shows `this.lovelace&&"yaml"===this.lovelace.mode&&` before
   it in `20260930.4` and `"yaml"===a&&` in `20261028.4`.
+
+* **The more-info dialog shows a string attribute that starts with `http` and parses as an
+  `http:` or `https:` address as a link, which opens in a new tab (`target="_blank"`,
+  `rel="noopener noreferrer"`); every other string stays text.** `new URL()` decides, so
+  `https://example.org/ read this` is a link too. *Verified:* read only, not run in a browser:
+  frontend `20261028.4` (Home Assistant 2026.11.0) and `20261028.5` (2026.11.1),
+  `src/components/ha-attribute-value.ts` lines 46-67, the same in both, which
+  `src/dialogs/more-info/ha-more-info-details.ts` (lines 266-269) uses for every attribute.
+  *Here:* the payloads are an interface and stay as they are; the guide says that a message's
+  `text` and `sender_name` and a *New node*'s `name` can become links, and what to do
+  ([names and texts from the mesh](home-assistant.md#names-and-texts-from-the-mesh)); the
+  generated dashboard prints values in Markdown cards as text. *Check:* the file above at the
+  frontend's tag, the branch `attributeValue.startsWith("http")`.
+
+## Home Assistant companion app
+
+* **The companion app interprets a notification's `message`: Android renders some HTML tags in
+  it, and a `message` that is exactly a command word, such as `request_location_update`,
+  `clear_badge`, `command_screen_on` or `command_update_sensors`, makes the phone carry out the
+  command instead of showing a notification.** *Verified:* read only, the app's documentation on
+  `master` (read 2026-11-15): `docs/notifications/basic.md`, *Notification Message HTML
+  Formatting*, and `docs/notifications/commands.md`, the tables of commands for iOS and Android;
+  not tried on a phone. The section on HTML stands under *Android Specific*; for iOS the
+  documentation says nothing of HTML or of entities such as `&amp;`, and iOS was not checked.
+  *Here:* no example of the guide forwards a mesh text to a phone without the recipe in its
+  examples, whose fixed start keeps the message from being a command word on both platforms and
+  which, for Android, replaces `&` and `<`; for an iPhone the guide leaves the two replacements
+  out ([names and texts from the mesh](home-assistant.md#names-and-texts-from-the-mesh)). The
+  recipe's template, rendered by Home Assistant 2026.10.2 and 2026.11.0 with `None`, `[1, 2]`,
+  `1.10`, a command word and HTML as texts, with and without the replacements, keeps each a
+  text (`home-assistant/tests/test_contract.py`). *Check:* the two documents above in
+  `home-assistant/companion.home-assistant`.
 
 ## openHAB Homie binding
 

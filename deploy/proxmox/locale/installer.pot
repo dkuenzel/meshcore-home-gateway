@@ -40,13 +40,44 @@ msgstr ""
 msgid "Base topic"
 msgstr ""
 
+#. the values start in one column; they are commands to copy, but {login} and
+#. {posture} (how the broker connection is secured) and {selftest} (the result of the
+#. gateway's own check after the start).
+#, python-brace-format
+msgid ""
+"Broker:       {login} ({posture})\n"
+"Self-test:    {selftest}\n"
+"Logs:         {logs}\n"
+"Check:        {check}\n"
+"Reconfigure:  {reconfigure}\n"
+"Update:       {update}"
+msgstr ""
+
 msgid "Channels to send to"
 msgstr ""
 
 msgid "Command words, comma-separated (e.g. status,arm,disarm)"
 msgstr ""
 
+#. {count} is a number of contacts; the installer's output above the box lists
+#. each of them.
+#, python-brace-format
+msgid "Contacts added as favourites: {count}"
+msgstr ""
+
 msgid "Contacts allowed to send commands (direct messages only)"
+msgstr ""
+
+#, python-brace-format
+msgid "Contacts made favourites: {count}"
+msgstr ""
+
+#, python-brace-format
+msgid "Contacts not on the radio: {count}"
+msgstr ""
+
+#, python-brace-format
+msgid "Contacts that are no favourites: {count}"
 msgstr ""
 
 msgid "Contacts to send to"
@@ -188,11 +219,9 @@ msgstr ""
 #. {reason} is the program's message, in this language too.
 #, python-brace-format
 msgid ""
-"The broker login failed:\n"
+"The broker login failed. Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes the settings later.)\n"
 "\n"
-"{reason}\n"
-"\n"
-"Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes the settings later.)"
+"{reason}"
 msgstr ""
 
 #. {reason} is the program's message, in this language too.
@@ -209,9 +238,15 @@ msgid ""
 "After re-plugging the radio: {command}"
 msgstr ""
 
+#. the last line of the plan's box, below the counts of contacts: the
+#. installer's output before the box lists each contact with the start of its key and its
+#. name.
+msgid "The installer's output above lists every contact."
+msgstr ""
+
 #. security text (docs/translations.md): translate all of it, add nothing.
 #, python-brace-format
-msgid "The radio is reached over TCP ({address}) without authentication: whoever reaches it can control it and read its private key."
+msgid "The radio is reached over TCP without authentication ({address}): whoever reaches it can control it and read its private key."
 msgstr ""
 
 #. security text (docs/translations.md): translate all of it, add nothing.
@@ -236,7 +271,7 @@ msgstr ""
 msgid "a radio over TCP needs radio.tcp_unauthenticated = true; for USB, install a new container"
 msgstr ""
 
-msgid "all settings: container, network, topics, Home Assistant"
+msgid "advanced (all settings): container, network, topics, Home Assistant"
 msgstr ""
 
 #, python-brace-format
@@ -314,23 +349,6 @@ msgstr ""
 msgid "command failed at line {line}"
 msgstr ""
 
-#. {contact} is the start of a contact's key and its name.
-#, python-brace-format
-msgid "contact {contact}: added as a favourite"
-msgstr ""
-
-#, python-brace-format
-msgid "contact {contact}: made a favourite"
-msgstr ""
-
-#, python-brace-format
-msgid "contact {contact}: no favourite"
-msgstr ""
-
-#, python-brace-format
-msgid "contact {contact}: not on the radio"
-msgstr ""
-
 msgid "container ID must be a number of at least 100"
 msgstr ""
 
@@ -373,6 +391,9 @@ msgstr ""
 msgid "creating the service user failed"
 msgstr ""
 
+msgid "default (recommended): asks only for the radio, broker and targets"
+msgstr ""
+
 msgid "disk size and memory must be whole numbers"
 msgstr ""
 
@@ -404,19 +425,8 @@ msgstr ""
 msgid "meshcore-home-gateway from {ref} was not installed in container {ctid} (see above)"
 msgstr ""
 
-#. the values start in one column; they are commands to copy, but {login} and
-#. {posture} (how the broker connection is secured) and {selftest} (the result of the
-#. gateway's own check after the start).
 #, python-brace-format
-msgid ""
-"meshcore-home-gateway {version} runs in container {ctid}.\n"
-"\n"
-"Broker:       {login} ({posture})\n"
-"Self-test:    {selftest}\n"
-"Logs:         {logs}\n"
-"Check:        {check}\n"
-"Reconfigure:  {reconfigure}\n"
-"Update:       {update}"
+msgid "meshcore-home-gateway {version} runs in container {ctid}."
 msgstr ""
 
 #, python-brace-format
@@ -497,9 +507,6 @@ msgstr ""
 msgid "radio.profile.name: 1 to 31 bytes, got '{name}'"
 msgstr ""
 
-msgid "recommended: asks only for the radio, the broker and the targets"
-msgstr ""
-
 msgid "run as root on the Proxmox host"
 msgstr ""
 
@@ -562,6 +569,12 @@ msgstr ""
 
 #, python-brace-format
 msgid "{device} is already passed through to another container (ID {ctids}): a radio takes one client at a time"
+msgstr ""
+
+#. the radio's name in the plan's box, in each of its sections; the
+#. installer's output before the box shows the radio's name and the one the service wants.
+#, python-brace-format
+msgid "{setting}: differs (the installer's output above shows the names)"
 msgstr ""
 
 #. a setting of the radio and its value, as the radio names them.

@@ -883,6 +883,8 @@ REPORTS = [
         auto_add={"manual": False, "types": [], "overwrite_oldest": None},
         advert_location="share",
     ),
+    _report(spreading_factor=10),  # an advert beside a long message beyond the burst (#181)
+    _report(spreading_factor=12),  # a long message alone beyond it
 ]
 
 
@@ -1446,6 +1448,7 @@ contacts   added manually
 telemetry  base deny, location deny, environment deny
 position   none, not in adverts
 airtime    factor 9: the radio sends at most 10 %
+burst      an advert nearby (1.10 s) and a long message (2.13 s) fit into airtime.burst_s (10 s)
   abababababababababababababababababababababababababababababababab  chat     Alice
   abababababab0202020202020202020202020202020202020202020202020202  repeater Bob  REMOTE CLI
 channels
@@ -1494,11 +1497,23 @@ def test_probe_keeps_its_english_report(tmp_path: Path, monkeypatch: pytest.Monk
                 f"  contact cdcdcdcdcdcd Alice  (not on the radio; {UNTESTED})",
             ],
             ["contacts   all added automatically", "position   none, shared in adverts"],
+            [
+                (
+                    "burst      an advert nearby (4.13 s) and a long message (8.00 s) take more "
+                    "than airtime.burst_s (10 s): no advert nearby can go; set burst_s to 13"
+                )
+            ],
+            [
+                (
+                    "burst      a long message (26.77 s) takes more than airtime.burst_s (10 s): "
+                    "long messages fail and no advert nearby can go; set burst_s to 41"
+                )
+            ],
         ],
         strict=True,
     ):
         assert set(lines) <= set(text.splitlines())
-    assert "airtime" not in printed[1]  # a firmware without the setting
+    assert "\nairtime " not in printed[1]  # a firmware without the setting
 
 
 CONTACTS_NOTES = [

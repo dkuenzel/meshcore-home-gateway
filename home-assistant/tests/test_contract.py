@@ -801,8 +801,9 @@ async def test_the_documented_automations_work(
     await fire(hass, TOPICS.availability, "online", retain=True)
     automations = guide_automations()
     # the contacts' one: tests/test_manage_contacts.py; the one calling the guide's script to
-    # send and wait, here only set up: test_the_guides_script_waits_for_its_own_final_event
-    assert len(automations) == 10
+    # send and wait, here only set up: test_the_guides_script_waits_for_its_own_final_event; the
+    # one to a phone: test_the_recipe_to_a_phone_keeps_a_mesh_text_a_text
+    assert len(automations) == 11
     telemetry = {"Handheld battery low", "Mesh handheld not answering", "Alice left home"}
     assert telemetry <= {a["alias"] for a in automations}  # tests/test_telemetry.py, with Alice
     assert await async_setup_component(hass, "persistent_notification", {})
@@ -833,6 +834,68 @@ async def test_the_documented_automations_work(
     assert messages.count("alerts: failed (no_acknowledgement)") == 2
     automation = hass.states.get("automation.mesh_delivery_failed")
     assert automation.attributes["last_triggered"] is not None
+    assert problems(caplog) == []
+
+
+# What the guide says to leave out of the recipe to a phone for an iPhone, whose app documents
+# no HTML formatting
+ANDROID_ONLY = "| replace('&', '&amp;') | replace('<', '&lt;')"
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        ("Alice", "None", "Mesh · Alice: None", None),
+        ("Alice", "[1, 2]", "Mesh · Alice: [1, 2]", None),
+        ("Alice", "1.10", "Mesh · Alice: 1.10", None),
+        ("Alice", "request_location_update", "Mesh · Alice: request_location_update", None),
+        (
+            "<b>Eve</b>",
+            "<img src=x> & {{ 7 * 7 }}",
+            "Mesh · &lt;b>Eve&lt;/b>: &lt;img src=x> &amp; {{ 7 * 7 }}",
+            "Mesh · <b>Eve</b>: <img src=x> & {{ 7 * 7 }}",
+        ),
+    ],
+)
+@pytest.mark.parametrize("phone", ["android", "iphone"])
+async def test_the_recipe_to_a_phone_keeps_a_mesh_text_a_text(
+    hass: HomeAssistant,
+    mqtt: Any,
+    caplog: pytest.LogCaptureFixture,
+    case: tuple[str, str, str, str | None],
+    phone: str,
+) -> None:
+    """#179, SEC-6: the guide's automation that forwards a direct message to the companion app
+    hands on a text that is never a command word, whose HTML tags Android shows as typed, and
+    that stays a text whatever it looks like (None, a list, a number, a template). For an
+    iPhone, the guide leaves out the two replacements, and the text goes on as it came."""
+    name, text, message, on_iphone = case
+    (automation,) = [
+        a for a in guide_automations() if a["alias"] == "Phone notice of a mesh message"
+    ]
+    assert f"`{ANDROID_ONLY}`" in GUIDE.read_text(encoding="utf-8")
+    if phone == "iphone":
+        (action,) = automation["actions"]
+        data = re.sub(r"\s*" + re.escape(ANDROID_ONLY), "", action["data"])
+        assert data != action["data"]
+        automation = {**automation, "actions": [{**action, "data": data}]}
+        message = on_iphone or message
+    calls: list[dict[str, Any]] = []
+
+    async def phone(call: Any) -> None:
+        calls.append(dict(call.data))
+
+    hass.services.async_register("notify", "mobile_app_my_phone", phone)
+    await announce(hass, discovery_payload(CONFIG, TOPICS))
+    await fire(hass, TOPICS.availability, "online", retain=True)
+    assert await async_setup_component(hass, "automation", {"automation": [automation]})
+    await hass.async_block_till_done()
+    inbound = InboundMessage(
+        MessageKind.CONTACT, text, 1_760_000_000, 1_760_000_001.0, sender_prefix=SENDER[:12]
+    )
+    await fire(hass, TOPICS.received, received_payload(inbound, Contact(SENDER, name), "operator"))
+    await hass.async_block_till_done()
+    assert calls == [{"title": "Mesh message", "message": message}]
     assert problems(caplog) == []
 
 

@@ -10,9 +10,14 @@ msg	--update needs a container ID	--update braucht eine Container-ID
 msg	Announce the radio to Home Assistant (MQTT discovery)?	Das Funkgerät bei Home Assistant anmelden (MQTT-Erkennung)?
 msg	At its next connect the service sets the radio:	Beim nächsten Verbinden setzt der Dienst am Funkgerät:
 msg	Base topic	Basis-Topic
+msg	Broker:       {login} ({posture})\nSelf-test:    {selftest}\nLogs:         {logs}\nCheck:        {check}\nReconfigure:  {reconfigure}\nUpdate:       {update}	Broker:          {login} ({posture})\nSelbsttest:      {selftest}\nProtokoll:       {logs}\nPrüfen:          {check}\nNeu einrichten:  {reconfigure}\nAktualisieren:   {update}
 msg	Channels to send to	Kanäle, an die gesendet wird
 msg	Command words, comma-separated (e.g. status,arm,disarm)	Befehlswörter, durch Kommas getrennt (z. B. status,arm,disarm)
+msg	Contacts added as favourites: {count}	Als Favoriten hinzugefügte Kontakte: {count}
 msg	Contacts allowed to send commands (direct messages only)	Kontakte, die Befehle senden dürfen (nur Direktnachrichten)
+msg	Contacts made favourites: {count}	Zu Favoriten gemachte Kontakte: {count}
+msg	Contacts not on the radio: {count}	Kontakte, die nicht auf dem Funkgerät sind: {count}
+msg	Contacts that are no favourites: {count}	Kontakte, die keine Favoriten sind: {count}
 msg	Contacts to send to	Kontakte, an die gesendet wird
 msg	Container ID	Container-ID
 msg	Container host name	Hostname des Containers
@@ -48,17 +53,18 @@ msg	Storage for the container disk	Speicher für den Datenträger des Containers
 msg	TLS, no user name	TLS, kein Benutzername
 msg	TLS, user '{user}'	TLS, Benutzer '{user}'
 msg	The broker connection has {what}: any client that reaches the broker could publish command events as if an allowed contact had sent them. Accept it (insecure = true)? No: no commands.	Die Verbindung zum Broker hat {what}: Jeder Client, der den Broker erreicht, könnte Befehlsereignisse veröffentlichen, als hätte ein erlaubter Kontakt sie gesendet. Akzeptieren (insecure = true)? Nein: keine Befehle.
-msg	The broker login failed:\n\n{reason}\n\nEnter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes the settings later.)	Die Anmeldung am Broker ist fehlgeschlagen:\n\n{reason}\n\nDie Broker-Einstellungen erneut eingeben? (Nein: weiter; der Dienst versucht es weiter, --reconfigure korrigiert die Einstellungen später.)
+msg	The broker login failed. Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes the settings later.)\n\n{reason}	Die Anmeldung am Broker ist fehlgeschlagen. Die Broker-Einstellungen erneut eingeben? (Nein: weiter; der Dienst versucht es weiter, --reconfigure korrigiert die Einstellungen später.)\n\n{reason}
 msg	The broker settings were not accepted:\n\n{reason}	Die Broker-Einstellungen wurden nicht akzeptiert:\n\n{reason}
 msg	The container starts only while the radio is plugged in.\nAfter re-plugging the radio: {command}	Der Container startet nur, solange das Funkgerät eingesteckt ist.\nNach erneutem Einstecken des Funkgeräts: {command}
-msg	The radio is reached over TCP ({address}) without authentication: whoever reaches it can control it and read its private key.	Das Funkgerät wird über TCP ({address}) ohne Authentifizierung erreicht: Wer es erreicht, kann es steuern und seinen privaten Schlüssel lesen.
+msg	The installer's output above lists every contact.	Die Ausgabe des Installers oben führt jeden Kontakt auf.
+msg	The radio is reached over TCP without authentication ({address}): whoever reaches it can control it and read its private key.	Das Funkgerät wird über TCP ohne Authentifizierung erreicht ({address}): Wer es erreicht, kann es steuern und seinen privaten Schlüssel lesen.
 msg	The radio's TCP interface has no authentication: anyone who reaches it can control the radio and read its private key, which decrypts every direct message of the radio, also earlier ones recorded from the air. Use it only in a network that only the gateway reaches, never the household's WiFi. Use TCP anyway (tcp_unauthenticated = true)? No: choose the radio again.	Die TCP-Schnittstelle des Funkgeräts hat keine Authentifizierung: Wer sie erreicht, kann das Funkgerät steuern und seinen privaten Schlüssel lesen, der jede Direktnachricht des Funkgeräts entschlüsselt, auch frühere, die über Funk mitgeschnitten wurden. Nutze sie nur in einem Netzwerk, zu dem nur das Gateway Zugang hat, nie im WLAN des Haushalts. TCP trotzdem verwenden (tcp_unauthenticated = true)? Nein: Funkgerät erneut wählen.
-msg	The radio's firmware is not tested: the service only reports what differs\n(radio.profile.manage = always sets it anyway):	Die Firmware des Funkgeräts ist nicht getestet: Der Dienst meldet nur, was abweicht\n(radio.profile.manage = always setzt es trotzdem):
+msg	The radio's firmware is not tested: the service only reports what differs\n(radio.profile.manage = always sets it anyway):	Ungetestete Firmware des Funkgeräts: Der Dienst meldet nur, was abweicht\n(radio.profile.manage = always setzt es trotzdem):
 msg	The service leaves alone:	Der Dienst lässt unverändert:
 msg	Use TLS for the broker connection? Without it the password, the messages, the positions and the commands cross the network in the clear.	TLS für die Verbindung zum Broker verwenden? Ohne TLS gehen das Passwort, die Nachrichten, die Positionen und die Befehle unverschlüsselt durch das Netzwerk.
 msg	With radio.profile.manage = observe the service only reports what differs:	Mit radio.profile.manage = observe meldet der Dienst nur, was abweicht:
 msg	a radio over TCP needs radio.tcp_unauthenticated = true; for USB, install a new container	ein Funkgerät über TCP braucht radio.tcp_unauthenticated = true; für USB installiere einen neuen Container
-msg	all settings: container, network, topics, Home Assistant	alle Einstellungen: Container, Netzwerk, Topics, Home Assistant
+msg	advanced (all settings): container, network, topics, Home Assistant	Erweitert (alle Einstellungen): Container, Netzwerk, Topics, Home Assistant
 msg	answers file line {line}: expected key=value	Antwortdatei, Zeile {line}: key=value erwartet
 msg	answers file line {line}: not valid UTF-8 (save the file as UTF-8)	Antwortdatei, Zeile {line}: kein gültiges UTF-8 (speichere die Datei als UTF-8)
 msg	answers file: targets.channels: expected channel indices, comma-separated	Antwortdatei: targets.channels: Kanalnummern erwartet, durch Kommas getrennt
@@ -84,10 +90,6 @@ msg	cannot read the radio's settings (is it connected and not used by another pr
 msg	cannot read the version of meshcore-home-gateway in container {ctid}	die Version von meshcore-home-gateway in Container {ctid} ist nicht lesbar
 msg	cannot read the version of the checkout {path}	die Version des Checkouts {path} ist nicht lesbar
 msg	command failed at line {line}	Befehl in Zeile {line} fehlgeschlagen
-msg	contact {contact}: added as a favourite	Kontakt {contact}: als Favorit hinzugefügt
-msg	contact {contact}: made a favourite	Kontakt {contact}: zum Favoriten gemacht
-msg	contact {contact}: no favourite	Kontakt {contact}: kein Favorit
-msg	contact {contact}: not on the radio	Kontakt {contact}: nicht auf dem Funkgerät
 msg	container ID must be a number of at least 100	die Container-ID muss eine Zahl ab 100 sein
 msg	container {ctid} did not start (see above)	Container {ctid} ist nicht gestartet (siehe oben)
 msg	container {ctid} has no dialout group	Container {ctid} hat keine Gruppe dialout
@@ -99,16 +101,17 @@ msg	copying meshcore-home-gateway into container {ctid} failed (see above)	Kopie
 msg	could not download {template} to {storage}	{template} ließ sich nicht nach {storage} herunterladen
 msg	creating container {ctid} failed (see above)	Erstellen von Container {ctid} fehlgeschlagen (siehe oben)
 msg	creating the service user failed	Anlegen des Dienstbenutzers fehlgeschlagen
+msg	default (recommended): asks only for the radio, broker and targets	Standard (empfohlen): fragt nur nach Funkgerät, Broker und Zielen
 msg	disk size and memory must be whole numbers	Datenträgergröße und Arbeitsspeicher müssen ganze Zahlen sein
 msg	installing packages in container {ctid} failed (see above)	Installieren der Pakete in Container {ctid} fehlgeschlagen (siehe oben)
 msg	invalid settings (see above)	ungültige Einstellungen (siehe oben)
 msg	invalid settings: {reason}	ungültige Einstellungen: {reason}
 msg	limiting the journal in container {ctid} failed (see above)	Begrenzen des Journals in Container {ctid} fehlgeschlagen (siehe oben)
-msg	login accepted	Anmeldung akzeptiert
+msg	login accepted	angemeldet
 msg	login failed (see above), the service keeps trying	Anmeldung fehlgeschlagen (siehe oben), der Dienst versucht es weiter
 msg	login not checked	Anmeldung nicht geprüft
 msg	meshcore-home-gateway from {ref} was not installed in container {ctid} (see above)	meshcore-home-gateway aus {ref} wurde nicht in Container {ctid} installiert (siehe oben)
-msg	meshcore-home-gateway {version} runs in container {ctid}.\n\nBroker:       {login} ({posture})\nSelf-test:    {selftest}\nLogs:         {logs}\nCheck:        {check}\nReconfigure:  {reconfigure}\nUpdate:       {update}	meshcore-home-gateway {version} läuft in Container {ctid}.\n\nBroker:          {login} ({posture})\nSelbsttest:      {selftest}\nProtokoll:       {logs}\nPrüfen:          {check}\nNeu einrichten:  {reconfigure}\nAktualisieren:   {update}
+msg	meshcore-home-gateway {version} runs in container {ctid}.	meshcore-home-gateway {version} läuft in Container {ctid}.
 msg	meshcore-home-gateway {version} was not installed in container {ctid} (see above)	meshcore-home-gateway {version} wurde nicht in Container {ctid} installiert (siehe oben)
 msg	no TLS	kein TLS
 msg	no TLS, no user name	kein TLS, kein Benutzername
@@ -120,8 +123,8 @@ msg	no answer for {key} ({text})	keine Antwort für {key} ({text})
 msg	no user name	keinen Benutzernamen
 msg	none (no user name)	keine (kein Benutzername)
 msg	not checked (version {version} cannot; check after --update)	nicht geprüft (Version {version} kann das nicht; nach --update prüfen)
-msg	not run (the broker login failed)	nicht ausgeführt (die Anmeldung am Broker ist fehlgeschlagen)
-msg	not run (version {version} has no doctor command)	nicht ausgeführt (Version {version} hat keinen Befehl doctor)
+msg	not run (the broker login failed)	nicht ausgeführt (Anmeldung am Broker fehlgeschlagen)
+msg	not run (version {version} has no doctor command)	nicht ausgeführt (Version {version} ohne Befehl doctor)
 msg	package pve-container not found	Paket pve-container nicht gefunden
 msg	passed	bestanden
 msg	passing {device} to container {ctid} failed (see above)	Durchreichen von {device} an Container {ctid} fehlgeschlagen (siehe oben)
@@ -130,7 +133,6 @@ msg	pve-container {version} cannot create Debian 13 containers; update the host 
 msg	pveam offers no Debian 13 template (check the host's internet access)	pveam bietet keine Vorlage für Debian 13 an (prüfe den Internetzugang des Hosts)
 msg	radio with WiFi firmware (TCP, no authentication)	Funkgerät mit WLAN-Firmware (TCP, keine Authentifizierung)
 msg	radio.profile.name: 1 to 31 bytes, got '{name}'	radio.profile.name: 1 bis 31 Bytes, erhalten: '{name}'
-msg	recommended: asks only for the radio, the broker and the targets	empfohlen: fragt nur nach Funkgerät, Broker und Zielen
 msg	run as root on the Proxmox host	als root auf dem Proxmox-Host ausführen
 msg	serial device {device} not found	serielles Gerät {device} nicht gefunden
 msg	the broker settings were not accepted: {reason}	die Broker-Einstellungen wurden nicht akzeptiert: {reason}
@@ -147,7 +149,8 @@ msg	whiptail not found: install it ({command}) or use --answers FILE	whiptail ni
 msg	{bridge}, {ip}, gateway {gateway}	{bridge}, {ip}, Gateway {gateway}
 msg	{device} is already passed through to another container (ID {ctids}). A radio takes one client at a time: whichever opens it second cannot use it. Choose another radio, or take it out of that container first.	{device} ist schon an einen anderen Container durchgereicht (ID {ctids}). Ein Funkgerät bedient immer nur einen Client: Wer es als Zweites öffnet, kann es nicht nutzen. Wähle ein anderes Funkgerät oder nimm es zuerst aus diesem Container heraus.
 msg	{device} is already passed through to another container (ID {ctids}): a radio takes one client at a time	{device} ist schon an einen anderen Container durchgereicht (ID {ctids}): Ein Funkgerät bedient immer nur einen Client
+msg	{setting}: differs (the installer's output above shows the names)	{setting}: weicht ab (die Ausgabe des Installers oben zeigt die Namen)
 msg	{setting}: {live} (changed on the radio; kept)	{setting}: {live} (am Funkgerät geändert; beibehalten)
-msg	{setting}: {live}, not {wanted} (compiled out of the radio's firmware)	{setting}: {live}, nicht {wanted} (nicht in die Firmware des Funkgeräts kompiliert)
-msg	{setting}: {live}, not {wanted} (did not take effect; no longer set)	{setting}: {live}, nicht {wanted} (nicht wirksam geworden; wird nicht mehr gesetzt)
+msg	{setting}: {live}, not {wanted} (compiled out of the radio's firmware)	{setting}: {live}, nicht {wanted} (nicht in die Firmware kompiliert)
+msg	{setting}: {live}, not {wanted} (did not take effect; no longer set)	{setting}: {live}, nicht {wanted} (ohne Wirkung; nicht mehr gesetzt)
 msg	{setting}: {live}, not {wanted} (the firmware does not support it)	{setting}: {live}, nicht {wanted} (die Firmware unterstützt es nicht)

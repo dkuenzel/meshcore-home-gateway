@@ -125,16 +125,32 @@ at most every 10 minutes ([advert nearby](mqtt-api.md#advert-nearby-advertsend-a
 wrote). **Trusted:** the templates. **Not trusted:** names and texts from the mesh, which are
 data: never markup, never templates ([text from the mesh](development.md#text-from-the-mesh-and-the-bus)).
 
-**Controls:** cards escape mesh text; device names of the same name carry key digits; labels show
-key digits. Since 2.3 (proposed, [ADR 0034](decisions/0034-untrusted-text-from-the-mesh.md)):
-names and texts are canonical by default (`[messages] clean_received = true`), without control,
-escape or direction characters and without tags outside a valid subdivision flag; names that read
-alike, digits for letters included, compare equal by the UTS #39 skeleton; a name that holds a
-direction override counts as taken whatever the setting says.
+**Controls:** cards escape mesh text and show it as text, never as a link; device names of the
+same name carry key digits; labels show key digits; with `[messages] clean_received`, recommended,
+names and texts lose control and direction characters where they enter
+([configuration.md](configuration.md#messages)). Since 2.3 (proposed,
+[ADR 0034](decisions/0034-untrusted-text-from-the-mesh.md)): names and texts are canonical by
+default (`clean_received = true`), without control, escape or direction characters and without
+tags outside a valid subdivision flag; names that read alike, digits for letters included, compare
+equal by the UTS #39 skeleton; a name that holds a direction override counts as taken whatever the
+setting says.
 
-**Remains:** with `clean_received = false`, names and texts reach Home Assistant as they came,
-and the sinks' own encoding is the only control; a name then keeps its override, and only its key
-digits tell it apart. The more-info dialog makes a link of an attribute that starts with `http`.
+**Remains:** Home Assistant's own pages and its apps show what the gateway publishes, and the
+gateway does not control how ([what reaches Home Assistant](home-assistant.md#names-and-texts-from-the-mesh)):
+
+* its more-info dialog makes a link of an attribute that starts with `http`: a message's `text`
+  and `sender_name`, and with `heard_nodes = "full"`, the default, the name any radio in range
+  gives itself on *New node*;
+* with `clean_received = false`, the default before 2.3, a right-to-left override in a contact's
+  name can make its device name read as another contact's, without the key digits of a taken name;
+  Homie's `$name` carries every such character raw, and the JSON documents the C1 controls and
+  direction characters, to whatever reads them. Since 2.3 (proposed), such a name counts as taken
+  whatever the setting says, so only its key digits tell it apart;
+* invisible characters, Unicode tag characters among them, pass even `clean_received`; a person
+  does not see them, a language model behind Assist reads them. Since 2.3 (proposed), tag
+  characters pass only in a valid subdivision flag;
+* an automation that forwards a mesh text to a phone hands it to the companion app, which renders
+  HTML in a message and acts on a message that is one of its command words.
 
 ### B5: Home Assistant and its users
 
@@ -145,6 +161,11 @@ household. **Not trusted:** that every user should act on the radio.
 advert nearby*, which every user may press while it is on), targets that can be hidden; the
 guide explains Home Assistant's user model
 ([shared households](home-assistant.md#shared-households)).
+
+**Remains:** Home Assistant exposes some new entities to its conversation agent by default, among
+them the temperature and humidity sensors of companions' telemetry, named after the contacts'
+devices; an agent backed by a language model reads those names, which their owners chose. The
+guide says how to keep them out ([names and texts from the mesh](home-assistant.md#names-and-texts-from-the-mesh)).
 
 ### B6: the service, the container and the host
 

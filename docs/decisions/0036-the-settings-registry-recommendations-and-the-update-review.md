@@ -257,8 +257,8 @@ budget.
   flooded direct message, rounded up, at least 10 s, at most `max(10, budget_s_per_hour)`. The
   helper is 2.2.1's `advert_reserve_s` (`core/airtime.py:153-160` on `fix-2.2.1`). EU/UK Narrow
   and every faster preset keep 10 s. Slow presets get what an advert and an alert need
-  (13–29 s in #181's table). At 62.5 kHz SF 12 CR 4/8 the cap holds it at 36 s, and 2.2.1's
-  warning still says that no advert fits.
+  (11–29 s in the table of [Radio presets](../configuration.md#radio-presets)). At 62.5 kHz
+  SF 12 CR 4/8 the cap holds it at 36 s, and 2.2.1's warning still says that no advert fits.
 * **Set, it stays exact.** An administrator may want short peaks low. The 2.2.1 warnings apply.
 * **The budget resizes without a gift.** A new method, `AirtimeBudget.resize` (`core/budget.py:16`
   has none today), keeps the tokens, at most the new capacity; growing adds none, so a reconnect
@@ -748,8 +748,8 @@ recommendation keeps the weaker setting.
 ### Confirmation
 
 * **Registry** (`tests/test_settings.py`): the guard tests above; the derived burst per preset of
-  #181's table, the cap, the floor, an explicit value untouched, `resize` keeping and never adding
-  tokens, a start before the connect using the stored burst.
+  the table of *Radio presets*, the cap, the floor, an explicit value untouched, `resize` keeping
+  and never adding tokens, a start before the connect using the stored burst.
 * **`config review`** (`tests/test_config_review.py`): golden JSON in English, German and `xx` for
   fixtures of each kind and effect; `kept` hides its `since` and not a later one; a pre-release
   counts as its release; no changed defaults without `--from-version`; the pinned-default hint;

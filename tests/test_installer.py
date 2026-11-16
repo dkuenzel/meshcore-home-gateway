@@ -38,7 +38,9 @@ from pathlib import Path
 import pytest
 
 from meshcore_home_gateway import __version__
+from meshcore_home_gateway.cli.common import _json_text
 from meshcore_home_gateway.config import Config, parse_config, render_config
+from tests import dialog_texts
 
 ROOT = Path(__file__).resolve().parent.parent
 BASH = shutil.which("bash") or "/bin/bash"
@@ -634,7 +636,7 @@ def test_radio_over_tcp_needs_no_device(host: Host) -> None:
     assert config.radio.tcp_unauthenticated is True
     # the summary says what was chosen (OPS-010), in place of the note on re-plugging a USB radio
     assert (
-        "The radio is reached over TCP (192.0.2.30:5001) without authentication: whoever "
+        "The radio is reached over TCP without authentication (192.0.2.30:5001): whoever "
         "reaches it can control it and read its private key."
     ) in result.stderr
     assert "re-plugging" not in result.stderr
@@ -871,6 +873,36 @@ def test_an_accepted_tcp_radio_is_written_with_the_acknowledgement(host: Host) -
     assert (config.radio.transport, config.radio.tcp_unauthenticated) == ("tcp", True)
 
 
+@pytest.mark.parametrize("radio", ["serial", "tcp"])
+def test_the_final_message_names_the_radio_after_its_first_line(host: Host, radio: str) -> None:
+    """whiptail cuts the end of a text its box does not hold: the line about the radio, above all
+    the warning about a radio over TCP, follows the first line, before the rows a long user name
+    or a long command makes longer (#190). The log has the same text."""
+    chosen = ["tcp", "192.0.2.30", "5000", "yes"] if radio == "tcp" else [str(host.serial)]
+    dialog = ["default", *chosen, "broker.example.org", "no", "bridge", "pw", "yes", "1", "", ""]
+    result = run_installer(host, dialog=dialog)
+    assert result.returncode == 0, result.stderr
+    (box,) = [c for c in host.calls("whiptail") if any("runs in container" in a for a in c)]
+    text = box[-3]
+    lines = text.split("\n")
+    assert lines[0] == f"meshcore-home-gateway {__version__} runs in container 105."
+    if radio == "tcp":
+        assert lines[1] == (
+            "The radio is reached over TCP without authentication (192.0.2.30:5000): whoever "
+            "reaches it can control it and read its private key."
+        )
+        rows = lines[2:]
+    else:
+        assert lines[1:3] == [
+            "The container starts only while the radio is plugged in.",
+            "After re-plugging the radio: pct reboot 105",
+        ]
+        rows = lines[3:]
+    assert rows[:2] == ["", "Broker:       login accepted (no TLS, user 'bridge')"]
+    assert rows[-1].startswith("Update:       ")
+    assert f"meshcore-home-gateway: {text}\n" in result.stderr
+
+
 def test_an_ipv6_radio_address_reaches_probe_in_brackets(host: Host) -> None:
     answers = answers_file(
         host,
@@ -881,7 +913,7 @@ def test_an_ipv6_radio_address_reaches_probe_in_brackets(host: Host) -> None:
     assert result.returncode == 0, result.stderr
     assert any("probe --tcp [2001:db8::30]:5001 --list channels" in c for c in host.inside())
     assert host.config().radio.host == "2001:db8::30"
-    assert "The radio is reached over TCP ([2001:db8::30]:5001) without" in result.stderr
+    assert "over TCP without authentication ([2001:db8::30]:5001): whoever" in result.stderr
 
 
 def other_container(host: Host, ctid: str, line: str) -> None:
@@ -1173,6 +1205,38 @@ def test_a_refused_login_offers_the_broker_settings_again(host: Host) -> None:
     assert host.config().mqtt.password == "right"
     assert len([c for c in host.inside() if "--broker" in c]) == 2
     assert "login accepted" in result.stderr
+
+
+def test_a_refused_login_asks_first_and_logs_the_whole_reason(host: Host) -> None:
+    """The question comes before the program's message, so that a message longer than the box
+    shows cuts no question; the message is logged before the box as well (#190)."""
+    dialog = [
+        "default",
+        str(host.serial),
+        "broker.example.org",
+        "no",
+        "bridge",
+        "wrong",
+        "yes",
+        "yes",  # the login failed: enter the broker settings again
+        "broker.example.org",
+        "no",
+        "1883",
+        "bridge",
+        "right",
+        "1",
+        "",
+        "",
+    ]
+    result = run_installer(host, dialog=dialog, env={"BROKER_ANSWERS": "1 0"})
+    assert result.returncode == 0, result.stderr
+    (question,) = [c for c in host.dialogs() if any("The broker login failed" in a for a in c)]
+    text = question[question.index("--") + 1]
+    assert text.startswith("The broker login failed. Enter the broker settings again? (No: ")
+    assert text.endswith("\n\nbroker refused the connection: Not authorized")
+    assert question[-2:] == ["24", "78"]
+    warning = "warning: the broker login failed: broker refused the connection: Not authorized"
+    assert warning in result.stderr
 
 
 def test_a_refused_login_can_be_kept(host: Host) -> None:
@@ -2728,8 +2792,204 @@ def test_the_plan_is_logged_and_shown_line_by_line(host: Host) -> None:
     assert result.returncode == 0, result.stderr
     plan = "At its next connect the service sets the radio:\n  manual_add: false -> true\n"
     assert "meshcore-home-gateway: " + plan.replace("\n", "\n  ") + "\n" in result.stderr
-    boxes = [c[-3] for c in host.calls("whiptail") if "--msgbox" in c and c[-2:] == ["20", "78"]]
-    assert boxes == [plan]
+    boxes = [c for c in host.calls("whiptail") if any("sets the radio" in a for a in c)]
+    assert [box[-3] for box in boxes] == [plan]
+    assert boxes[0][-2:] == ["24", "78"]
+
+
+def plan_input(
+    changes: list[dialog_texts.Change], contacts: list[tuple[str, str, str]], *, tested: bool = True
+) -> str:
+    """`probe --list profile` with `changes` and `contacts` (key, action, name), on firmware
+    `tested` or not, as PROBE_PLAN takes it (printf %b)."""
+    found = "yes" if tested else "no"
+    lines = ["name\tRadio", f"tested\t{found}", f"writes\t{found}"]
+    lines += ["\t".join(("change", *change)) for change in changes]
+    lines += [f"contact\t{key}\t{action}\t{name}" for key, action, name in contacts]
+    text = "".join(f"{line}\n" for line in lines)
+    return text.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n")
+
+
+def plan_dialog(host: Host, language: str) -> list[str]:
+    """The answers of a default setup in `language` up to the plan's box, and its Ok."""
+    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pw", "yes", "1"]
+    return [*(["de"] if language == "de" else []), *dialog, "", ""]
+
+
+# what the log says of a contact the service adds or makes a favourite (English, as all the log)
+LOGGED = {"add": "added as a favourite", "favourite": "made a favourite"}
+
+
+@pytest.mark.parametrize(
+    ("language", "contacts"), [("en", 0), ("en", 4), ("en", 120), ("de", 4), ("de", 120)]
+)
+def test_the_plan_box_counts_the_contacts_the_log_lists(
+    tmp_path: Path, english_only: Path, language: str, contacts: int
+) -> None:
+    """whiptail cuts what its box does not hold without a mark: the plan's box lists no contact,
+    it counts the contacts the service adds and those it makes favourites, and says that the
+    installer's output above lists them; that output lists each with the start of its key and
+    its name (#190). So the box's text has a bound, which tests/dialog_texts.py checks, and the
+    box shows the model's text in each language."""
+    host = install_stubs(tmp_path)  # the script with its languages, its packs next to it
+    if language == "en":
+        host = dataclasses.replace(host, installer=english_only)
+    changes = [dialog_texts.Change("manual_add", "false", "true", "set")]
+    found = [
+        (f"{n:04x}" * 16, "add" if n % 3 == 0 else "favourite", f"Nachbarin Mühlenhöhe {n:03d}")
+        for n in range(contacts)
+    ]
+    plan = plan_input(changes, found)
+    result = run_installer(host, dialog=plan_dialog(host, language), env={"PROBE_PLAN": plan})
+    assert result.returncode == 0, result.stderr
+    (box,) = [c for c in host.calls("whiptail") if any("manual_add" in a for a in c)]
+    assert "--scrolltext" not in box
+    assert box[-2:] == ["24", "78"]
+    text = box[-3]
+    translate = dialog_texts.translator(dialog_texts.catalogs()[language], language)
+    counts = {action: sum(a == action for _, a, _ in found) for action in LOGGED}
+    assert text == dialog_texts.plan_box_text(translate, changes, counts) + "\n"
+    assert not [name for _, _, name in found if name in text]
+    assert not [key for key, _, _ in found if key[:12] in text]
+    listed = translate(dialog_texts.PLAN_LISTED)
+    assert text.endswith(f"\n{listed}\n") is (contacts > 0)
+    for key, action, name in found:  # the log, before the box
+        assert f"  contact {key[:12]} {name}: {LOGGED[action]}\n" in result.stderr
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+@pytest.mark.parametrize("tested", [True, False])
+def test_the_plan_box_shows_the_worst_case(
+    tmp_path: Path, english_only: Path, language: str, tested: bool
+) -> None:
+    """The installer's box with the worst case of tests/dialog_texts.py, each setting in the form
+    and with the values that take the most lines and a count of three digits for each kind of
+    contact: the model's text, which the box holds (#190). With untested firmware the service
+    only reports, contacts not on the radio and others that are no favourites."""
+    host = install_stubs(tmp_path)
+    if language == "en":
+        host = dataclasses.replace(host, installer=english_only)
+    translate = dialog_texts.translator(dialog_texts.catalogs()[language], language)
+    changes = dialog_texts.worst_changes(translate, "set" if tested else "reported")
+    actions = ("add", "favourite") if tested else ("missing", "not_favourite")
+    found = [(f"{n:064x}", actions[n % 2], f"Neighbour {n:03d}") for n in range(201)]
+    plan = plan_input(changes, found, tested=tested)
+    result = run_installer(host, dialog=plan_dialog(host, language), env={"PROBE_PLAN": plan})
+    assert result.returncode == 0, result.stderr
+    (box,) = [c for c in host.calls("whiptail") if any("duty_cycle_percent" in a for a in c)]
+    text = box[-3]
+    counts = {actions[0]: 101, actions[1]: 100}
+    assert text == dialog_texts.plan_box_text(translate, changes, counts) + "\n"
+    assert len(dialog_texts.PLAN_BOX.layout(text)) <= dialog_texts.PLAN_BOX.lines
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+@pytest.mark.parametrize("action", ["reported", "given_up"])
+@pytest.mark.parametrize("names", [(0, 1), (3, 2), (4, 0)])
+def test_the_plan_box_shows_no_value_of_the_radios_name(
+    tmp_path: Path, english_only: Path, language: str, action: str, names: tuple[int, int]
+) -> None:
+    """A radio's name that probe prints in up to 188 columns or with the two characters \\n,
+    which whiptail turns into a line break (dialog_texts.PLAN_HIDDEN_NAMES), in the box's worst
+    case with untested firmware, reported or left alone: the box shows the model's text, which
+    names the name's setting without its values, holds it and ends with its last line; the log
+    before the box shows the values (#190)."""
+    host = install_stubs(tmp_path)
+    if language == "en":
+        host = dataclasses.replace(host, installer=english_only)
+    translate = dialog_texts.translator(dialog_texts.catalogs()[language], language)
+    found, wants = (_json_text(dialog_texts.PLAN_HIDDEN_NAMES[n]) for n in names)
+    name = dialog_texts.Change("name", found, wants, action)
+    worst = dialog_texts.worst_changes(translate, "reported")
+    changes = [name if change.setting == "name" else change for change in worst]
+    assert name in changes
+    contacts = [
+        (f"{n:064x}", ("missing", "not_favourite")[n % 2], f"Neighbour {n:03d}") for n in range(201)
+    ]
+    plan = plan_input(changes, contacts, tested=False)
+    result = run_installer(host, dialog=plan_dialog(host, language), env={"PROBE_PLAN": plan})
+    assert result.returncode == 0, result.stderr
+    (box,) = [c for c in host.calls("whiptail") if any("duty_cycle_percent" in a for a in c)]
+    text = box[-3]
+    counts = {"missing": 101, "not_favourite": 100}
+    assert text == dialog_texts.plan_box_text(translate, changes, counts) + "\n"
+    assert "\\" not in text  # no part of the names, nothing whiptail turns into a line break
+    assert text.endswith(f"\n{translate(dialog_texts.PLAN_LISTED)}\n")
+    assert len(dialog_texts.PLAN_BOX.layout(text)) <= dialog_texts.PLAN_BOX.lines
+    if action == "reported":
+        logged = f"name: {found} -> {wants}"
+    else:
+        logged = f"name: {found}, not {wants} (did not take effect; no longer set)"
+    assert f"  {logged}\n" in result.stderr
+
+
+def test_the_menus_show_their_items_and_shorten_a_long_device_name(host: Host) -> None:
+    """A menu shows its items without their tags (--notags), which are the answers' values: the
+    setup's items start with the names the docs and the answers file give them. A device's name
+    longer than 72 columns, as a CP2102N's with its serial number, keeps its start and its end,
+    since whiptail would run it over the box's border (#190)."""
+    long = "usb-Example_Vendor_USB_to_UART_Bridge_Controller_" + "0123456789abcdef" * 2
+    long += "-if00-port0"
+    (host.serial.parent / long).write_text("", encoding="utf-8")
+    dialog = [
+        "default",
+        str(host.serial),
+        "broker.example.org",
+        "no",
+        "bridge",
+        "pw",
+        "yes",
+        "1",
+        "",
+        "",
+    ]
+    result = run_installer(host, dialog=dialog)
+    assert result.returncode == 0, result.stderr
+    menus = [c for c in host.calls("whiptail") if "--menu" in c]
+    assert len(menus) == 2  # the setup and the radio
+    assert all("--notags" in menu for menu in menus)
+    setup = menus[0]
+    start = setup.index("--menu") + 6
+    assert dict(zip(setup[start::2], setup[start + 1 :: 2], strict=True)) == {  # docs' names
+        "default": "default (recommended): asks only for the radio, broker and targets",
+        "advanced": "advanced (all settings): container, network, topics, Home Assistant",
+    }
+    radio = menus[1]
+    start = radio.index("--menu") + 6  # --menu -- TEXT HEIGHT WIDTH LIST-HEIGHT
+    rows = dict(zip(radio[start::2], radio[start + 1 :: 2], strict=True))
+    assert rows[str(host.serial)] == host.serial.name
+    assert rows[str(host.serial.parent / long)] == f"{long[:34]}...{long[-35:]}"
+    assert rows["tcp"] == "radio with WiFi firmware (TCP, no authentication)"
+
+
+@pytest.mark.parametrize("starts", [("1a2b3c4d", "5e6f7a8b"), ("1a2b3c4d", "5e6f7a8b", "9c0d1e2f")])
+def test_devices_whose_names_differ_in_the_middle_show_their_ends(
+    host: Host, starts: tuple[str, ...]
+) -> None:
+    """ask_radio keeps a long name's start and end; names that differ only between them, as
+    those of CP2102N whose serial numbers differ in their first digits, would make equal rows:
+    each of them shows more of its end, where the serial numbers differ, so every row shows
+    the digits that tell it from the others; another long name keeps its start (#190)."""
+    names = [
+        f"usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_{start}9c2bec11a1c3e2a6a8b1c2d3"
+        "-if00-port0"
+        for start in starts
+    ]
+    other = "usb-Example_Vendor_USB_to_UART_Bridge_Controller_" + "0123456789abcdef" * 2
+    for name in [*names, other]:
+        (host.serial.parent / name).write_text("", encoding="utf-8")
+    dialog = ["default", str(host.serial), "broker.example.org", "no", "bridge", "pw", "yes", "1"]
+    result = run_installer(host, dialog=[*dialog, "", ""])
+    assert result.returncode == 0, result.stderr
+    radio = [c for c in host.calls("whiptail") if "--menu" in c][1]
+    start = radio.index("--menu") + 6
+    rows = dict(zip(radio[start::2], radio[start + 1 :: 2], strict=True))
+    shown = [rows[str(host.serial.parent / name)] for name in names]
+    assert shown == [f"...{name[-69:]}" for name in names]
+    assert all(digits in row for digits, row in zip(starts, shown, strict=True))
+    assert rows[str(host.serial.parent / other)] == f"{other[:34]}...{other[-35:]}"
+    assert len(set(rows.values())) == len(rows) == len(names) + 3  # the other, ours and TCP
+    assert {len(row) for row in shown} == {72}
 
 
 def test_a_name_the_radio_cut_too_long_is_kept_as_found(host: Host) -> None:

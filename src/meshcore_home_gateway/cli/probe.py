@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import dataclasses
+import math
 import os
 import sys
 from collections.abc import Mapping
@@ -22,7 +23,7 @@ from meshcore_home_gateway.cli.common import (
     tr,
     trn,
 )
-from meshcore_home_gateway.config import ProfileConfig, load_config
+from meshcore_home_gateway.config import AirtimeConfig, ProfileConfig, load_config
 from meshcore_home_gateway.i18n import N_
 from meshcore_home_gateway.protocol.codes import ContactFlag, TelemetryMode
 
@@ -73,7 +74,7 @@ def _probe(args: argparse.Namespace) -> int:
     elif args.json:
         print(_json_text(report, indent=2))
     else:
-        _print_report(report)
+        _print_report(report, config.airtime.burst_s if config else AirtimeConfig().burst_s)
     return EX_OK
 
 
@@ -250,6 +251,28 @@ _POSITION = {  # known; shared in adverts
 
 
 # Translators: a line of probe's report, its value in the column of the other lines: whether
+# the radio's advert, sent on request, and a long message (160 bytes, flooded) fit into the
+# setting airtime.burst_s together, at the radio's settings; {advert} and {message} are their
+# times on air in seconds, {burst} the setting, {needed} the setting that would hold both. Without
+# room for both, the gateway sends no advert; a long message beyond the burst fails
+_BURST = {  # both fit; a long message fits
+    (True, True): N_(
+        "burst      an advert nearby ({advert:.2f} s) and a long message ({message:.2f} s) fit "
+        "into airtime.burst_s ({burst:g} s)"
+    ),
+    (False, True): N_(
+        "burst      an advert nearby ({advert:.2f} s) and a long message ({message:.2f} s) take "
+        "more than airtime.burst_s ({burst:g} s): no advert nearby can go; set burst_s to "
+        "{needed}"
+    ),
+    (False, False): N_(
+        "burst      a long message ({message:.2f} s) takes more than airtime.burst_s ({burst:g} "
+        "s): long messages fail and no advert nearby can go; set burst_s to {needed}"
+    ),
+}
+
+
+# Translators: a line of probe's report, its value in the column of the other lines: whether
 # the radio's settings differ from the managed profile, which the setting radio.profile
 # configures or leaves to its default
 _PROFILE = {  # differs; configured
@@ -260,7 +283,29 @@ _PROFILE = {  # differs; configured
 }
 
 
-def _print_report(r: dict[str, Any]) -> None:
+def _burst_line(r: dict[str, Any], burst: float) -> str:
+    """Whether the radio's advert and a long message fit into the burst together, at the radio's
+    settings and with its name, as the connect warns (#181)."""
+    from meshcore_home_gateway.core.airtime import (  # noqa: PLC0415
+        advert_reserve_s,
+        direct_attempt_airtime_s,
+        meshcore_lora,
+    )
+    from meshcore_home_gateway.protocol.codec import MAX_TEXT_BYTES  # noqa: PLC0415
+
+    lora = meshcore_lora(r["bandwidth_khz"] * 1000, r["spreading_factor"], r["coding_rate"])
+    message = direct_attempt_airtime_s(MAX_TEXT_BYTES, 0, True, lora)
+    both = advert_reserve_s(len(r["name"].encode("utf-8")), MAX_TEXT_BYTES, lora)
+    return tr(
+        _BURST[both <= burst, message <= burst],
+        advert=both - message,
+        message=message,
+        burst=burst,
+        needed=math.ceil(both),
+    )
+
+
+def _print_report(r: dict[str, Any], burst: float) -> None:
     auto, spot = r["auto_add"], r["position"]
     types = ", ".join(auto["types"])
     adding = (bool(auto["manual"]), bool(auto["manual"] and types))
@@ -303,6 +348,7 @@ def _print_report(r: dict[str, Any]) -> None:
             if factor is not None
             else []
         ),
+        _burst_line(r, burst),
     ]
     for line in lines:
         print(line)

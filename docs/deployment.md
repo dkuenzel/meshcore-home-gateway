@@ -8,11 +8,15 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
 
 * **Radio:** a MeshCore companion radio with USB firmware (or WiFi firmware for TCP), set up with
   the official app: name, radio preset, channels, contacts. Then disconnect the app; the gateway
-  must be the radio's only client (protocol.md, section 1).
+  must be the radio's only client (protocol.md, section 1). Choose the preset and the transmit
+  power by the rules for your band: the gateway restricts neither of them by region or law
+  ([Local rules](configuration.md#local-rules)).
 * **Radio settings:** the gateway sets the radio up as an observer at its first connect: contacts
   added manually only, no telemetry for anyone, no position in adverts, and the 10 % duty cycle in
-  the EU band 869.40–869.65 MHz (configuration.md, `[radio.profile]`; ADR 0020). The installer
-  shows what changes; in the advanced setup it also asks for the radio's name. With firmware other than companion 1.18 it
+  the EU band 869.40–869.65 MHz, a default the configuration can change (configuration.md,
+  `[radio.profile]`; ADR 0020). The installer
+  shows what changes (its box counts the contacts, and the installer's output above it lists
+  each); in the advanced setup it also asks for the radio's name. With firmware other than companion 1.18 it
   only reports; check the settings in the app then, or set `radio.profile.manage = "always"`.
 * **Broker:** an MQTT user for the gateway, with an ACL (mqtt-api.md, last section); the ACL is
   required when commands are configured. A standalone Mosquitto reads a user added with
@@ -22,6 +26,48 @@ systemd, Python 3.11+ and paho-mqtt 2.x works as well (section 3).
   sensors and position ([companions.md](companions.md)). With `[telemetry] ask = "all"` it asks
   every companion that is not excluded, and the first time it runs that way it waits an hour after
   the radio connects, so the household can exclude every companion that is not its own.
+
+### Boards
+
+Any board with MeshCore's companion firmware over USB will do; the gateway reads what the radio
+reports and keeps no list of boards. Flash the build `<board>_companion_radio_usb` for the
+board's exact radio chip, of the companion version the gateway is tested with (1.18.0), not a
+Bluetooth or WiFi build; a few USB builds lack their USB interface and never answer
+([platform notes](platform-notes.md#meshcore-companion-firmware)). One radio per gateway, and
+one gateway per radio. What differs between boards, from the firmware's build settings at
+`companion-v1.18.0`:
+
+| Board | USB | Device | Power setting: default, highest |
+| --- | --- | --- | --- |
+| nRF52 boards (RAK4631, Heltec T114, T-Echo …) | the chip's own USB | `ttyACM*`, a `by-id` name with vendor, product and serial number | 22, 22 dBm on most builds |
+| ESP32-S3 boards with the chip's USB: Heltec V4, LilyGo T3-S3 | the chip's built-in USB Serial/JTAG (`boards/heltec_v4.json`, `boards/t3_s3_v1_x.json`: `ARDUINO_USB_MODE=1`) | `ttyACM*`, a `by-id` name with Espressif and the chip's MAC address | Heltec V4: 10, 22 into its amplifier (below); T3-S3: 22, 22 with an SX1262, 20, 20 with an SX1276 (`variants/lilygo_t3s3/platformio.ini:28`, `variants/lilygo_t3s3_sx1276/platformio.ini:26`) |
+| ESP32 boards with a USB-UART bridge, such as the Heltec V3 | the bridge chip (CP210x, CH340 …) | `ttyUSB*`, a `by-id` name after the bridge; some bridges give every unit the same serial number, so two such boards share one name | 22, 22 dBm |
+
+Without a value of its own a build takes 20 for both (`examples/companion_radio/MyMesh.h:50-55`).
+The gateway never changes the transmit power ([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md));
+`probe` and the attributes of the radio link show it.
+
+* **The Heltec V4's power is that of its radio chip, before an amplifier.** Its build sets 10
+  and says the output is then 22 dBm (`variants/heltec_v4/platformio.ini:29-30`); the amplifier
+  adds several dB more at every setting (Meshtastic, which drives the same board, uses tables of
+  7 to 13 dB). Raise it in the app only as far as your band allows.
+* **Opening the port resets no board.** The gateway holds DTR and clears RTS, so it never
+  asserts RTS alone, which resets an ESP32 behind a USB-UART bridge
+  ([platform notes](platform-notes.md#meshcore-companion-firmware)). Such a board whose power
+  fails for a moment while the gateway holds DTR may start in its download mode and answer
+  nothing until it is unplugged; feed it from a port that carries its transmit current.
+* **The clock.** An ESP32 keeps its time across a restart of the firmware, and starts at
+  1 March 2026 after a loss of power (`src/helpers/ESP32Board.h:203-247`); either way the
+  companion sets its clock from its newest contact, and the gateway moves it forward as on nRF52
+  boards ([troubleshooting](#5-troubleshooting)).
+* **A board with a screen** shows the last message it received, sender and text, for 15 seconds
+  after its button is pressed: over USB the firmware takes the client as always connected and
+  keeps the screen dark otherwise (`examples/companion_radio/ui-new/UITask.cpp:10-11, 796-832`,
+  `src/helpers/ArduinoSerialInterface.cpp:16-17`). Put it where only the household reaches it;
+  whoever holds a radio can read its key out anyway.
+* **A new board** counts as checked once it has passed steps 59 to 70 of the
+  [hardware checklist](testing.md#hardware-checklist); until then, write down its boot time and
+  whether it restarts at a probe.
 
 ## 2 Proxmox VE
 
@@ -91,9 +137,10 @@ they show then follow the language; on a new installation it becomes the default
 language of the names in Home Assistant. The script's own log lines, `--help`, errors before the
 menu, `--update` and runs with `--answers` stay English.
 
-The next dialog chooses the setup. **Default** asks only what has no sensible default: the
-radio, the broker address, user and password, and at the end the targets. **Advanced** asks for
-every setting in the table.
+The next dialog chooses the setup; each item starts with its name, which an answers file gives as
+`setup=default` or `setup=advanced`. **Default** (recommended) asks only what has no sensible
+default: the radio, the broker's address, TLS, user and password, and at the end the targets and
+the command senders. **Advanced** asks for every setting in the table.
 
 | Question | Default | Setup |
 | --- | --- | --- |
@@ -125,8 +172,9 @@ The script asks for confirmation before it creates anything. Then it downloads t
 settings with the program's own configuration code (when it installs a clone: already before the
 container is created), logs in to the broker with the user name and password given, reads the
 radio's channels and contacts for the last questions, writes the configuration and starts the
-service. When the broker refuses the login, the script shows its answer and offers to enter the
-broker settings again (without dialogs it warns and goes on: the service keeps trying). Once the
+service. When the broker refuses the login, the script logs its answer, offers to enter the
+broker settings again and shows the answer below that question (without dialogs it warns and
+goes on: the service keeps trying). Once the
 service runs, the script has the gateway check itself (`meshcore-home-gateway doctor`: the
 configuration, the broker, the radio as the gateway reports it, the container) and repeats the
 check for about a minute while the radio connects. The final message shows the result of the
@@ -253,9 +301,11 @@ the keys of the next section), which gives the same file with the same mode.
 `--answers FILE` skips all dialogs. The file has one `key=value` per line; empty lines and lines
 starting with `#` are ignored. There are two kinds of keys:
 
-* **Answers for the installer:** `setup`, `ct.id`, `ct.hostname`, `ct.storage`, `ct.disk_gb`,
-  `ct.memory_mb`, `ct.bridge`, `ct.ip`, `ct.gateway`, `ct.template_storage`, `radio.choice` (a
-  device path or `tcp`; required, the script never guesses a device), `targets.channels` and
+* **Answers for the installer:** `setup` (`default` or `advanced`), `ct.id`, `ct.hostname`,
+  `ct.storage`, `ct.disk_gb`, `ct.memory_mb`, `ct.bridge`, `ct.ip`, `ct.gateway`,
+  `ct.template_storage`, `radio.choice` (a device path, such as the radio's in
+  `/dev/serial/by-id/`, whose name the radio menu shows, or `tcp`; required, the script never
+  guesses a device), `targets.channels` and
   `targets.contacts` (comma-separated indices and keys as offered by `meshcore-home-gateway probe
   --list`). An unknown key of this kind, or a malformed index or key, stops the script before it
   creates anything. An index or key that the radio does not offer becomes a target all the same,
@@ -530,6 +580,13 @@ The command line's texts follow `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG`
 ([configuration.md](configuration.md#language-of-the-command-line)); `LANGUAGE=en` keeps them
 English. The service's log is always English.
 
+On a desktop distribution, ModemManager may probe a serial device that appears, and brltty may
+claim some USB-UART bridges: either keeps the radio from answering the gateway. Remove them where
+nothing needs them, or tell ModemManager to leave the radio alone with the udev property
+`ID_MM_DEVICE_IGNORE=1` in a rule for its vendor and product. Where two boards share one `by-id`
+name, a udev rule that matches the USB port path gives each a fixed name of its own; set that
+name as `device` in `[radio]` ([Boards](#boards)).
+
 ## 4 Operations
 
 | Task | Command (inside the container) |
@@ -543,6 +600,7 @@ English. The service's log is always English.
 | Watch the bus | `meshcore-home-gateway listen` |
 | Send a test message | `meshcore-home-gateway send --wait 60 <alias> "test"` |
 | Inspect the radio | `systemctl stop meshcore-home-gateway && meshcore-home-gateway probe --serial <device>` |
+| Change the radio's settings | stop the service, use MeshCore's command line client, start the service ([below](#changing-the-radios-settings)) |
 | Back up | `meshcore-home-gateway backup /root/gateway-$(date +%F).tar.gz` (below) |
 | Export the history | `meshcore-home-gateway history export --format csv > messages.csv` |
 | Before the container goes | `systemctl stop meshcore-home-gateway && meshcore-home-gateway retire --yes` |
@@ -692,6 +750,163 @@ updates wait for.
   its own: [`contrib/mqtt2prometheus`](../contrib/mqtt2prometheus/README.md) has configurations
   for mqtt2prometheus that read `state`, `stats` and the contacts' documents.
 
+### What the gateway does by itself, and what is left to you
+
+The gateway keeps running without the household. Some steps stay with people on purpose: they
+grant a right, give consent, delete data, or touch the radio's identity. A few others are left
+to the administrator for now.
+
+**By itself:**
+
+* **The radio's clock** follows the host's: moved forward at connect and every minute, and set
+  back by a restart of the radio when it is a minute to an hour ahead
+  ([`[radio]`](configuration.md#radio)).
+* **The radio's profile** is compared at every connect and set back where the radio drifted; the
+  contact targets and command senders stay on the radio as favourites
+  ([`[radio.profile]`](configuration.md#radioprofile)).
+* **Asking for position and battery:** the companions the household includes, and the contact
+  targets and command senders, are asked on a schedule, in airtime lanes of their own; their
+  values expire when they stop answering ([`[telemetry]`](configuration.md#telemetry)).
+* **Retries and reconnects:** a direct message is sent up to `max_attempts` times until it is
+  acknowledged, and flooded after `flood_after` unacknowledged attempts
+  ([`[messages]`](configuration.md#messages)). The radio and the broker are reconnected without a
+  restart, systemd restarts a crashed or hung service, and a stop keeps the queue for the next
+  start ([Operations](#4-operations)).
+* **Warnings** go to the log, to `state` and to Home Assistant (*Gateway degraded*, and the
+  problems on the dashboard's *Overview*); `doctor` checks what is easily missed. At every connect
+  the log says when `[airtime] burst_s` cannot hold an alert and an advert at the radio's preset
+  ([Radio presets](configuration.md#radio-presets)).
+* **Cleanup:** the history ages out by its limits ([`[history]`](configuration.md#history)); a
+  draft unchanged for 15 minutes is emptied
+  ([Writing and sending](home-assistant.md#writing-and-sending)); a retained document that
+  another client overwrites is put back ([Securing the broker](mqtt-api.md#securing-the-broker));
+  the entities come back after Home Assistant restarts
+  ([How discovery behaves](home-assistant.md#how-discovery-behaves)); and the installer's
+  container installs Debian's security updates every day (above).
+
+**Left to you:**
+
+* **Rights at the broker.** The gateway holds none. The broker's owner gives it a user and, with
+  commands, an ACL ([Securing the broker](mqtt-api.md#securing-the-broker)); Home Assistant needs
+  its MQTT integration once ([add it](https://my.home-assistant.io/redirect/config_flow_start/?domain=mqtt)).
+  With Home Assistant's Mosquitto add-on, a Home Assistant user, by its login name, can be the
+  gateway's user ([users](https://my.home-assistant.io/redirect/users/)). With an ACL, the
+  add-on's documentation says that Home Assistant expects its users `homeassistant` and `addons`
+  to read and write every topic, and asks for `topic readwrite #` for both
+  ([Access Control Lists](https://github.com/home-assistant/addons/blob/master/mosquitto/DOCS.md#access-control-lists-acls),
+  read on 2026-11-15). With that ACL, Home Assistant and every add-on that logs in as `addons`
+  can write what only the gateway should: the `command` events, which trigger the automations,
+  the other event topics and the documents
+  ([Securing the broker](mqtt-api.md#securing-the-broker); T6 and B3 in the
+  [threat model](threat-model.md#b3-the-gateway-and-the-broker)). The limits that the example
+  ACL puts on Home Assistant's user, and the lines a release adds, do not apply there; they
+  matter for another broker, or for a Home Assistant that logs in with a user of its own. What
+  remains: the gateway puts back a document that another client overwrites while it runs. A
+  code secret does not help here: it checks a command that comes over the mesh, not a `command`
+  event written to the broker. So trust every add-on that uses the broker as you trust Home
+  Assistant, or use another broker, where the example ACL applies.
+* **Rights in Home Assistant and over the mesh.** What Home Assistant's users may change
+  (`[homeassistant] controls`, `radio_controls`), who may command (`[commands] senders` and
+  `words`, chosen at installation, changed with `--reconfigure`), and each sender's code secret
+  (`commands enrol` and `commands revoke` in the container, then a restart)
+  ([`[commands]`](configuration.md#commands)). Neither Home Assistant nor the mesh can change
+  them.
+* **Consent.** A person allows the gateway to ask for their position on their own device, in the
+  MeshCore app; the gateway can neither read nor set that
+  ([companions.md](companions.md#on-each-companion)). Whom it asks is the household's switch
+  *Telemetry* on each companion
+  ([Telemetry](home-assistant.md#telemetry-of-the-households-companions)).
+* **Deleting.** Removing a contact keeps its chat and the history of it;
+  `contacts telemetry --forget KEY off` deletes its readings and its positions from telemetry at
+  once ([what the gateway keeps](privacy.md)). Home Assistant keeps a record of its own
+  ([Privacy](home-assistant.md#privacy)).
+* **The radio's identity, firmware and settings.** The gateway never replaces or exports the
+  radio's key and never flashes firmware: a factory reset gives the radio a new key, which every
+  companion must add again, and firmware goes on by cable ([Boards](#boards)). The preset, the
+  transmit power and the channels are set with MeshCore's tools: the preset and the transmit
+  power by the rules for your band, the channels as the household needs
+  ([below](#changing-the-radios-settings), [Local rules](configuration.md#local-rules)). After
+  the radio was plugged in again, restart the container
+  ([What the script does](#what-the-script-does)).
+* **Updates.** `--update` runs on the Proxmox host
+  ([Update, reconfigure, remove](#update-reconfigure-remove)); a new major version names its
+  steps in the changelog. After an update whose changelog says so (each minor and major version,
+  and each patch that changes the dashboard), after a new target and after contacts got a
+  device, make the dashboard again and paste it into Home Assistant
+  ([Dashboard](home-assistant.md#dashboard)). After Debian updated Python or paho-mqtt, restart
+  the service (above). Making the dashboard again and updating recur with releases; #169 (the
+  dashboard) and #185 (fewer manual steps) track taking them off the administrator.
+
+### Changing the radio's settings
+
+The gateway writes only what its managed profile names ([`[radio.profile]`](configuration.md#radioprofile));
+the radio's preset, its transmit power, its channels and its other settings are set with
+MeshCore's own tools. The radio serves one client at a time, and the service holds its port for
+itself, so the service stops first. Without unplugging the radio, MeshCore's command line client
+`meshcore-cli` reaches it from inside the container, as root, at the device of `[radio]`:
+
+```sh
+systemctl stop meshcore-home-gateway
+apt install python3-venv                                   # once
+python3 -m venv /root/meshcore-cli                         # an environment of its own
+/root/meshcore-cli/bin/pip install meshcore-cli==1.6.10
+/root/meshcore-cli/bin/meshcli -s /dev/serial/by-id/usb-<radio>-if00 infos
+/root/meshcore-cli/bin/meshcli -s /dev/serial/by-id/usb-<radio>-if00 set tx 14
+systemctl start meshcore-home-gateway
+```
+
+The gateway restricts none of these settings by region or law: set the preset and the transmit
+power by the rules for your band ([Local rules](configuration.md#local-rules)), the channels as
+the household needs.
+`set tx 14` above is an example, not a recommendation.
+
+A radio over TCP is reached the same way from the gateway's container, the only host that should
+reach it ([`[radio]`](configuration.md#radio)), with
+`/root/meshcore-cli/bin/meshcli -t <address> -p 5000 infos`. Stop the service first here too:
+else the gateway takes the link back within a second. Another computer that reaches the radio's
+port could read its private key, so do not open the radio's network to one for this. This page
+was written against meshcore-cli 1.6.10 from its source; the project does not test it.
+
+* **Where it comes from.** meshcore-cli is not in Debian 13. It comes from PyPI with MeshCore's
+  Python library `meshcore` and their dependencies (`bleak`, `prompt_toolkit`, `requests`,
+  `pycryptodome`, `pyserial-asyncio-fast`, `pycayennelpp`), unpinned by hash, without
+  provenance on PyPI and without tests in their CI. Whatever runs in that environment controls
+  the radio, its private key included. So install it on your own responsibility, at a version
+  you chose, never into the system's Python or beside the gateway, and remove the environment
+  when you are done (`rm -r /root/meshcore-cli`). This is why the gateway does not depend on it
+  ([ADR 0005](decisions/0005-runtime-dependencies-from-the-distribution.md)).
+* **Give it its commands on its command line.** Started without one, `meshcli` opens its
+  interactive mode, which fetches the messages waiting in the radio (`meshcore_cli.py` lines 625-639,
+  1141 and 5828 at `v1.6.10`), as do its commands `recv`, `wait_msg`, `sync_msgs` and
+  `msgs_subscribe`: a message it takes never reaches the gateway, nor does a command in it. It
+  also keeps a log of messages in `~/.config/meshcore/` when that directory exists (line 5796):
+  leave it absent.
+* **What the gateway sets back.** Its next start reads the radio again: its settings, contacts
+  and channels. The managed profile writes back what it manages, with a warning in the log:
+  manual adding and the node types added automatically, the telemetry permissions, the position
+  in adverts, and the duty cycle in 869.40–869.65 MHz; it adds the contact targets and command
+  senders back as favourites. Change those in the configuration, not on the radio. A name changed
+  on the radio is kept and reported. The preset, the transmit power and the channels stay as set:
+  a new preset changes every time on air the gateway counts, and the log of the connect says
+  whether `[airtime] burst_s` still holds an alert and an advert ([Radio presets](configuration.md#radio-presets));
+  a channel a target names must still be there. `probe --config` before the start shows what
+  the profile will write.
+* **What to leave alone.** Send no adverts with it (`advert`, `floodadv`): they pass none of the
+  gateway's checks; *Send advert nearby* does ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)).
+  Set no clock ahead (`time`): the gateway sets it from the host and takes a time ahead back only
+  by restarting the radio (step 62 of the [hardware checklist](testing.md#hardware-checklist)
+  does it on purpose). Export or import no private key, do no factory reset (the radio then
+  has a new key, and every companion must add it again), and do not switch it off from its
+  command line: it stays off until its reset button or a power cycle wakes it
+  ([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md)). Set no flood scope
+  (`scope`, `set default_scope`): the gateway sets, reads and resets none, so every later flood
+  of the radio, the gateway's alerts included, would stay inside that region, until the radio
+  restarts (`scope`) or for good (`set default_scope`)
+  ([platform notes](platform-notes.md#meshcores-command-line-client-and-python-library)). A new
+  preset with `set radio f,bw,sf,cr` also switches the radio's client repeat off; where the radio
+  repeats, give `on` as a fifth value (`set radio f,bw,sf,cr,on`, `meshcore_cli.py` lines
+  2617-2626 at `v1.6.10`).
+
 ## 5 Troubleshooting
 
 | Symptom | Cause and remedy |
@@ -704,16 +919,16 @@ updates wait for.
 | State `disconnected`, log shows `connection lost` every few minutes | USB power or cable; check `dmesg` on the host |
 | `delivery: failed`, reason `unknown_contact` | The contact is not in the radio's contact table or has a different key; `meshcore-home-gateway probe` shows the table |
 | `delivery: failed`, reason `channel_not_configured` | The channel index has no name on the radio |
-| `delivery: expired`, reason `airtime_budget` | More messages than the budget allows; see the airtime entity, raise `budget_s_per_hour` only within the legal limit |
-| `delivery: failed`, reason `exceeds_airtime_burst` | One long message needs more airtime than `burst_s` at the radio's settings (slow presets); shorten messages or raise `burst_s` |
-| `advert: refused`, reason `airtime_budget`, also with a full budget | The budget keeps one long message for an alert beside the advert, and at slow presets the two do not fit into `burst_s` together; raise `burst_s` (at 125 kHz, SF 12, CR 4/5 to 15 s) |
+| `delivery: expired`, reason `airtime_budget` | More messages than the budget allows; see the airtime entity, raise `budget_s_per_hour` only within the rules for your band ([Local rules](configuration.md#local-rules)) |
+| `delivery: failed`, reason `exceeds_airtime_burst` | One long message needs more airtime than `burst_s` at the radio's settings (slow presets; the log says so at each connect); shorten messages or raise `burst_s` ([Radio presets](configuration.md#radio-presets)) |
+| `advert: refused`, reason `airtime_budget`, also with a full budget | The budget keeps one long message for an alert beside the advert, and at slow presets the two do not fit into `burst_s` together. At each connect the log says so and names the `burst_s` that holds both (`… set burst_s to N`), and so does `probe`; set it ([Radio presets](configuration.md#radio-presets)) |
 | Commands rejected with `too_old` / `from_the_future` | The sender's clock or the gateway host's clock is wrong: the check compares the time the sender's device stamped on the message (the phone app sets a companion's clock) with the host's clock; the clock of the gateway's own radio does not enter it. Set the wrong clock right, or set `max_age_s = 0` |
 | Log: `radio clock left ... behind the host's` | The host's time was not written to the radio: it is before this release, more than ten years after it, or more than `set_clock_max_days` (30) ahead of the radio's clock. A time written cannot be taken back without a restart of the radio, so check the host's clock first (`timedatectl`; in a container the Proxmox host's, `chronyc tracking` there). If it is right (the radio lay unused for a long time), raise `set_clock_max_days` or set it to 0 for one start |
 | Log: `radio clock is ... ahead of the host's: restarting the radio to set it back` | Expected now and then: the firmware sets its clock back only at a start, to its newest contact time, after the gateway wrote back the contact times the clock stamped ahead (`radio: ... contact times the clock stamped ahead set back`). The gateway connects again a few seconds later and moves the clock forward (`radio clock moved forward`). Over USB the radio is gone for a moment and comes back under the same device. A clock that runs fast is set back at most once a day. After `... times the jump MeshCore's clock makes on nRF52 boards without a clock chip every 48.5 days of uptime` (MeshCore #3565), it is set back at once: nodes that took the radio's adverts in between ignore its adverts until real time passes them |
 | Log: `radio clock is ... ahead of the host's and not set back (...)`, or *Radio clock offset* far above 0 | The reason in brackets: `more than an hour` (a wrong time was written to the radio earlier, or the host's clock went back; nodes and repeaters would ignore the radio as long after a restart: let real time catch up; whole jumps of MeshCore's nRF52 clock are set back all the same), `a contact time ahead was not set back` (the radio refused to write back a time its clock stamped ahead; tried again at every heartbeat), `a restart would leave it at its newest contact time, ..., and the next connect would not move it forward` (no contact changed for longer than `set_clock_max_days`, or the host's clock is wrong: a restart would leave the radio that far behind; a contact's advert makes the restart possible, and if the host's clock is right, `set_clock_max_days` raised for one start does too), `once no message is being delivered, at most once a day` (it waits), `without contacts` or `set_clock = false`. The radio keeps working: its adverts and its contacts' last-modified times carry the later time, the gateway's messages the host's. Fix the host's time first. At boot the service waits for a synchronised clock only where `systemd-time-wait-sync` or `chrony-wait` is enabled, outside a container; in a container the clock is the Proxmox host's |
 | Commands rejected with `replay` although they are new | The sender's clock went backwards (reset, battery change): its timestamps are older than its last accepted command. Set the clock right; or, with the service stopped, remove the sender's key from `command_timestamps` in `/var/lib/meshcore-home-gateway/state.json` |
 | Commands rejected with `sender_ambiguous` | Another key with the sender's first 6 key bytes is on the radio or was seen there in the last 24 hours (`meshcore-home-gateway probe` lists the table): remove the stray contact and switch off automatic adding (configuration.md, `[commands]`); a service restart forgets keys that are no longer in the table |
-| Commands rejected with `code_locked` | The sender sent 5 wrong codes within the last hour (`code_missing`, `code_invalid`, with the exceptions in [mqtt-api.md](mqtt-api.md#commands-command)); the log says `sent 5 wrong command codes`. Someone may be guessing its codes: if that is likely, remove the sender ([configuration.md](configuration.md#commands)). Otherwise check its secret and the phone's clock, then wait until the first of them is an hour old, or stop the service, remove the sender's key from `command_code_failures` in `/var/lib/meshcore-home-gateway/state.json` and start it again |
+| Commands rejected with `code_locked` | The sender sent 5 wrong codes within the last hour (`code_invalid`, with the exception in [mqtt-api.md](mqtt-api.md#commands-command); a command without a code does not count); the log says `sent 5 wrong command codes`. Someone may be guessing its codes: if that is likely, remove the sender ([configuration.md](configuration.md#commands)). Otherwise check its secret and the phone's clock, then wait until the first of them is an hour old, or stop the service, remove the sender's key from `command_code_failures` in `/var/lib/meshcore-home-gateway/state.json` and start it again |
 | Commands rejected with `code_missing` from a sender without a code secret | The codes file holds the secret of a key that is not in `[commands] senders` (the start's log, `check-config` and `doctor` name it): while it is there, senders without a secret cannot command. Give the sender a secret with `meshcore-home-gateway commands enrol <key>`, which a key corrected by hand needs; or remove the ignored secret with `meshcore-home-gateway commands revoke <key>`, after which every sender without a secret commands without a code (`revoke` names them). Then restart the service ([configuration.md](configuration.md#commands)) |
 | Commands rejected with `sender_unverified` | The gateway fetched the command while connecting: it waited in the radio (restart, update, unplugged radio) or arrived during the connection setup. Or the contact table could not be read (see the log). Send it again |
 | `MQTT: connection refused: Not authorized (user '…')` | The broker refuses the login. Mosquitto gives this one answer for a wrong password, an unknown user and missing credentials alike, so check each: `meshcore-home-gateway check-config --broker` tries the login once. A standalone Mosquitto reads its `password_file` only when it starts or reloads: after `mosquitto_passwd`, run `systemctl reload mosquitto` (and add further users without `-c`, which replaces the file). `password_file` must be set (with `per_listener_settings true`: after the `listener` line it belongs to). The Home Assistant Mosquitto add-on takes a Home Assistant user by its login name, not the display name (the Supervisor log names the user it refused: `Unauthorized login for '…'`), or a `logins` entry (read when the add-on starts); it remembers a refused login for about 5 minutes, so restart the add-on after a fix. The broker's own log names the client (`meshcore-home-gateway-radio1-` and a random part), not the user |

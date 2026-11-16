@@ -46,6 +46,9 @@ STATE_DIR=/var/lib/meshcore-home-gateway   # the service's state (StateDirectory
 STAGE=/root/meshcore-home-gateway-src      # the program before its installation, in the container
 ANSWERS_FILE=/root/meshcore-home-gateway-answers
 JOURNALD_CONF=/etc/systemd/journald.conf.d/meshcore-home-gateway.conf   # the journal's limit
+# whiptail cuts what does not fit its box without a mark (tests/test_dialog_texts.py): a menu item
+# runs over the box's border beyond 72 columns
+ITEM_COLUMNS=72
 # pct exec passes the host's environment into the container; commands start from a clean one
 CT_ENV=(env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8)
 
@@ -55,7 +58,7 @@ ct.gateway ct.template_storage radio.choice targets.channels targets.contacts "
 # --- language packs: written by `make translations` from deploy/proxmox/locale/*.po; do not edit
 L10N_ORDER=(en de)
 declare -A L10N_NAME=([en]=English [de]=Deutsch)
-declare -A L10N_SHA256=([de]=ac1ecfae46104b15022c1937809d92a8cc9d126cde657753ea9e316e4638bc68)
+declare -A L10N_SHA256=([de]=11fb065782d42836cc4fb6952cfdc633fcd872b0db4cb1ce97cc99d6b68740bc)
 # --- end of language packs
 L10N_MENU=()   # code, name, code, name, ...: the items of the language menus
 for code in "${L10N_ORDER[@]}"; do L10N_MENU+=("$code" "${L10N_NAME[$code]}"); done
@@ -209,14 +212,16 @@ show_dialog() {  # show_dialog KIND TEXT DEFAULT [CHOICE ...]: a dialog, whateve
     yesno)  # the answer is the exit status; the screen goes to stderr, not into $(...)
       local -a options=()
       if [[ $default == false ]]; then options+=(--defaultno); fi
-      if whiptail --title "$TITLE" "${options[@]}" --yesno -- "$text" 12 72 >&2; then
+      # 14 rows show 8 lines: the question before a radio over TCP takes 7 in German, and whiptail
+      # cuts what does not fit without a mark (tests/test_dialog_texts.py)
+      if whiptail --title "$TITLE" "${options[@]}" --yesno -- "$text" 14 72 >&2; then
         result=true
       else
         result=false
       fi ;;
-    menu)
-      result=$(whiptail --title "$TITLE" --default-item "$default" --menu -- "$text" 20 78 10 \
-        "$@" 3>&1 1>&2 2>&3) ;;
+    menu)  # the items alone: a tag (the answer's value) would take half of each row
+      result=$(whiptail --title "$TITLE" --notags --default-item "$default" --menu -- "$text" \
+        20 78 10 "$@" 3>&1 1>&2 2>&3) ;;
     checklist)
       result=$(whiptail --title "$TITLE" --separate-output --checklist -- "$text" 20 78 10 \
         "$@" 3>&1 1>&2 2>&3 | paste -sd, -) ;;
@@ -296,11 +301,11 @@ pass_settings() {  # configuration settings from --answers go to the configurati
   done
 }
 
-choose_setup() {
+choose_setup() {  # each item starts with the setup's name, as the docs and an answers file name it
   local setup
   setup=$(ask setup menu "$(t 'Setup')" "default" \
-    default "$(t 'recommended: asks only for the radio, the broker and the targets')" \
-    advanced "$(t 'all settings: container, network, topics, Home Assistant')")
+    default "$(t 'default (recommended): asks only for the radio, broker and targets')" \
+    advanced "$(t 'advanced (all settings): container, network, topics, Home Assistant')")
   if [[ $setup == advanced ]]; then ADVANCED=1; fi
 }
 
@@ -529,14 +534,12 @@ check_broker() {  # check_broker CTID: log in as the service will, before the ra
         ask_broker_again
         continue ;;
     esac
+    # the program's message may be longer than the box shows: logged first, and after the question
+    log "warning: the broker login failed: $reason"
     # Translators: {reason} is the program's message, in this language too.
-    if (( ! INTERACTIVE )) || ! whiptail --title "$TITLE" --yesno -- "$(t 'The broker login failed:
+    if (( ! INTERACTIVE )) || ! whiptail --title "$TITLE" --yesno -- "$(t 'The broker login failed. Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes the settings later.)
 
-{reason}
-
-Enter the broker settings again? (No: continue; the service keeps trying, --reconfigure fixes the settings later.)' \
-        reason "$reason")" 20 78 >&2; then
-      log "warning: the broker login failed: $reason"
+{reason}' reason "$reason")" 24 78 >&2; then
       log "the service keeps trying; change the broker settings with --reconfigure $ctid"
       BROKER_LOGIN=failed
       return 0
@@ -893,13 +896,27 @@ limit_journal() {  # limit_journal CTID: the journal keeps at most 100 MB of the
 # --- configuration --------------------------------------------------------------------------
 
 ask_radio() {
-  local -a choices=()
-  local path radio
+  local -a choices=() paths=() names=()
+  local -A shortened=()
+  local path name index radio
   shopt -s nullglob
   for path in "$SERIAL_DIR"/*; do
-    choices+=("$path" "$(basename -- "$path")")
+    name=$(basename -- "$path")
+    if (( ${#name} > ITEM_COLUMNS )); then   # its start and its end: the vendor, the serial number
+      name="${name:0:ITEM_COLUMNS/2-2}...${name: -(ITEM_COLUMNS/2-1)}"
+      shortened[$name]=$(( ${shortened[$name]:-0} + 1 ))
+    fi
+    paths+=("$path") names+=("$name")
   done
   shopt -u nullglob
+  for index in "${!paths[@]}"; do   # names that read the same: each more of its end, the serial
+    name=${names[index]}
+    if (( ${shortened[$name]:-0} > 1 )); then
+      name=$(basename -- "${paths[index]}")
+      name="...${name: -(ITEM_COLUMNS-3)}"
+    fi
+    choices+=("${paths[index]}" "$name")
+  done
   # Translators: security text (docs/translations.md): translate all of it, add nothing.
   choices+=("tcp" "$(t 'radio with WiFi firmware (TCP, no authentication)')")
   if (( ! INTERACTIVE )) && [[ ! -v "ANSWERS[radio.choice]" ]]; then
@@ -1294,14 +1311,38 @@ choose_profile() {  # the radio's name, and what the managed profile changes (AD
   # each line of the plan ends in a line break, which $(...) dropped
   log "${plan//$'\n'/$'\n'  }"$'\n  '
   if (( INTERACTIVE )); then
-    whiptail --title "$TITLE" --msgbox -- "$(plan_text t "$lines")"$'\n' 20 78 >&2 || true
+    # whiptail cuts what its box does not hold without a mark, and with --scrolltext Enter does
+    # not close the box and nothing marks the text below: the box counts the contacts and names
+    # the radio's name without its values, which the log above shows, so its text has a bound,
+    # which a box of 24 rows (18 lines of 74 columns) holds in every language
+    # (tests/test_dialog_texts.py)
+    whiptail --title "$TITLE" --msgbox -- "$(plan_text t "$lines" count)"$'\n' 24 78 >&2 || true
   fi
 }
 
-plan_text() {  # plan_text SAY LINES: what `probe --list profile` LINES plan, or nothing to do; in
-  # English (SAY _fill, the log) or in the dialogs' language (SAY t, the box): one set of texts
-  local say=$1 kind setting live wanted action contact sets="" reported="" left="" plan=""
+plan_text() {  # plan_text SAY LINES [count]: what `probe --list profile` LINES plan, or nothing
+  # to do; in English (SAY _fill, the log) or in the dialogs' language (SAY t, the box): one set
+  # of texts. The log lists each contact (in English, as all the log); count: the box counts
+  # them by what the service does, says that the log lists them, and names the radio's name
+  # without its values
+  local say=$1 kind setting live wanted action contact named sets="" reported="" left="" plan=""
+  local -A counted=()
   while IFS=$'\t' read -r kind setting live wanted action; do
+    if [[ $kind == change && $setting == name && ${3-} == count ]]; then
+      # the box names the radio's name without its values, which the log shows: the radio holds
+      # any name of up to 31 bytes, which probe prints in up to 188 columns, and whiptail turns
+      # the two characters \n into a line break
+      # Translators: the radio's name in the plan's box, in each of its sections; the
+      # installer's output before the box shows the radio's name and the one the service wants.
+      named="  $($say "{setting}: differs (the installer's output above shows the names)" \
+        setting "$setting")"$'\n'
+      case $action in
+        set) sets+=$named ;;
+        reported) reported+=$named ;;
+        kept|given_up|unsupported|disabled) left+=$named ;;
+      esac
+      continue
+    fi
     case $kind/$action in
       change/set) sets+="  $setting: $live -> $wanted"$'\n' ;;
       change/reported) reported+="  $setting: $live -> $wanted"$'\n' ;;
@@ -1320,20 +1361,36 @@ plan_text() {  # plan_text SAY LINES: what `probe --list profile` LINES plan, or
         left+="  $($say "{setting}: {live}, not {wanted} (compiled out of the radio's firmware)" \
           setting "$setting" live "$live" wanted "$wanted")"$'\n' ;;
       contact/*)  # contact KEY ACTION NAME: a contact target or command sender
-        contact="${setting:0:12}${wanted:+ $wanted}"   # the start of its key, and its name
+        case $live in add|favourite|missing|not_favourite) ;; *) continue ;; esac
+        if [[ ${3-} == count ]]; then
+          counted[$live]=$(( ${counted[$live]:-0} + 1 ))
+          continue
+        fi
+        # the log's own lines, in English as all of it: the start of its key, and its name
+        contact="  contact ${setting:0:12}${wanted:+ $wanted}"
         case $live in
-          add)
-            # Translators: {contact} is the start of a contact's key and its name.
-            sets+="  $($say 'contact {contact}: added as a favourite' contact "$contact")"$'\n' ;;
-          favourite)
-            sets+="  $($say 'contact {contact}: made a favourite' contact "$contact")"$'\n' ;;
-          missing)
-            reported+="  $($say 'contact {contact}: not on the radio' contact "$contact")"$'\n' ;;
-          not_favourite)
-            reported+="  $($say 'contact {contact}: no favourite' contact "$contact")"$'\n' ;;
+          add) sets+="$contact: added as a favourite"$'\n' ;;
+          favourite) sets+="$contact: made a favourite"$'\n' ;;
+          missing) reported+="$contact: not on the radio"$'\n' ;;
+          not_favourite) reported+="$contact: no favourite"$'\n' ;;
         esac ;;
     esac
   done <<<"$2"
+  if [[ -v 'counted[add]' ]]; then
+    # Translators: {count} is a number of contacts; the installer's output above the box lists
+    # each of them.
+    sets+="  $($say 'Contacts added as favourites: {count}' count "${counted[add]}")"$'\n'
+  fi
+  if [[ -v 'counted[favourite]' ]]; then
+    sets+="  $($say 'Contacts made favourites: {count}' count "${counted[favourite]}")"$'\n'
+  fi
+  if [[ -v 'counted[missing]' ]]; then
+    reported+="  $($say 'Contacts not on the radio: {count}' count "${counted[missing]}")"$'\n'
+  fi
+  if [[ -v 'counted[not_favourite]' ]]; then
+    reported+="  $($say 'Contacts that are no favourites: {count}' \
+      count "${counted[not_favourite]}")"$'\n'
+  fi
   if [[ -n $sets ]]; then
     plan+="$($say 'At its next connect the service sets the radio:')"$'\n'$sets
   fi
@@ -1345,6 +1402,12 @@ plan_text() {  # plan_text SAY LINES: what `probe --list profile` LINES plan, or
 (radio.profile.manage = always sets it anyway):")"$'\n'$reported
   fi
   if [[ -n $left ]]; then plan+="$($say 'The service leaves alone:')"$'\n'$left; fi
+  if (( ${#counted[@]} )); then
+    # Translators: the last line of the plan's box, below the counts of contacts: the
+    # installer's output before the box lists each contact with the start of its key and its
+    # name.
+    plan+="$($say "The installer's output above lists every contact.")"$'\n'
+  fi
   printf '%s' "$plan"
 }
 
@@ -1448,7 +1511,7 @@ summary() {  # summary CTID: the final message, in the log and in a box
 summary_text() {  # summary_text SAY CTID: the final message, in English (SAY _fill, the log) or
   # in the dialogs' language (SAY t, the box): one set of texts. Commands for the user: pct exec
   # takes the host's PATH, which may lack /usr/local/bin
-  local say=$1 ctid=$2 login posture selftest update text user=${OUT[mqtt.username]-}
+  local say=$1 ctid=$2 login posture selftest update head radio rows user=${OUT[mqtt.username]-}
   case $SELF_TEST in  # self_test's result
     passed) selftest=$($say 'passed') ;;
     problems)
@@ -1482,31 +1545,33 @@ summary_text() {  # summary_text SAY CTID: the final message, in English (SAY _f
     update=$($say 'the installer of a newer release ({releases}) with -- --update {ctid}' \
       releases "$RELEASES" ctid "$ctid")
   fi
+  head=$($say 'meshcore-home-gateway {version} runs in container {ctid}.' \
+    version "$VERSION" ctid "$ctid")
+  if [[ ${OUT[radio.transport]} == serial ]]; then
+    radio=$($say 'The container starts only while the radio is plugged in.
+After re-plugging the radio: {command}' command "pct reboot $ctid")
+  else
+    probe_args   # the address as probe takes it: an IPv6 address in brackets
+    # Translators: security text (docs/translations.md): translate all of it, add nothing.
+    radio=$($say 'The radio is reached over TCP without authentication ({address}): whoever reaches it can control it and read its private key.' \
+      address "${PROBE[1]}")
+  fi
   # Translators: the values start in one column; they are commands to copy, but {login} and
   # {posture} (how the broker connection is secured) and {selftest} (the result of the
   # gateway's own check after the start).
-  text=$($say 'meshcore-home-gateway {version} runs in container {ctid}.
-
-Broker:       {login} ({posture})
+  rows=$($say 'Broker:       {login} ({posture})
 Self-test:    {selftest}
 Logs:         {logs}
 Check:        {check}
 Reconfigure:  {reconfigure}
 Update:       {update}' \
-    version "$VERSION" ctid "$ctid" login "$login" posture "$posture" selftest "$selftest" \
+    login "$login" posture "$posture" selftest "$selftest" \
     logs "pct exec $ctid -- journalctl -u meshcore-home-gateway -f" \
     check "pct exec $ctid -- /usr/local/bin/meshcore-home-gateway check-config" \
     reconfigure "$(invocation) --reconfigure $ctid" update "$update")
-  if [[ ${OUT[radio.transport]} == serial ]]; then
-    text+=$'\n\n'$($say 'The container starts only while the radio is plugged in.
-After re-plugging the radio: {command}' command "pct reboot $ctid")
-  else
-    probe_args   # the address as probe takes it: an IPv6 address in brackets
-    # Translators: security text (docs/translations.md): translate all of it, add nothing.
-    text+=$'\n\n'$($say 'The radio is reached over TCP ({address}) without authentication: whoever reaches it can control it and read its private key.' \
-      address "${PROBE[1]}")
-  fi
-  printf '%s' "$text"
+  # the radio right after the first line: whiptail cuts the end of what its box does not hold,
+  # and a long user name or command makes the rows longer, not the warning about TCP
+  printf '%s' "$head"$'\n'"$radio"$'\n\n'"$rows"
 }
 
 # --- modes ----------------------------------------------------------------------------------

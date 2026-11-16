@@ -77,14 +77,21 @@ broker. The code keeps them data everywhere they go, and new code follows the sa
   terminal; message texts only at debug level.
 * **Terminals:** the command line prints them through `_safe_text` or `_json_text`.
 * **Home Assistant:** Markdown cards print every value through the macro `m()`, a message's
-  text through `mt()` (Translations, below); nothing from the mesh becomes an entity ID, a unique
-  ID or an event type.
+  text through `mt()` (Translations, below). Nothing from the mesh becomes a unique ID or an event
+  type; a contact's entity IDs carry a slug of its name as it first appeared (letters, digits and
+  `_`, at most 32), never the name itself. Device names, attributes and event attributes carry
+  names and texts as they are published (MQTT, below), and Home Assistant's own pages show them:
+  as text, except that its more-info dialog makes a link of an attribute that starts with `http`
+  ([platform notes](platform-notes.md#home-assistant-dashboards)).
 * **MQTT:** JSON only; texts are passed on as received (`docs/mqtt-api.md`: consumers treat them
   as plain data, never as markup), or with `[messages] clean_received` without control and
-  direction characters, as outgoing texts are; commands are judged on the text as received. The
-  names of contacts and heard nodes are cleaned where they enter (`core.text.clean_name`: the
-  observer's records and restored rows, the inbox's sender, a removal's result), so that every
-  document, event and front end has the same name.
+  direction characters, as outgoing texts are; commands are judged on the text as received. With
+  `clean_received`, the names of contacts and heard nodes are cleaned where they enter too
+  (`core.text.clean_name`: the observer's records and restored rows, the inbox's sender, a
+  removal's result), so that every document, event and front end has the same name; without it
+  they stay as the radio gave them, and only the sinks above keep them inert. `clean_received`
+  removes neither invisible characters such as zero-width spaces nor Unicode tag characters
+  (#179).
 
 ### Adding a protocol message
 
@@ -179,9 +186,13 @@ lines of its own, which `dashboard.py` reads:
    line that names a problem card's class, rule 9 below):
    `{%- macro m(x) -%}{{ (x or '') | string | regex_replace('[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]', '') | regex_replace('[\t\r\n\u2028\u2029]', ' ') | e }}{%- endmacro -%}`.
    It prints every value read from Home Assistant (states, attributes, the registry) through it,
-   through `mt()`, or through a macro of the card, on a line that is one `<div>`, `<table>`,
-   `<details>` or `<ha-qr-code` element, or a row of `<table role="presentation" width="100%">`
-   elements. A macro prints only through `m()`, `mt()` and the macros above it, and a field is set
+   through `mt()`, or through a macro of the card, on a line that is one `<div>`, `<table>` or
+   `<details>` element, or a row of `<table role="presentation" width="100%">` elements, or into
+   the `data` attribute of an `<ha-qr-code>` element without content that fills its line. These
+   tags open an HTML block, in which marked parses no Markdown; `<ha-qr-code>` opens none, so its
+   line is parsed, and a value is inert there only inside the tag. On a line that opens with any
+   other tag, such as `<b>` or `<span>`, an escaped value still becomes an image, a link or an
+   autolink (#179). A macro prints only through `m()`, `mt()` and the macros above it, and a field is set
    from one of them or is a whole number. A mapping ends in `m(v)`, in `<code>` where the value is
    a code. `| e` appears nowhere else. GitHub-alert lines print only our texts and integers.
 3. The mapping macros (`said`, `telemetry`, `what`) have one branch per value of the gateway's
@@ -193,8 +204,9 @@ The dashboard of 2.1 follows the numbered rules below as well. `tests/dashboard_
 them on the dashboard made for a household with one chat of every kind, and each finding names
 its rule; the shipped template breaks none of them.
 
-1. A value goes onto one `<div>`, `<table>`, `<details>` or `<ha-qr-code` element per line, or
-   onto a line of `<table role="presentation" width="100%">` elements.
+1. A value goes onto one `<div>`, `<table>` or `<details>` element per line, onto a line of
+   `<table role="presentation" width="100%">` elements, or into the `data` attribute of an
+   `<ha-qr-code>` element without content.
 2. A mapping macro (`said`, `mark`, `why`, `what`, `telemetry`, `status`, `profile`, `part`,
    `place`, `problem`, `mon`, `kind`, `audience`, `node`, `cause`) gives each branch a text, an
    unknown value through `m()`, and has a branch for each value of the gateway's list where there

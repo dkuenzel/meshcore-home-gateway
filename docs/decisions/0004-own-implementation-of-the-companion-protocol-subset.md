@@ -79,3 +79,20 @@ version is raised.
   still pure encode and decode, with a golden frame from the firmware source for every message
   (`tests/test_codec.py`) and the real firmware in the tests
   ([ADR 0026](0026-gateway-tested-against-the-real-firmware-built-natively.md)).
+* Amended on 2026-11-15 (#174): when a community library in the radio path is reviewed. The
+  analysis of configuration from the user interface weighed MeshCore's Python library again, and
+  the maintainer agreed to take none into the radio path. At its tag `v2.3.19` (2026-11-11) the
+  library's one CI workflow, `.github/workflows/python-import.yml`, installs and imports the
+  package on Python 3.10 and 3.11 and runs none of its 200 test functions; PyPI holds no
+  provenance for its files (its integrity endpoint answers 404, checked 2026-11-15). Debian
+  packages it as `python3-meshcore` and runs its tests at the build and as autopkgtest
+  (`debian/tests/control`), in unstable only, not in Debian 13
+  (<https://sources.debian.org/src/python-meshcore/>). The decision is reviewed once all three
+  hold: `python3-meshcore` is in a Debian stable release with its tests run as autopkgtest, so
+  that [ADR 0005](0005-runtime-dependencies-from-the-distribution.md) can take it from the
+  distribution; upstream runs its tests in CI and its releases carry provenance; and the
+  gateway's scope needs more of the protocol than its subset. This review was the revisit that
+  the grown scope called for (note of 2026-11-02); for MeshCore's library these three conditions
+  replace the revisit line above. Until then the firmware's source and the firmware itself stay
+  the references for every frame
+  ([ADR 0026](0026-gateway-tested-against-the-real-firmware-built-natively.md)).

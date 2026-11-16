@@ -80,8 +80,9 @@ REPLIED_REJECTIONS = frozenset(
         Rejection.BROKER_UNAVAILABLE,
     }
 )
-# what counts as a wrong code: a guess, or a command of a sender with a secret that lacks one
-WRONG_CODES = frozenset({Rejection.CODE_MISSING, Rejection.CODE_INVALID})
+# what counts as a wrong code: a guess. A command whose last word is no code (code_missing)
+# makes none, as chat that starts with a command word does not: it is refused, not counted (#176)
+WRONG_CODES = frozenset({Rejection.CODE_INVALID})
 
 
 @dataclass(frozen=True, slots=True)
