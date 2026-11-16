@@ -159,3 +159,8 @@ or a logged advert is no position, as in a telemetry answer
 function: the firmware sends and stores the pair unchecked
 (`src/helpers/AdvertDataHelpers.cpp:47-49` at companion-v1.18.0). The flag of such an advert
 counts as sharing, as with 0, 0.
+
+Amended on 2026-11-15 by [ADR 0035](0035-the-companion-state-model.md), a proposal for 2.3.0a2:
+positions from adverts expire by time; the gateway clears a position from the radio's record when
+the newest checked advert carries none, which makes the record's fallback exact; a record whose
+position turned to none is no evidence on its own while a log adjacent to the advert's push exists.

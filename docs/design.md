@@ -504,7 +504,15 @@ reproduces published reference values and RadioLib's own calculation (`tests/tes
 
 The budget is a token bucket over seconds of airtime
 ([ADR 0008](decisions/0008-outbound-safety-targets-airtime-budget-deduplication.md)): it holds at
-most `burst_s` (default 10 s) and refills at `budget_s_per_hour` (default 36 s, 1 % of an hour).
+most `burst_s` and refills at `budget_s_per_hour` (default 36 s, 1 % of an hour). Up to 2.2
+`burst_s` defaults to 10 s. Since 2.3, unless the file sets it, the bridge derives it at each
+connect from the radio's preset ([ADR 0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md)): the airtime of an advert with a 31-byte name
+and of a long flooded direct message beside it, rounded up, at least 10 s and at most
+`max(10, budget_s_per_hour)`. EU/UK Narrow and every faster preset keep 10 s; slower presets get
+what an advert and an alert need. A new size keeps the bucket's level, at most the new capacity,
+and never adds to it. The state file keeps the effective burst and the radio's modulation, so a
+start before the radio connects uses the last one; `state` publishes the value in effect and
+whether the file set it or the bridge derived it.
 Over any interval *T* the airtime the bridge counts for its own transmissions is bounded by
 `burst_s + budget × T / 3600`, plus at most one long message per restart: the bucket's level is
 written to the state file at once after each transmission and at the stop, and a start takes it
@@ -531,7 +539,9 @@ EU duty cycle for them. Telemetry has two budgets of its own, which never take f
    read again first.
 4. `core.commands` decides: not a command, accepted, or rejected with a reason.
 5. The bridge publishes the message on `received` (with the verdict), and an accepted command on
-   `command`. The newest accepted timestamp per sender goes to the state file before the event is
+   `command`. With `[messages] clean_received`, the default since 2.3, the text and the names it
+   carries are published canonical, after the command was judged on the text as it came (§6.14).
+   The newest accepted timestamp per sender goes to the state file before the event is
    published, so a crash cannot turn into a replay; if the file cannot be written, the command is
    rejected (`state_unwritable`) and the service carries on. A command refused because the broker
    is unreachable (`broker_unavailable`) stores its timestamp too: its sender was verified.
@@ -580,6 +590,10 @@ there).
   loss, network) is noticed only after one to two `keepalive_s`; command events go out with QoS 0,
   so one sent in that time is lost instead of being resent after the reconnect. The sender then
   gets no answer and can send the command again.
+* No topic carries a name or a text: contacts appear by key, chats by alias or key. Payloads are
+  JSON, and with `[messages] clean_received`, the default since 2.3, their names and texts hold no
+  control, escape or direction character (§6.14). MQTT 5 asks the same of its own strings
+  (§1.5.4 of the standard).
 * With MQTT 5 the adapter adds what the protocol carries and the core never sees
   ([mqtt-api.md](mqtt-api.md#mqtt-5)): user properties with the gateway, its version and the
   time on every message, an expiry on the events (`queue_ttl_s`, for `command` `max_age_s`),
@@ -609,6 +623,14 @@ way), `config` (the settings in effect, which the bridge hands it at the start a
 connect), `refused_commands` (the latest refused commands, which the bridge hands it at the start
 and the inbox after each refusal, §6.4), and the events `contact`, `node` and `telemetry`.
 
+Since 2.3 one pure module, `core/companion.py`, decides for every contact whether it is heard,
+where it is and whether it moves ([ADR 0035](decisions/0035-the-companion-state-model.md)). Every report enters it with its precise
+time; the observer's tick moves the states that change by time alone. A position ages by
+silence and ends at once by withdrawal; the last known one stays, dated, for
+`[telemetry] last_known_days` (7 by default). The gateway
+clears a companion's old advert position from the radio's record by itself, under the managed
+profile.
+
 The detail is in [design-observer.md](design-observer.md#66-observer-documents-and-history).
 
 ### 6.7 Home Assistant
@@ -618,16 +640,79 @@ The bridge publishes one device-based discovery document for itself
 contact ([ADR 0017](decisions/0017-contacts-on-the-radio-each-with-its-own-device.md)); entities
 and example automations are in [`home-assistant.md`](home-assistant.md).
 
+Since 2.3 each companion's device also has *Heard* (its presence) and *Last known position*,
+which carries coordinates only while the companion is silent, so a `person` never follows it
+([ADR 0035](decisions/0035-the-companion-state-model.md)).
+
 The detail is in [design-home-assistant.md](design-home-assistant.md#67-home-assistant).
 
 ### 6.8 Configuration
 
 One TOML file, `/etc/meshcore-home-gateway/config.toml`, owner `root`, group
-`meshcore-home-gateway`, mode 0640 (it holds the broker password). Unknown keys are errors. Every
-setting is in [`configuration.md`](configuration.md). The installer writes the file through
+`meshcore-home-gateway`, mode 0640 (it holds the broker password, unless `password_file` names a
+file of its own). Unknown keys are errors. Every setting is in
+[`configuration.md`](configuration.md). The installer writes the file through
 `meshcore-home-gateway config render`, which validates with the same code as the service and
 creates a missing directory with mode 0755 whatever the umask, so that the service user reaches
-the file.
+the file. The service only reads it: its sandbox makes `/etc` read-only.
+
+**The settings registry** (since 2.3, [ADR 0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md)). `core.settings` holds one entry per
+key. It knows what the parser does not:
+
+* the installer answer's type (it replaces `config._ANSWER_TYPES`);
+* the history of the default since 2.0.0, each change with its effect; a key added later names
+  the effect of its first default against the version before the key, and the value that
+  behaves as that version did (`last_known_days`: 0);
+* the current recommendation, if any: a value or *let the gateway decide*, the version since
+  which it holds, its concern (security, privacy, reliability, feature), a one-sentence reason
+  and the effect of taking it;
+* who may change the key: the installer (which dialog), the file, the gateway (unless the file
+  sets it) or the radio (a seed key of ADR 0020).
+
+An effect is one of *deletes* (the first start with the value deletes stored data), *grants*
+(someone gains a right), *widens* (more data is published, kept, read or sent off the host,
+whoever's it is: other people's names, the household's texts in the journal, the container's
+address to GitHub) and *neutral*. An effect belongs to a move from the value in effect, so the
+review computes it per item. The parser stays the only validator. A recommendation is a last
+resort: what the gateway can derive, it derives (`burst_s`, §6.3).
+
+Tests keep the registry true: its keys are the keys the parser reads and the keys of
+`configuration.md`; each last default equals the parser's; a key whose default changed recommends
+the new one; the changelog names every key whose default or recommendation changes in a version;
+the release plan refuses a changed default without its history entry. `tools/recommendations.py`
+writes the table *Recommended values and changed defaults* of `configuration.md` from it.
+
+**The update review.** The new version reviews the file before it becomes active:
+`config review` (§6.9) lists what changes or deserves a decision, in four kinds: `changes_now` (a
+default changed and the file does not set the key), `deviates` (the file sets another value than
+the recommended), `offered` (the default is not the recommended) and `deprecated`. An item is
+listed only when taking it changes the value in effect for this installation. A key the gateway
+decides is an item only when the file pins it, or when its default became derived and the
+derived value differs from the old default here (`burst_s` at a slow preset). Identity and trust
+settings without a recommendation are never items. Every item that deletes stored data offers
+*Export first*, with the count of the rows it would delete. The consent rules:
+
+* The recommended value is preselected only when taking it is *neutral*; otherwise *keep* is.
+  Before a first start that deletes data because the release changed a default, *Export first*
+  is preselected.
+* An unattended run without a `review` answer changes nothing the file sets and records nothing
+  as kept; `review` and `review.KEY` answers act as ADR 0036's table says. A changed default that
+  grants or widens is written with its old value. `review=recommended` in an answers file takes
+  only neutral items.
+* *Keep mine* is kept as `[settings] kept = ["KEY@X.Y.Z"]`, which hides the key's
+  recommendations up to that version and changes no behaviour. Taking a recommendation equal to
+  the new default removes the line.
+
+The installer only shows the items, in whiptail or in numbered prompts, and sends back one word
+per key; the program writes the file (§9). The installer leaves preferences that equal their
+default out of the file (`homeassistant.discovery`, `homeassistant.device_name`,
+`messages.ascii_only`), at a new installation and at `--reconfigure`, unless the file, the answers
+or a shown dialog set them, so that a later default applies to them.
+
+**What the household sees.** The `config` document carries a `review` section: the open and the
+kept recommendations of the keys it shows, as codes and values, and a count of the others.
+*Settings* marks those rows with the recommendation, its reason and who decides, as information,
+never as a warning. Home Assistant changes nothing in the file.
 
 ### 6.9 Command line
 
@@ -654,6 +739,9 @@ the file.
 | `meshcore-home-gateway history export [--table T] [--format F] [--since DATE] [--state-dir DIR]` | Print a table of the history (`messages`, `positions` or `readings`) as JSON lines (`jsonl`) or CSV, oldest first, read only while the service runs. Times in ISO 8601 and UTC; `--since` takes a date or a date and time in ISO 8601 (UTC without a zone). In CSV, control characters become spaces and a text that begins with `=`, `+`, `-` or `@` gets a leading `'`, so that a spreadsheet shows it rather than computes it. Columns that a history not yet migrated lacks stay empty. Since 2.1 `messages` ends with `target`, `delivery_id`, `queued_at` (a time), `suspect` (`true` or `false`) and `reason`, since 2.2 then `nonce` (`true` or `false`), the keys of the `history` document ([mqtt-api.md](mqtt-api.md#history-history)). Exit 1 without a history or with one of a newer version. |
 | `meshcore-home-gateway config render` | Write a validated configuration (TLS files loaded) from `key=value` answers (installer). |
 | `meshcore-home-gateway config answers` | Print a configuration as answers, the inverse of `render` (installer, reconfigure). |
+| `meshcore-home-gateway config review [--from-version V] [--state-dir DIR] [--json \| --list \| --plan D \| --apply D --output FILE]` | Since 2.3: compare the configuration with this version's defaults and recommendations ([§6.8](#68-configuration)): without a mode a report for people, `--json` the items, `--list` tab-separated lines with finished texts for the installer, `--plan` the text of the installer's final screen, `--apply` a new configuration from one `KEY=recommended\|keep\|later\|export` line per open item (other keys are a usage error). Read only but for `--output`; it never connects to the radio or the broker and never prints a secret. Exit 0, also with open items; 2 on a usage error; 78 when the file cannot be reviewed. |
+| `meshcore-home-gateway install switch --unit FILE [--config-new FILE]` | Since 2.3: run as root by a staged zipapp in `/usr/local/lib/meshcore-home-gateway/`: put itself under its versioned name, point `current.pyz` and `/usr/local/bin/meshcore-home-gateway` at it, install the units, reload systemd; then, with `--config-new`, keep the configuration as `config.toml.<old version>` and move the new one in place (the installer, later the updater). |
+| `meshcore-home-gateway broker acl [--role homeassistant]` | Since 2.3: print the broker ACL lines the role needs for this configuration's topics, from the table the gateway subscribes with; each line knows the version it appeared in, so the update review names the new ones. |
 
 Exit codes: 0 success, 1 failure, 2 usage error (invalid arguments), 78 configuration error (the
 systemd unit does not restart on it).
@@ -692,6 +780,11 @@ the first start holds nothing. With `ask = "all"` it excludes every companion th
 own instead. Values expire when a companion stops
 answering ([ADR 0024](decisions/0024-telemetry-values-in-home-assistant-expire.md)).
 
+Since 2.3 the interval counts from the companion's last report, and one movement rule decides
+both how often it is asked and which fixes are published: a companion at rest keeps the fix where
+it came to rest, and only a move that a second answer confirms draws a line
+([ADR 0035](decisions/0035-the-companion-state-model.md)).
+
 The detail is in [design-telemetry.md](design-telemetry.md#611-telemetry).
 
 ### 6.12 Translations
@@ -729,6 +822,15 @@ machinery and English only. Another language comes as a contribution of its cata
   given values and names only the fields of its English text; a text argparse %-formats (help and
   description texts, argparse's own words) only when its `%` directives equal the English ones.
   Otherwise the English text. The catalog checks hold the shipped catalogs to the same rules.
+* **Codes in documents, texts in catalogs** (since 2.3). A document or event publishes codes with
+  their parameters, never prose. Every code has a text in the program's catalog in every shipped
+  language, and every reader renders that text: the dashboard, the installer's review (through
+  `config review --list`) and later the strategy module. One guard test walks every enum the
+  gateway publishes and fails on a code without a text in a shipped language. 2.3 adds
+  `presence`, `position_state` and `motion` ([ADR 0035](decisions/0035-the-companion-state-model.md)),
+  the review's `kind`, `concern` and `effect`, `airtime_burst_source`
+  ([ADR 0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md)), and
+  the `contact` event `position_cleared`; the codes of later records join the same test.
 * **Home Assistant.** Every name goes through `ha_name` (`msgctxt "home assistant"`); entity IDs,
   unique IDs, event types, options, attribute keys and units stay. The default device name
   `MeshCore radio` is translated whenever the setting equals it. `[homeassistant] language` is
@@ -770,7 +872,85 @@ gateway announces entities for it: the message history, the messages on their wa
 Since 2.2 *Contacts* has *Advert to radios nearby* under the QR code
 ([ADR 0033](decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)).
 
+Since 2.3 every card that names a companion reads its state: a silent companion says so with its
+age, and its older facts show muted, without raising a problem; the map shows a last known
+position in blue-grey with a clock ([ADR 0035](decisions/0035-the-companion-state-model.md)).
+
 The detail is in [design-home-assistant.md](design-home-assistant.md#613-dashboard).
+
+### 6.14 Untrusted text
+
+[ADR 0034](decisions/0034-untrusted-text-from-the-mesh.md): names and texts the gateway did not write are data in every sink. They come
+from the mesh (the names in records and adverts, message texts, the names channel messages claim)
+and from the bus (texts to send, contact links). One module, `core.untrusted`, holds every rule
+for them, and every sink takes them through it.
+
+Two controls stand side by side, and neither relies on the other:
+
+* **Canonical where it enters.** With `[messages] clean_received`, the default since 2.3, the
+  core takes a text or a name as `canonical_text` or `canonical_name` gives it:
+  * without C0 and C1 controls and DEL, except the line feed of a text;
+  * without the nine explicit direction formatting characters (UAX #9), the byte order mark and
+    the interlinear annotation characters;
+  * without tag characters, except in a valid subdivision flag: U+1F3F4, 3 to 6 tags that spell
+    a subdivision ID in CLDR's form, U+E007F (UTS #51); any other run of tags goes whole;
+  * with a zero-width joiner only between two characters, and at most 30 combining marks after
+    one base (UAX #15's stream-safe bound);
+  * with line separators as line breaks, a name on one line, and runs of spaces as one.
+
+  Everything else stays: emoji sequences, every script with its marks, the direction marks LRM,
+  RLM and ALM, the zero-width space, the soft hyphen. Nothing is normalised, and nothing gets
+  longer. Commands are judged on the text as it came (§6.4). What the gateway sends and writes to
+  the radio follows the same rules, whatever the setting says.
+* **Encoded at every sink**, for that sink: JSON for the documents and events, slugs and keys for
+  topics and identifiers, the macro `m()` and HTML-block placement in the dashboard's cards
+  (§6.13), `shown` for the command line, labels and CSV cells, `%r` in the log, parameters in SQL.
+
+Where text enters the core: the radio's records and adverts, the heard nodes and the recent
+messages restored from the history (the stored rows stay as they are; what is published from them
+is canonical), and the documents the state file kept (the observer); a message's text after its
+command is judged, its sender's name and the name a channel message claims (the inbox); the
+refusals the state file kept; a removal's result. The codec stays faithful, except that a name
+cut inside a UTF-8 sequence loses that sequence instead of ending in U+FFFD.
+
+Who sent a text decides what it may do, never how it is escaped:
+
+| Input | Bound to | Trusted with |
+| --- | --- | --- |
+| A direct message's text | the contact's key: the firmware decrypts it with that contact's secret (a room server's post: the room's key, not its author's) | a command, from an allowlisted sender with its code (§7.3); otherwise text |
+| A telemetry answer | the key prefix the firmware matches; by default only the companions the household included are asked | position, battery and readings of the household's companions (§6.11) |
+| A contact's name | the contact's key; its owner changes it with every newer advert | its device's name, with key digits when another has it |
+| A heard node's name | its own key, which anyone can make | a label in *Add heard node*, marked when taken |
+| A name a channel message claims | nothing: anyone with the channel's secret writes any name | text; one "claimed" look and never a link on the dashboard (2.4) |
+
+**Names that identify.** `name_key` compares names as a person reads them. It starts with
+`canonical_name`, whatever the setting says, so a control character drops out instead of counting
+as a space, as it did up to 2.2. Then NFKC, case folding, invisible characters left out, and the
+UTS #39 skeleton for characters that look like Latin letters or digits (480 entries of
+`confusables.txt` 15.1.0, the Unicode version of Debian 13's Python). The skeleton maps a capital
+`I` to `l`, so the key takes the skeleton of the case-folded skeleton and counts `i` as `l`:
+`AIice`, `A1ice` and `ALICE` compare as `Alice`, `B0b` as `Bob`. A name that holds an explicit
+direction embedding, override or isolate counts as taken whatever its letters: with `false` it
+keeps them, and a screen may then show its letters in another order than the key compares. A
+taken name only gains a mark (§7.2), never a refusal.
+
+**The setting.** With `clean_received = false`, texts and names stay as they came, and the
+encoders at the sinks keep them inert. `name_key`, `shown`, the CSV guard and the dropped cut
+sequence apply either way. The default changed in 2.3; the update review asks about it as its first
+changed default, and an unattended update applies it, because it deletes no stored data
+([ADR 0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md)). Names canonical whatever the setting says would change what `false` means,
+which waits for 3.0.
+
+**What stays.** Home Assistant's more-info dialog makes a link of an attribute that starts with
+`http`, a stranger's name on *New node* included; a click is needed and nothing loads by itself
+([platform notes](platform-notes.md#home-assistant-dashboards)). A text can still say anything,
+and a name a contact or a channel claims can be false: the dashboard shows where each comes from,
+it does not clean the meaning.
+
+**Tests.** One hostile corpus (`tests/hostile_corpus.py`) feeds the unit and property tests of the
+module, the codec, the run end to end on the emulated radio, the Home Assistant contract tests,
+and the check of the frontend's Markdown pipeline, which CI runs for every pinned Home Assistant
+series (§10).
 
 ## 7 Security
 
@@ -794,7 +974,8 @@ boundaries and what stands in the way of each; this section is its summary.
 | --- | --- |
 | Spoofed command over the air | Commands only from direct messages, which the firmware authenticates with the key shared between sender and radio; channel messages never command (anyone with the channel secret can write any name). |
 | Look-alike contact with the same 6-byte key prefix | Permissions and targets bind full public keys. The sender must be the only contact with its prefix in the table read after the message arrived, and no other key with that prefix may have been seen on the radio in the last 24 hours, so a look-alike that came and went counts. Commands that waited in the radio before the bridge connected are rejected (§7.3). Recommended radio settings, warned about at connect: manual adding, no contact type added automatically. |
-| A node named like a contact or the gateway (anyone chooses a node's name; look-alike letters from other scripts) | Names are compared as a person reads them (NFKC, case folding, Cyrillic and Greek letters that look Latin, characters drawn as nothing left out: Unicode's default ignorables of any category, such as variation selectors and Hangul fillers, and every format character; the braille blank as a space; a name of such characters alone is one blank name): such a heard node is `name_taken` in `nodes` and the `node` event and marked in *Add heard node*; a contact named like the gateway's device or a contact added before gets a device named with its key's first 8 digits. Labels start with the key's digits, which a person compares with the node's screen (SEC-007). |
+| A node named like a contact or the gateway (anyone chooses a node's name; look-alike letters from other scripts, digits for letters, a capital I for an l; direction overrides) | Names are compared as a person reads them (NFKC, case folding, the UTS #39 skeleton of characters that look like Latin letters or digits, with a capital I and a lower-case i as an l, characters drawn as nothing left out: Unicode's default ignorables of any category, such as variation selectors and Hangul fillers, and every format character; the braille blank as a space; a name of such characters alone is one blank name); with `[messages] clean_received`, the default since 2.3, a name holds no direction override, so it displays as it compares, and with `false` a name that holds one counts as taken (§6.14). Such a heard node is `name_taken` in `nodes` and the `node` event and marked in *Add heard node*; a contact named like the gateway's device or a contact added before gets a device named with its key's first 8 digits. Labels start with the key's digits, which a person compares with the node's screen (SEC-007, [ADR 0034](decisions/0034-untrusted-text-from-the-mesh.md)). |
+| Characters in a name or text that steer what reads it: terminal escapes, direction overrides, tags hidden from people but read by a language model | With `[messages] clean_received`, the default since 2.3, names and texts lose them where they enter, and keep emoji and every script; every sink encodes what it prints (§6.14). |
 | Replayed command packet | Sender timestamp must be newer than the last accepted one of that sender (persisted; a command refused because the broker was unreachable counts too) and within `max_age_s` of the bridge clock. Exact repeats are dropped for an hour, also those of a rejected command. |
 | Command injection into the automation system | Only configured single words become event types; arguments are data. The bridge executes nothing. Automations must treat `args` as untrusted. |
 | Abuse of the send topic by any broker client | Broker authentication and topic ACLs; only configured targets exist; airtime budget, queue limit, duplicate suppression; the events of refused requests are rate-limited. paho reads a message whole before the bridge can check its size, so a broker limit on the packet size keeps huge payloads out of the bridge's memory (mqtt-api.md, last section). |
@@ -1121,16 +1302,28 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
   `current.pyz` to the active version, `/usr/local/bin/meshcore-home-gateway` pointing to it. The
   zipapp runs with `/usr/bin/python3 -I` (isolated mode: no user site, no environment variables).
 * **Update:** `meshcore-home-gateway-lxc.sh --update <id>` downloads the new zipapp (from a
-  release, checked against its `SHA256SUMS`) or builds it, under a temporary name next to the old
-  one, checks the current configuration with it, then moves it to its versioned name, switches the
-  symlink and restarts; a failed check leaves the old version active, also when
-  the version string did not change. Rollback switches the symlink back to a version still
-  installed; an update with an unchanged version string replaces that version's file, and the unit
-  file the update installed stays in place (it is not rolled back; a release's unit names its
-  version in a comment). `--reconfigure <id>`
-  runs the dialogs again with the current settings as defaults (`meshcore-home-gateway config
-  answers`) and keeps the settings it does not ask for, and targets or command senders the radio no
-  longer offers; `--answers <file>` installs without dialogs.
+  release, checked against its `SHA256SUMS` and the digest the installer carries) or builds it,
+  under a temporary name next to the old one, checks the current configuration with it, then
+  moves it to its versioned name, switches the symlink and restarts; a failed check leaves the old
+  version active, also when the version string did not change. Since 2.3 the staged version first
+  reviews the configuration ([§6.8](#68-configuration), [ADR 0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md)): with a terminal and
+  something to decide, the installer asks (whiptail when installed, numbered prompts otherwise)
+  and shows one final screen with what changes, what was answered and what is left to do; without
+  a terminal it follows the consent rules. Nothing is written before the final answer, and the old
+  version keeps running meanwhile. The staged version then switches itself first and the
+  configuration second (`install switch`), keeping the old file as `config.toml.<old version>`
+  when an answer changed it. `--review <id>` asks the same questions of the installed version
+  without an update. Rollback switches the symlink back to a version still installed, by hand
+  ([deployment.md](deployment.md#update-reconfigure-remove)). Since 2.3 an update keeps the old
+  file as `config.toml.<old version>`, and a roll back by hand puts it back with the symlink,
+  because a version before 2.3 refuses a file with `[settings]`; `--rollback` (2.5) will do both.
+  An update with an unchanged version string replaces that version's file, and the unit file the
+  update installed stays in place (it is not rolled back; a release's unit names its version in a
+  comment).
+  `--reconfigure <id>` runs the dialogs again with the current settings as defaults
+  (`meshcore-home-gateway config answers`) and keeps the settings it does not ask for, and targets
+  or command senders the radio no longer offers; since 2.3 it ends with the review.
+  `--answers <file>` installs without dialogs.
 * **Backup:** the configuration file, `/var/lib/meshcore-home-gateway/state.json` and
   `telemetry-excluded.json` next to it, and the history (`history.sqlite3`).
 * **Releases** ([ADR 0013](decisions/0013-signed-releases-with-github-artifact-attestations.md)):
@@ -1154,7 +1347,7 @@ command's packet first, so a replay costs at most one answer per rate-limit toke
 | Property | the parsers of what the radio, the air and the bus send in: frames, messages, logged packets and adverts, sensor answers, keys, links and cards, cut texts, message catalogs, installer answers and configuration files | Hypothesis makes up the input; each parser returns or refuses with its own error, never another, within a second (`tests/test_properties.py`, CODE-009) |
 | Component | session and bridge | an in-memory radio that emulates the firmware's responses and pushes |
 | Integration | MQTT adapter and bridge end to end | a private `mosquitto` per test on a free port; the system test runs the service as a process (its coverage is measured too) |
-| Contract | discovery, payloads, the documented automations, the names in every language and the generated dashboard in Home Assistant | the real MQTT integration of a pinned Home Assistant release, in its own environment (`make ha-test`); a pseudo-language marks every name and text |
+| Contract | discovery, payloads, the documented automations, the names in every language and the generated dashboard in Home Assistant | the real MQTT integration of a pinned Home Assistant release, in its own environment (`make ha-test`); a pseudo-language marks every name and text; a hostile corpus of names and texts, whose cards a copy of the pinned frontend's Markdown pipeline renders in CI (§6.14) |
 | Firmware | the gateway against MeshCore's own companion and repeater firmware | the pinned release built natively on stand-ins, nodes as processes on a simulated LoRa air, the gateway on a pseudo terminal; scenarios of the hardware checklist run the gateway's service against it: messages, commands, codes and replies, an unreachable contact and the radio profile (steps 3–6, 10–14, 55 and 56), steps 29, 30, 33, 34, 35 and 39 and parts of steps 41 and 43 (the check for positions in adverts), and a test pins down the firmware's part of step 31 (`make firmware-test`, [which parts](testing.md#where-each-step-is-checked), [ADR 0026](decisions/0026-gateway-tested-against-the-real-firmware-built-natively.md)) |
 | Service manager | the zipapp and the systemd unit as installed | on CI's runner, thrown away after the job: the service under systemd as its user, with an emulated radio and a private broker; readiness, the unit's sandbox, `doctor`, a broker restart, the watchdog (`make unit-run`) |
 | Installer | Proxmox host script | runs with stub commands for `pct`, `pveam`, `pvesm`, `pvesh`, `pveversion`, `dpkg-query` and `whiptail`, which answer in the formats of Proxmox VE 9 and parse options like the real whiptail; a model of whiptail's line wrapping checks that every text fits its box and every menu row its line in every language; manual checks drive the real whiptail |
@@ -1199,6 +1392,9 @@ version, like the CI matrix, and fails if one is missing.
 | The outgoing queue kept across restarts, alerts first | [0028](decisions/0028-outgoing-queue-kept-across-restarts.md) |
 | What a contact of the radio is trusted with | [0029](decisions/0029-what-a-contact-is-trusted-with.md) |
 | A release checked by CI, the installer's self-test and the maintainer's use | [0030](decisions/0030-release-checked-by-ci-self-test-and-use.md) |
+| Untrusted text: canonical where it enters, encoded at every sink (proposed) | [0034](decisions/0034-untrusted-text-from-the-mesh.md) |
+| The companion state model: presence, positions that age, confirmed movement (proposed) | [0035](decisions/0035-the-companion-state-model.md) |
+| The settings registry, recommendations and the update review by the new version (proposed) | [0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md) |
 
 
 ### 11.1 Choices without a record of their own
@@ -1238,12 +1434,6 @@ reasons (security review 2026-11, ARC-017).
   `[radio] set_clock` keeps the radio on it within plausible bounds, and restarts the radio for a
   clock up to an hour ahead, or whole jumps of MeshCore's nRF52 clock ahead, which the firmware
   sets back no other way (SEC-002, §6.1).
-* **Text from the mesh is published as it came.** Texts and names are data for automations and
-  people, never commands or markup; cleaning them on the way in would change what was received
-  and hide what an attacker sent. Consumers escape them where they display them
-  ([development.md](development.md#text-from-the-mesh-and-the-bus)); `[messages] clean_received`
-  is the opt-in for consumers that cannot (SEC-017), since 2.2 for the names of contacts and
-  heard nodes too (#137).
 
 ## 12 Open questions and future work
 
@@ -1282,3 +1472,62 @@ in slices, each a release-ready step with its own tests, Home Assistant first:
 
 Later: a terminal dashboard and a web dashboard on the same documents, Home Assistant as a
 control surface for selected radio settings, the household's own repeaters.
+
+### 13.1 Release 2.3: the foundations, and updates that ask
+
+On 2026-11-15 the maintainer accepted the analyses of the feedback on 2.2 (#166 to #189) and the
+plan built from them for 2.3 to 2.5, except two decisions that stay open (below). 2.2.1, a patch,
+first finishes what was decided for 2.2. 2.3 then builds the data contracts that later views,
+automations and releases read, and the update into 2.3 is the first that asks instead of needing
+hand edits. It ships as four pre-releases, then a release candidate:
+
+| Slice | Content | Records |
+| --- | --- | --- |
+| 2.3.0a1: updates that ask | the installer stops pinning preference defaults; the settings registry with its recommendations and guard tests; the module for untrusted text and `clean_received = true`; `burst_s` derived from the radio's preset; the update review (`config review`, `broker acl`, the installer's dialogs, `--review`); release information checked daily by a unit of its own and shown as an update entity | [0034](decisions/0034-untrusted-text-from-the-mesh.md), [0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md), 0039 (to be written) |
+| 2.3.0a2: the companion state | presence, positions that age, confirmed movement and the automatic clear of old advert positions, in one module; the advert check that survives firmware which clears withdrawn positions; every companion's tracker announced from the start; why a contact is protected (`protected_as`) | [0035](decisions/0035-the-companion-state-model.md) |
+| 2.3.0a3: new data and privacy | forgetting a contact; the `counts` document and node details for the redesign; findings as codes; a restart at a quiet moment after Debian replaced Python or paho-mqtt, and the detection of a replugged radio; the boot messages of ESP32 radios | 0037 (to be written); an amendment of 0015 |
+| 2.3.0a4: *Enrolling* | a household mode that ends by itself: a zero-hop advert every 10 minutes, never with a position, for 30 minutes (up to 2 hours, at most 12 a day), new devices first in *Add heard node*, devices added meanwhile asked at once, with the device's own permission as the consent | 0038 (to be written) |
+
+a1 comes first: the review must exist before 2.3's own changed defaults ship. a2 comes before a4,
+because *Enrolling* reads the companion state. If 2.3 runs long, a3's findings, the restart, the
+replug detection and the boot messages move to 2.4; the counts and node details stay, because the
+redesign shows them. 2.4 redesigns the dashboard once, with the commands and the maintenance port
+(after its spike, [platform notes](platform-notes.md#meshcores-command-line-client-and-python-library)).
+2.5 brings the dashboard strategy and updates installed from Home Assistant.
+
+**Decisions of 2026-11-15**, numbered as the records cite them:
+
+1. **Release shape:** as above. Decided.
+2. **Household overrides** (values Home Assistant may change, kept beside the configuration):
+   **open**. Recommended: defer until a setting that households change often needs them; the
+   radio's name and transmit power go through the maintenance port meanwhile (ADR 0036).
+3. ***Enrolling*:** as designed above, behind `radio_controls`, kept across restarts, its adverts
+   zero hop and never with a position, one zero-hop advert after a new name inside the daily cap,
+   and only a suggestion after a new radio key. A device added during the window is asked at once:
+   the device's own permission stays the consent, and the per-person switch undoes it. Decided.
+4. ***Pause asking*:** deferred until a household asks. Decided.
+5. **The update review's consent rules:** as ADR 0036 lists them; *deletes* means stored data.
+   Decided.
+6. **The update check:** a daily check in a sandboxed timer unit of its own, on for new
+   installations with a privacy note, offered to existing ones by the review as a change that
+   widens (ADR 0036). Decided.
+7. **The maintenance port** (#187): in 2.4 after its spike, as designed, with the command
+   catalogue without the answers' grammar and the firewall rule printed rather than written.
+   Decided.
+8. **Updates installed from Home Assistant** (2.5): by its administrators, opt-in with *No*
+   preselected, checked by HTTPS and the release's `SHA256SUMS`, and by its attestation where
+   `gh` is present; unattended only after two releases. Decided.
+9. **Codes made easy** (2.4): the codes file by default, a reload instead of a restart, the QR
+   code from Debian's `qrencode`, each sender's code state on the dashboard, never the secret.
+   Decided.
+10. **The upstream firmware route:** **open**. Recommended: three small contributions in order
+    (an advert without a position clears the stored one; push subscriptions for companions, after
+    an issue; a motion wake later), the household's trackers on a release tag with the patch, the
+    gateway's radio on official firmware (ADR 0035). The gateway's own part, an advert check that
+    survives such firmware, comes in 2.3 either way.
+11. **The duty cycle derived from the band:** a default the file can change, not a limit. Decided.
+12. **Replacing a target's key from Home Assistant** (#167, 2.5): the opt-in
+    `[contacts] replace_targets`, off by default and never preselected. Decided.
+
+Two automatic actions need no right and report themselves, so they have no decision of their own:
+the restart after Debian replaced Python or paho-mqtt, and the detection of a replugged radio.

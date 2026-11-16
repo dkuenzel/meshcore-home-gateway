@@ -33,11 +33,11 @@ weakens a control updates the boundary's section here in the same pull request.
 | --- | --- | --- | --- |
 | T1 | A stranger in radio range | Send any packet: adverts under any name and any key of their own, channel messages, acknowledgements and paths in the clear; read what is in the clear, the radio's name and full key from an advert it sends on request too, and add the gateway as a contact; jam | The firmware decrypts direct messages only from contacts, so a stranger's direct messages are still dropped and their telemetry requests denied; floods are bounded (B1); acknowledgements prove little ([what `confirmed` proves](mqtt-api.md#what-confirmed-proves)); the radio's advert on request goes zero hop and never carries a position (B1) |
 | T2 | A stranger with a 6-byte key prefix collision | Pose as an allowed sender's prefix, after about 2⁴⁸ key generations ([residual risks](#residual-risks)) | The look-alike memory ([design §7.3](design.md#73-command-authorisation-in-detail)); codes ([configuration](configuration.md#commands)) |
-| T3 | A contact of the radio outside the household | Direct messages the radio decrypts, telemetry answers, adverts | Commands need the allowlist; telemetry asks only the household (`ask = "household"`, the default) ([ADR 0029](decisions/0029-what-a-contact-is-trusted-with.md)); rate limits per sender |
+| T3 | A contact of the radio outside the household | Direct messages the radio decrypts, telemetry answers, adverts; since 2.3 (proposed, [ADR 0035](decisions/0035-the-companion-state-model.md)) make the gateway clear the position from its own record by an advert without one | Commands need the allowlist; telemetry asks only the household (`ask = "household"`, the default) ([ADR 0029](decisions/0029-what-a-contact-is-trusted-with.md)); rate limits per sender; the clear only erases, at most once per contact in 10 minutes, under the managed profile only |
 | T4 | Whoever holds an allowed sender's handheld or key | Send accepted commands | Codes, a second factor on a phone, at most 5 wrong ones per sender an hour; a small word list; automations that confirm |
 | T5 | A host on the radio's network (TCP) | Be the radio, or a second client of it: read and write everything, export the private key | USB is the default; TCP needs `tcp_unauthenticated = true`; a contested link is reported; codes, at most 5 wrong ones per sender an hour ([design §7.4](design.md#74-residual-risks)) |
 | T6 | A broker client other than the gateway | Publish and read what the broker's ACL allows: forge events and documents, send messages, manage contacts, read the household's unsent drafts and send them | The ACL ([securing the broker](mqtt-api.md#securing-the-broker)); warnings and refusals for a broker without login or TLS; forged documents restored |
-| T7 | A Home Assistant user who is not an administrator | Every entity of the gateway: send, also the draft another user left in a chat, add and remove contacts, switch telemetry, make the radio advertise its name and key nearby (at most every 10 minutes), see positions and messages, and the settings in effect, the hidden targets' names and prefixes included (never a secret, host or key) | `[homeassistant] controls = false`, `radio_controls = false`, `hidden_targets` ([Home Assistant](home-assistant.md)) |
+| T7 | A Home Assistant user who is not an administrator | Every entity of the gateway: send, also the draft another user left in a chat, add and remove contacts, switch telemetry, make the radio advertise its name and key nearby (at most every 10 minutes), see positions and messages, and the settings in effect, the hidden targets' names and prefixes included (never a secret, host or key); since 2.3 (proposed, [ADR 0035](decisions/0035-the-companion-state-model.md)) each companion's presence, and its last known position for up to `[telemetry] last_known_days`; since 2.3 (proposed, [ADR 0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md)) the open and kept recommendations of the settings it sees, read only | `[homeassistant] controls = false`, `radio_controls = false`, `hidden_targets` ([Home Assistant](home-assistant.md)) |
 | T8 | Home Assistant's administrator or host | All of T7, automations, the recorder | Not an attacker of the gateway; a victim of what reaches Home Assistant |
 | T9 | A process in the container as the service user | The state directory, the radio's device, the login in memory | The systemd sandbox. The broker password and the code secrets are files the service's group reads (0640), which such a process reads too; a systemd credential that root alone reads only with a drop-in ([deployment](deployment.md#4-operations)) |
 | T10 | Root in the container, the Proxmox host | Everything | Not an attacker of the gateway |
@@ -128,7 +128,12 @@ data: never markup, never templates ([text from the mesh](development.md#text-fr
 **Controls:** cards escape mesh text and show it as text, never as a link; device names of the
 same name carry key digits; labels show key digits; with `[messages] clean_received`, recommended,
 names and texts lose control and direction characters where they enter
-([configuration.md](configuration.md#messages)).
+([configuration.md](configuration.md#messages)). Since 2.3 (proposed,
+[ADR 0034](decisions/0034-untrusted-text-from-the-mesh.md)): names and texts are canonical by
+default (`clean_received = true`), without control, escape or direction characters and without
+tags outside a valid subdivision flag; names that read alike, digits for letters included, compare
+equal by the UTS #39 skeleton; a name that holds a direction override counts as taken whatever the
+setting says.
 
 **Remains:** Home Assistant's own pages and its apps show what the gateway publishes, and the
 gateway does not control how ([what reaches Home Assistant](home-assistant.md#names-and-texts-from-the-mesh)):
@@ -136,12 +141,14 @@ gateway does not control how ([what reaches Home Assistant](home-assistant.md#na
 * its more-info dialog makes a link of an attribute that starts with `http`: a message's `text`
   and `sender_name`, and with `heard_nodes = "full"`, the default, the name any radio in range
   gives itself on *New node*;
-* with `clean_received = false`, the default, a right-to-left override in a contact's name can
-  make its device name read as another contact's, without the key digits of a taken name;
+* with `clean_received = false`, the default before 2.3, a right-to-left override in a contact's
+  name can make its device name read as another contact's, without the key digits of a taken name;
   Homie's `$name` carries every such character raw, and the JSON documents the C1 controls and
-  direction characters, to whatever reads them;
+  direction characters, to whatever reads them. Since 2.3 (proposed), such a name counts as taken
+  whatever the setting says, so only its key digits tell it apart;
 * invisible characters, Unicode tag characters among them, pass even `clean_received`; a person
-  does not see them, a language model behind Assist reads them;
+  does not see them, a language model behind Assist reads them. Since 2.3 (proposed), tag
+  characters pass only in a valid subdivision flag;
 * an automation that forwards a mesh text to a phone hands it to the companion app, which renders
   HTML in a message and acts on a message that is one of its command words.
 
@@ -170,7 +177,12 @@ user in a tight systemd sandbox.
 secrets in files of their own (0640, for the service's group), as systemd credentials that root
 alone reads only with a drop-in ([deployment](deployment.md#4-operations)); backups without
 secrets unless asked;
-automatic security updates in the container ([deployment](deployment.md#4-operations)).
+automatic security updates in the container ([deployment](deployment.md#4-operations)). Since 2.3
+(proposed, [ADR 0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md)):
+an update's staged, verified program reviews the configuration before it switches; an unattended
+run without a review answer changes nothing the file sets; a change that grants, widens or deletes
+needs an answer that names it, and a changed default that grants or widens is written with its old
+value; the service still cannot write its configuration.
 
 ### B7: the project and its users
 
@@ -240,6 +252,10 @@ The full list is [design §7.4](design.md#74-residual-risks). The ones this mode
   secret the radios share would make `confirmed` a proof; that is for the MeshCore project.
 * **The broker's ACL is the only guard of the bus.** The gateway warns about an open broker and
   restores its documents; it cannot tell a forged event from its own.
+* **A kept security recommendation keeps the weaker setting** (since 2.3, proposed,
+  [ADR 0036](decisions/0036-the-settings-registry-recommendations-and-the-update-review.md)). An
+  administrator may answer *Keep mine*; the review records it in `[settings] kept`, and *Settings*
+  shows it as kept on purpose, but the setting stays as it was.
 
 ## Assumptions
 

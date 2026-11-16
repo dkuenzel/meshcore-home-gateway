@@ -145,3 +145,8 @@ its newest contact time plus a second. The session restarts the radio when that 
 host's, after taking its messages; the bridge allows it when no message is queued or being
 delivered, at most once a day. `set_clock = false` leaves the clock alone (design §6.1,
 protocol.md section 5).
+
+Amended on 2026-11-15 by [ADR 0035](0035-the-companion-state-model.md), a proposal for 2.3.0a2: a
+new enforced row, contacts keep no position their newest checked advert lacks. The contact
+manager's worker writes it outside the connect, under the same firmware gate, and never with
+`manage = "observe"`.
