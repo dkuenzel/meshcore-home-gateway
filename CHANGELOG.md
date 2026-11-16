@@ -24,9 +24,11 @@ until the page is scrolled (#149). Of a refusal and an accepted command within o
 dashboard's *Latest of each kind* can show the refusal again after a restart of Home Assistant or
 its reconnect to the broker (#160). Removing a contact keeps its chats and its history, which the
 dashboard now says (#166); a chat's target or a command sender cannot be removed from Home
-Assistant (#167). The advert reaches only the radios in direct range (#181). The installer's
-checklists of target contacts and command senders show about six letters of each name in an
-80x24 terminal (#191).
+Assistant (#167). The advert reaches only the radios in direct range
+([ADR 0033](docs/decisions/0033-a-zero-hop-advert-of-the-gateways-radio-on-request.md)); at a
+slow preset none goes until `burst_s` is raised, which the log and `probe` now name (#181). The
+installer's checklists of target contacts and command senders show about six letters of each
+name in an 80x24 terminal (#191).
 
 CI, with the Home Assistant contract tests on 2026.10.2 and 2026.11.0 and the tests against the
 real firmware, checked it; the browser check of #166 and #168 ran on 2026.10.2 and 2026.11.0, and
@@ -38,7 +40,7 @@ every dialog of the installer was checked against the real whiptail in English a
 - At a slow radio preset, where the radio's advert and a long message do not fit into
   `[airtime] burst_s` together, an advert sent on request was refused every time
   (`airtime_budget`) and nothing said why. Each connect now warns in the log and names the
-  `burst_s` that holds both; `probe` prints both times on air on its line `burst`, against the
+  `burst_s` that holds both; `probe` prints the same on its line `burst`, against the
   configuration's `burst_s`. The new section *Radio presets* of
   [configuration.md](docs/configuration.md#radio-presets) gives the times and the `burst_s` for
   common presets, also where a long message alone exceeds the default. At such a preset, set

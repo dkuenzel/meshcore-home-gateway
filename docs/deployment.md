@@ -898,7 +898,14 @@ was written against meshcore-cli 1.6.10 from its source; the project does not te
   does it on purpose). Export or import no private key, do no factory reset (the radio then
   has a new key, and every companion must add it again), and do not switch it off from its
   command line: it stays off until its reset button or a power cycle wakes it
-  ([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md)).
+  ([ADR 0020](decisions/0020-managed-radio-profile-for-the-observer.md)). Set no flood scope
+  (`scope`, `set default_scope`): the gateway sets, reads and resets none, so every later flood
+  of the radio, the gateway's alerts included, would stay inside that region, until the radio
+  restarts (`scope`) or for good (`set default_scope`)
+  ([platform notes](platform-notes.md#meshcores-command-line-client-and-python-library)). A new
+  preset with `set radio f,bw,sf,cr` also switches the radio's client repeat off; where the radio
+  repeats, give `on` as a fifth value (`set radio f,bw,sf,cr,on`, `meshcore_cli.py` lines
+  2617-2626 at `v1.6.10`).
 
 ## 5 Troubleshooting
 
