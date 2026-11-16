@@ -152,3 +152,8 @@ time rule for positions from adverts stays. The rules:
 [platform-notes.md](../platform-notes.md#meshcore-companion-firmware). Revisit when hardware step
 44 shows many adverts unchecked over TCP or behind a busy repeater (then the stored copy, once the
 radio reads it safely), or when the firmware sends a report with the advert's content.
+
+Amended on 2026-11-15 by [ADR 0035](0035-the-companion-state-model.md), a proposal for 2.3.0a2:
+positions from adverts expire by time; the gateway clears a position from the radio's record when
+the newest checked advert carries none, which makes the record's fallback exact; a record whose
+position turned to none is no evidence on its own while a log adjacent to the advert's push exists.

@@ -110,11 +110,21 @@ sequenceDiagram
   level, and its estimated mesh airtime `20.4 + 90 × T / 3600` s plus one; the radio's measured
   transmit time is a backstop for its own share only (polls pause from 180 s in an hour), nothing
   measures the others'.
-* **Intervals** from a share of channel time per companion, request to request: 1 % while it moves,
-  0.1 % at rest, at least 90 s and 15 minutes (a neighbour at EU/UK Narrow: 90 s and 15 min; over
-  two repeaters 4.7 and 47 min); once an hour without a position in its answers. Moving means 50 m
-  or more from the last fix; two answers under 50 m mean resting again (at rest the reference
-  stays, so slow drift adds up and jitter never counts). A new contact counts as resting.
+* **Intervals** from a share of channel time per companion: 1 % while it moves, 0.1 % at rest, at
+  least 90 s and 15 minutes (a neighbour at EU/UK Narrow: 90 s and 15 min; over two repeaters 4.7
+  and 47 min); once an hour without a position in its answers. Up to 2.2 the interval runs from
+  request to request; since 2.3 the next request is due an interval after the companion's last
+  report, polled or pushed, and an unanswered request keeps its back-off from the request
+  ([ADR 0035](decisions/0035-the-companion-state-model.md)).
+* **Movement.** Up to 2.2, moving means 50 m or more from the last fix, and two answers under
+  50 m mean resting again (at rest the reference stays, so slow drift adds up and jitter never
+  counts). Since 2.3 one rule, `[telemetry] rest_radius_m` (50 m), decides both the class and the
+  published fix ([ADR 0035](decisions/0035-the-companion-state-model.md); detail in
+  [design-observer.md](design-observer.md#the-companion-state)). A fix beyond it is asked again
+  after the moving interval, a probe charged to the lanes like any request. A probe within it
+  drops the fix; one beyond it starts a trip at the moving interval. Two answers within the radius
+  of each other end the trip, and the interval doubles from the moving one up to the resting one.
+  A new contact counts as resting.
 * **Back-off.** An unanswered request is retried after 30 s once (a contact that answered within a
   day, asked directly), then asked at its interval doubling with every failure: at least every
   `max(30 min, its interval)` while it answered within the day, so it is found again that long

@@ -83,3 +83,7 @@ imports no I/O modules (ADR 0007).
   with the build tools alone (`requirements/release.txt`), and pip-audit checks every lock file
   (`requirements/audit.txt`). All are pinned by hash with the same cooldown, and none runs in
   production.
+* Amended on 2026-11-15 by [ADR 0034](0034-untrusted-text-from-the-mesh.md), a proposal for 2.3.0a1:
+  one check in CI, of the Home Assistant frontend's Markdown pipeline, installs `marked` and `xss`
+  from npm. A lock file pins them with integrity hashes, at the versions the pinned frontend uses;
+  they are installed without their install scripts, and none runs in production.
