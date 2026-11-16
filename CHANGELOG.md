@@ -8,6 +8,31 @@ format, the command line and Home Assistant discovery are public interfaces
 
 ## [Unreleased]
 
+## [2.2.1rc1] - 2026-11-16
+
+The release candidate of 2.2.1: the fixes from the maintainer's use of 2.2.0rc2 and from a review
+of names and texts from the mesh, #166, #168, #174, #175, #176, #179, #181 and #190. It has had no
+release check yet: 2.2.1 ships this program after the maintainer has used this candidate.
+
+For the administrator: make the dashboard again after the update to get its texts. At a slow
+radio preset, set `[airtime] burst_s` to the value that the log or `probe` names, and restart the
+service (#181). Switching on `[messages] clean_received` is recommended (#179). Nothing else
+changes; the configuration and the public interfaces stay as in 2.2.0.
+
+Known limits: on a 360x800 phone, the newest message of a full chat stands behind the field
+until the page is scrolled (#149). Of a refusal and an accepted command within one second, the
+dashboard's *Latest of each kind* can show the refusal again after a restart of Home Assistant or
+its reconnect to the broker (#160). Removing a contact keeps its chats and its history, which the
+dashboard now says (#166); a chat's target or a command sender cannot be removed from Home
+Assistant (#167). The advert reaches only the radios in direct range (#181). The installer's
+checklists of target contacts and command senders show about six letters of each name in an
+80x24 terminal (#191).
+
+CI, with the Home Assistant contract tests on 2026.10.2 and 2026.11.0 and the tests against the
+real firmware, checked it; the browser check of #166 and #168 ran on 2026.10.2 and 2026.11.0, and
+every dialog of the installer was checked against the real whiptail in English and German
+(#190).
+
 ### Fixed
 
 - At a slow radio preset, where the radio's advert and a long message do not fit into
